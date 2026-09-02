@@ -1,0 +1,72 @@
+{
+  "created_at": "2026-09-01T07:30:01.065513+00:00",
+  "python": "/usr/bin/python3",
+  "duration_s": 203.7393907085061,
+  "passed": true,
+  "checks": [
+    {
+      "name": "baseline-vs-hf",
+      "description": "custom PyTorch Qwen forward versus Hugging Face",
+      "script": "checks/check_baseline_vs_hf.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 30.347979050129652
+    },
+    {
+      "name": "paged-attention",
+      "description": "paged Triton decode attention versus SDPA/manual references",
+      "script": "checks/check_paged_decode_attention.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 3.4033409915864468
+    },
+    {
+      "name": "paged-vs-baseline",
+      "description": "teacher-forced paged engine versus contiguous baseline",
+      "script": "checks/check_paged_vs_baseline.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 36.8655069693923
+    },
+    {
+      "name": "cuda-graph",
+      "description": "single-sequence CUDA graph versus baseline and eager paged decode",
+      "script": "checks/check_graph_vs_eager.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 40.66991646960378
+    },
+    {
+      "name": "scheduler",
+      "description": "continuous batching, constrained KV pool, and preemption",
+      "script": "checks/check_scheduler.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 25.170258928090334
+    },
+    {
+      "name": "ragged-prefill",
+      "description": "mixed token-budget scheduling, resumable attention, logits, KV, and admission",
+      "script": "checks/check_ragged_prefill.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 25.340291641652584
+    },
+    {
+      "name": "bucketed-graphs",
+      "description": "bucket selection, padding, replay parity, and scheduler integration",
+      "script": "checks/check_bucketed_graph.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 22.270051319152117
+    },
+    {
+      "name": "custom-kernels",
+      "description": "Triton RMSNorm, RoPE, SwiGLU, fused KV-write, and model parity",
+      "script": "checks/check_custom_kernels.py",
+      "passed": true,
+      "exit_code": 0,
+      "duration_s": 19.66863688081503
+    }
+  ]
+}

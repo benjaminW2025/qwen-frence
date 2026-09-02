@@ -1,0 +1,59 @@
+{
+  "created_at": "2026-08-31T18:48:38.445579+00:00",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "torch": "2.6.0+cu124",
+      "transformers": "5.15.0",
+      "triton": "3.2.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.4",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "configuration": {
+    "model": "Qwen/Qwen2.5-1.5B",
+    "implementation": "custom-kernels",
+    "decode_requests": 64,
+    "decode_context_length": 8192,
+    "prefill_requests": 2,
+    "prefill_prefix_length": 0,
+    "prefill_chunk_size": 256,
+    "block_size": 16,
+    "dtype": "float16",
+    "device": "cuda",
+    "warmups": 2,
+    "timing_repetitions": 5,
+    "profile_repetitions": 1,
+    "seed": 0,
+    "prefill_tile_policy": "static",
+    "with_stack": false,
+    "nvtx_only": false,
+    "output_dir": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/decode_bandwidth"
+  },
+  "model_load_seconds": 18.655037473887205,
+  "execution_mode": "fully-eager",
+  "staging_protocol": "synthetic-resident-paged-kv-outside-timing",
+  "target_iteration_kind": "mixed",
+  "decode_tokens": 64,
+  "prefill_tokens": 512,
+  "target_budget": 576,
+  "raw_latency_ms": [
+    76.5348129272461,
+    76.40457916259766,
+    76.45442962646484,
+    76.2455062866211,
+    76.06793975830078
+  ],
+  "median_latency_ms": 76.40457916259766,
+  "scheduled_tokens_per_second": 7538.815164130494,
+  "peak_gpu_memory_bytes": 18313127424,
+  "trace": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/decode_bandwidth/mixed-D64-C8192-P2-Q256-20260831T184837431733Z.json",
+  "operator_tables": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/decode_bandwidth/mixed-D64-C8192-P2-Q256-20260831T184837431733Z.txt"
+}

@@ -1,0 +1,395 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-01T18:49:50.523651+00:00",
+  "mode": "vllm",
+  "systems": {
+    "framework_reference": "pytorch-baseline",
+    "pre_scheduler_engine": "paged-kv",
+    "scheduled_static_control": "custom-kernels",
+    "post_policy_engine": "regime-dispatched",
+    "external_reference": "vllm"
+  },
+  "design": {
+    "kind": "2x2x2-factorial-burst",
+    "concurrency": [
+      8,
+      64
+    ],
+    "prompt_tokens": [
+      256,
+      8192
+    ],
+    "output_tokens": [
+      32,
+      256
+    ],
+    "max_num_batched_tokens": 8192,
+    "reference_protocol": "disabled",
+    "reference_anchors": [],
+    "regimes": [
+      {
+        "name": "lowB-shortP-shortO",
+        "concurrency": 8,
+        "prompt_length": 256,
+        "output_length": 32
+      },
+      {
+        "name": "lowB-shortP-longO",
+        "concurrency": 8,
+        "prompt_length": 256,
+        "output_length": 256
+      },
+      {
+        "name": "lowB-longP-shortO",
+        "concurrency": 8,
+        "prompt_length": 8192,
+        "output_length": 32
+      },
+      {
+        "name": "lowB-longP-longO",
+        "concurrency": 8,
+        "prompt_length": 8192,
+        "output_length": 256
+      },
+      {
+        "name": "highB-shortP-shortO",
+        "concurrency": 64,
+        "prompt_length": 256,
+        "output_length": 32
+      },
+      {
+        "name": "highB-shortP-longO",
+        "concurrency": 64,
+        "prompt_length": 256,
+        "output_length": 256
+      },
+      {
+        "name": "highB-longP-shortO",
+        "concurrency": 64,
+        "prompt_length": 8192,
+        "output_length": 32
+      },
+      {
+        "name": "highB-longP-longO",
+        "concurrency": 64,
+        "prompt_length": 8192,
+        "output_length": 256
+      }
+    ]
+  },
+  "records": [
+    {
+      "regime": "lowB-shortP-shortO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-shortO/vllm/regime-lowB-shortP-shortO-20260901T184510869922Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "8",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-shortO/local/regime-lowB-shortP-shortO-20260901T181011095043Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-shortO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "lowB-shortP-longO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-longO/vllm/regime-lowB-shortP-longO-20260901T184546605035Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "8",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-longO/local/regime-lowB-shortP-longO-20260901T181111786277Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-shortP-longO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "lowB-longP-shortO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-shortO/vllm/regime-lowB-longP-shortO-20260901T184627592198Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "8",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-shortO/local/regime-lowB-longP-shortO-20260901T181204884221Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-shortO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "lowB-longP-longO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-longO/vllm/regime-lowB-longP-longO-20260901T184709884903Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "8",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-longO/local/regime-lowB-longP-longO-20260901T181324278875Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/lowB-longP-longO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "highB-shortP-shortO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-shortO/vllm/regime-highB-shortP-shortO-20260901T184746872545Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "64",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-shortO/local/regime-highB-shortP-shortO-20260901T181412058170Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-shortO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "highB-shortP-longO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-longO/vllm/regime-highB-shortP-longO-20260901T184823258893Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "64",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-longO/local/regime-highB-shortP-longO-20260901T181511612729Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-shortP-longO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "highB-longP-shortO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-shortO/vllm/regime-highB-longP-shortO-20260901T184904982413Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "64",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-shortO/local/regime-highB-longP-shortO-20260901T181629546544Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-shortO/vllm"
+        ]
+      ],
+      "reused": false
+    },
+    {
+      "regime": "highB-longP-longO",
+      "returncode": 0,
+      "result": "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-longO/vllm/regime-highB-longP-longO-20260901T184949174063Z.json",
+      "commands": [
+        [
+          "/root/vllm-stable-env/bin/python",
+          "/workspace/qwen-frence/benchmarks/run_benchmarks.py",
+          "--model",
+          "Qwen/Qwen2.5-1.5B",
+          "--device",
+          "cuda",
+          "--dtype",
+          "float16",
+          "--block-size",
+          "16",
+          "--max-running",
+          "64",
+          "--max-num-batched-tokens",
+          "8192",
+          "--warmups",
+          "1",
+          "--repetitions",
+          "1",
+          "--seed",
+          "0",
+          "--vllm-kv-cache-mode",
+          "matched",
+          "--strict-backends",
+          "--backends",
+          "vllm",
+          "--compare-with",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-longO/local/regime-highB-longP-longO-20260901T181847123383Z.json",
+          "--output-dir",
+          "/workspace/qwen-frence/benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/highB-longP-longO/vllm"
+        ]
+      ],
+      "reused": false
+    }
+  ],
+  "passed": true
+}

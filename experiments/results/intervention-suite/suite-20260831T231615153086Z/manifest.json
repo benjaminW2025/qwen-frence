@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-31T23:17:49.404904+00:00",
+  "configuration": {
+    "experiments": [
+      "decode-causality",
+      "batched-sampling",
+      "swiglu",
+      "metadata-staging",
+      "rope-kv-fusion",
+      "attention-overlap",
+      "launch-profile"
+    ],
+    "model": "Qwen/Qwen2.5-1.5B",
+    "dtype": "float16",
+    "device": "cuda",
+    "seed": 0
+  },
+  "experiments": [
+    {
+      "name": "decode-causality",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/decode/benchmark_decode_kernel_causality.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/decode-causality",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/decode-causality"
+    },
+    {
+      "name": "batched-sampling",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/scheduler/benchmark_batched_sampling.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/batched-sampling",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/batched-sampling"
+    },
+    {
+      "name": "swiglu",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/mlp/benchmark_swiglu_fusion.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/swiglu",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/swiglu"
+    },
+    {
+      "name": "metadata-staging",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/scheduler/benchmark_metadata_staging.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/metadata-staging"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/metadata-staging"
+    },
+    {
+      "name": "rope-kv-fusion",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/memory/benchmark_rope_kv_fusion.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/rope-kv-fusion",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/rope-kv-fusion"
+    },
+    {
+      "name": "attention-overlap",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/attention/benchmark_attention_overlap.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/attention-overlap",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/attention-overlap"
+    },
+    {
+      "name": "launch-profile",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/profiling/run_regime_atlas.py",
+        "--device",
+        "cuda",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/launch-profile",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0",
+        "--model",
+        "Qwen/Qwen2.5-1.5B",
+        "--regimes",
+        "launch_bound,decode_low_concurrency,long_fresh_prefill",
+        "--timing-repetitions",
+        "20"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/intervention-suite/suite-20260831T231615153086Z/launch-profile"
+    }
+  ],
+  "passed": true
+}

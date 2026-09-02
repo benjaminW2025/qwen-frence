@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "description": "Canonical artifacts supporting the project narrative in RESULTS.md",
+  "stages": [
+    {
+      "id": "engine-foundations",
+      "title": "Reference engine to continuous batching and custom kernels",
+      "artifacts": [
+        "benchmarks/results/h100-burst-20260824T224748374089Z.json",
+        "benchmarks/results/h100-burst-20260824T224748374089Z.csv",
+        "benchmarks/results/h100-poisson-20260824T195643307034Z.json",
+        "benchmarks/results/h100-poisson-20260824T195643307034Z.csv"
+      ]
+    },
+    {
+      "id": "packed-prefill",
+      "title": "Packed ragged attention and resumable prefill",
+      "artifacts": [
+        "experiments/results/ragged-prefill/ragged-prefill-20260830T041410084304Z.json",
+        "experiments/results/ragged-prefill/ragged-prefill-20260830T041410084304Z.csv",
+        "experiments/results/packed-attention-tiles/packed-attention-tiles-20260827T045100937371Z.json",
+        "experiments/results/packed-attention-tiles/packed-attention-tiles-20260827T045100937371Z.csv",
+        "experiments/results/paged-prefill-tiles/paged-prefill-tiles-20260831T182927183128Z-summary.csv"
+      ]
+    },
+    {
+      "id": "mixed-scheduling",
+      "title": "Mixed batching and token/work budgets",
+      "artifacts": [
+        "experiments/results/mixed-surface/mixed-surface-20260830T053933170071Z.json",
+        "experiments/results/mixed-surface/mixed-surface-20260830T053933170071Z.csv",
+        "experiments/results/token-budget/token-budget-20260830T043216132491Z.csv",
+        "experiments/results/token-budget/token-budget-20260831T172914588812Z.csv",
+        "experiments/results/work-budget-latency/work-budget-latency-20260831T180304797246Z-summary.csv"
+      ]
+    },
+    {
+      "id": "focused-optimization",
+      "title": "Regime profiling, interventions, and fitted dispatch",
+      "artifacts": [
+        "experiments/results/regime-atlas/atlas-20260831T184645839237Z/manifest.json",
+        "experiments/results/profiles/nsys-dual-heavy-stats.txt",
+        "experiments/results/intervention-suite/suite-20260831T231615153086Z/manifest.json",
+        "experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/manifest.json",
+        "experiments/results/grouped-gqa-decode/grouped-gqa-decode-20260831T223906154588Z-summary.csv"
+      ]
+    },
+    {
+      "id": "final-scorecard",
+      "title": "Matched static, regime-dispatched, and vLLM comparison",
+      "artifacts": [
+        "correctness/results/final-h100.json",
+        "benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/manifest-local.json",
+        "benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/manifest-vllm.json",
+        "benchmarks/results/regime-scorecard/suite-20260901T180925475938Z/summary.csv"
+      ]
+    }
+  ]
+}

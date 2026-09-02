@@ -1,0 +1,59 @@
+{
+  "created_at": "2026-08-31T18:49:39.765778+00:00",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "torch": "2.6.0+cu124",
+      "transformers": "5.15.0",
+      "triton": "3.2.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.4",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "configuration": {
+    "model": "Qwen/Qwen2.5-1.5B",
+    "implementation": "custom-kernels",
+    "decode_requests": 64,
+    "decode_context_length": 8192,
+    "prefill_requests": 2,
+    "prefill_prefix_length": 16384,
+    "prefill_chunk_size": 4096,
+    "block_size": 16,
+    "dtype": "float16",
+    "device": "cuda",
+    "warmups": 2,
+    "timing_repetitions": 5,
+    "profile_repetitions": 1,
+    "seed": 0,
+    "prefill_tile_policy": "static",
+    "with_stack": false,
+    "nvtx_only": false,
+    "output_dir": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/dual_heavy"
+  },
+  "model_load_seconds": 20.387962543405592,
+  "execution_mode": "fully-eager",
+  "staging_protocol": "synthetic-resident-paged-kv-outside-timing",
+  "target_iteration_kind": "mixed",
+  "decode_tokens": 64,
+  "prefill_tokens": 8192,
+  "target_budget": 8256,
+  "raw_latency_ms": [
+    240.62147521972656,
+    240.4904022216797,
+    240.34857177734375,
+    240.3383026123047,
+    240.48208618164062
+  ],
+  "median_latency_ms": 240.48208618164062,
+  "scheduled_tokens_per_second": 34331.03950106324,
+  "peak_gpu_memory_bytes": 20028400640,
+  "trace": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/dual_heavy/mixed-D64-C8192-P2-Q4096-20260831T184938788471Z.json",
+  "operator_tables": "/workspace/qwen-frence/experiments/results/regime-atlas/atlas-20260831T184645839237Z/dual_heavy/mixed-D64-C8192-P2-Q4096-20260831T184938788471Z.txt"
+}

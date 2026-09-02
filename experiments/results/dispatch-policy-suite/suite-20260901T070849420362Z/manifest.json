@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-01T07:09:47.603232+00:00",
+  "configuration": {
+    "sweeps": [
+      "decode",
+      "swiglu",
+      "rope-kv",
+      "paged-prefill"
+    ],
+    "dtype": "float16",
+    "device": "cuda",
+    "seed": 0,
+    "max_depth": 2,
+    "holdout_modulus": 5,
+    "max_training_regression": 0.02,
+    "axes": {
+      "decode": {
+        "--batch-sizes": "1,4,8,16,32,64",
+        "--context-lengths": "128,256,512,1024,2048,4096,8192,16384",
+        "--warmups": "3",
+        "--repetitions": "20"
+      },
+      "swiglu": {
+        "--rows": "128,256,384,512,768,1024,1280,1536,1792,2048,2560,3072,4096,6144,8192,12288,16384",
+        "--warmups": "5",
+        "--repetitions": "20"
+      },
+      "rope-kv": {
+        "--token-counts": "64,128,256,512,768,1024,1536,2048,3072,4096,6144,8192,12288,16384",
+        "--warmups": "3",
+        "--repetitions": "20"
+      },
+      "paged-prefill": {
+        "--batch-sizes": "1,2,4,8",
+        "--query-lengths": "128,256,384,512,768,1024,1536,2048",
+        "--prefix-lengths": "0,2048,8192,16384",
+        "--warmups": "2",
+        "--repetitions": "10"
+      }
+    }
+  },
+  "sweeps": [
+    {
+      "name": "decode",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/decode/benchmark_decode_kernel_causality.py",
+        "--device",
+        "cuda",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/decode",
+        "--batch-sizes",
+        "1,4,8,16,32,64",
+        "--context-lengths",
+        "128,256,512,1024,2048,4096,8192,16384",
+        "--warmups",
+        "3",
+        "--repetitions",
+        "20"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/decode"
+    },
+    {
+      "name": "swiglu",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/mlp/benchmark_swiglu_fusion.py",
+        "--device",
+        "cuda",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/swiglu",
+        "--rows",
+        "128,256,384,512,768,1024,1280,1536,1792,2048,2560,3072,4096,6144,8192,12288,16384",
+        "--warmups",
+        "5",
+        "--repetitions",
+        "20"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/swiglu"
+    },
+    {
+      "name": "rope-kv",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/memory/benchmark_rope_kv_fusion.py",
+        "--device",
+        "cuda",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/rope-kv",
+        "--token-counts",
+        "64,128,256,512,768,1024,1536,2048,3072,4096,6144,8192,12288,16384",
+        "--warmups",
+        "3",
+        "--repetitions",
+        "20"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/rope-kv"
+    },
+    {
+      "name": "paged-prefill",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/qwen-frence/experiments/prefill/benchmark_paged_prefill_tiles.py",
+        "--device",
+        "cuda",
+        "--dtype",
+        "float16",
+        "--seed",
+        "0",
+        "--output-dir",
+        "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/paged-prefill",
+        "--batch-sizes",
+        "1,2,4,8",
+        "--query-lengths",
+        "128,256,384,512,768,1024,1536,2048",
+        "--prefix-lengths",
+        "0,2048,8192,16384",
+        "--warmups",
+        "2",
+        "--repetitions",
+        "10"
+      ],
+      "returncode": 0,
+      "output_dir": "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/paged-prefill"
+    }
+  ],
+  "fit": {
+    "name": "fit",
+    "command": [
+      "/usr/bin/python3",
+      "/workspace/qwen-frence/experiments/dispatch/fit_dispatch_policies.py",
+      "--max-depth",
+      "2",
+      "--holdout-modulus",
+      "5",
+      "--max-training-regression",
+      "0.02",
+      "--output-dir",
+      "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/policy",
+      "--decode-json",
+      "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/decode/decode-kernel-causality-20260901T070908223724Z.json",
+      "--swiglu-json",
+      "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/swiglu/swiglu-fusion-20260901T070913084901Z.json",
+      "--rope-kv-json",
+      "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/rope-kv/rope-kv-fusion-20260901T070917468180Z.json",
+      "--paged-prefill-json",
+      "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/paged-prefill/paged-prefill-tiles-20260901T070946985798Z.json"
+    ],
+    "returncode": 0,
+    "output_dir": "/workspace/qwen-frence/experiments/results/dispatch-policy-suite/suite-20260901T070849420362Z/policy"
+  },
+  "passed": true
+}

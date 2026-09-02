@@ -1,0 +1,1792 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-30T04:14:10.084398+00:00",
+  "system": {
+    "python": "3.11.10",
+    "platform": "Linux-6.8.0-106-generic-x86_64-with-glibc2.35",
+    "packages": {
+      "torch": "2.6.0+cu124",
+      "transformers": "5.15.0",
+      "triton": "3.2.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.4",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "configuration": {
+    "model": "Qwen/Qwen2.5-1.5B",
+    "dtype": "float16",
+    "block_size": 16,
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "prompt_lengths": [
+      128,
+      512,
+      2048,
+      4096
+    ],
+    "patterns": [
+      "uniform",
+      "ramp"
+    ],
+    "warmups": 2,
+    "repetitions": 5,
+    "seed": 0
+  },
+  "model_load_seconds": 18.323882120195776,
+  "rows": [
+    {
+      "pattern": "uniform",
+      "batch_size": 1,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        128
+      ],
+      "total_prompt_tokens": 128,
+      "serial_median_ms": 17.508224487304688,
+      "packed_sdpa_median_ms": 17.37923240661621,
+      "packed_median_ms": 15.889056205749512,
+      "serial_prompt_tokens_per_second": 7310.849829051113,
+      "packed_sdpa_prompt_tokens_per_second": 7365.112394220061,
+      "packed_prompt_tokens_per_second": 8055.859224268004,
+      "speedup": 1.1019046229422533,
+      "packed_attention_speedup": 1.0937863257307552,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        17.613183975219727,
+        17.46758460998535,
+        17.576608657836914,
+        17.508224487304688,
+        17.461151123046875
+      ],
+      "packed_sdpa_raw_ms": [
+        17.355552673339844,
+        17.418336868286133,
+        17.21139144897461,
+        17.37923240661621,
+        17.43065643310547
+      ],
+      "packed_raw_ms": [
+        15.889056205749512,
+        15.894495964050293,
+        21.122400283813477,
+        15.76966381072998,
+        15.593664169311523
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 1,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        512
+      ],
+      "total_prompt_tokens": 512,
+      "serial_median_ms": 17.919584274291992,
+      "packed_sdpa_median_ms": 17.82022476196289,
+      "packed_median_ms": 15.870016098022461,
+      "serial_prompt_tokens_per_second": 28572.091414784187,
+      "packed_sdpa_prompt_tokens_per_second": 28731.39967868752,
+      "packed_prompt_tokens_per_second": 32262.097079019317,
+      "speedup": 1.1291472020954614,
+      "packed_attention_speedup": 1.122886369610138,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        17.858943939208984,
+        26.674047470092773,
+        20.502336502075195,
+        17.919584274291992,
+        17.869728088378906
+      ],
+      "packed_sdpa_raw_ms": [
+        17.732831954956055,
+        17.868383407592773,
+        17.781280517578125,
+        17.82022476196289,
+        17.828256607055664
+      ],
+      "packed_raw_ms": [
+        15.90272045135498,
+        15.844991683959961,
+        15.867327690124512,
+        15.870016098022461,
+        15.886431694030762
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 1,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        2048
+      ],
+      "total_prompt_tokens": 2048,
+      "serial_median_ms": 18.25494384765625,
+      "packed_sdpa_median_ms": 18.12771224975586,
+      "packed_median_ms": 16.739776611328125,
+      "serial_prompt_tokens_per_second": 112188.78661535529,
+      "packed_sdpa_prompt_tokens_per_second": 112976.19753576914,
+      "packed_prompt_tokens_per_second": 122343.32915853127,
+      "speedup": 1.0905129901974189,
+      "packed_attention_speedup": 1.082912434894053,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        18.161888122558594,
+        18.085599899291992,
+        20.12156867980957,
+        27.135488510131836,
+        18.25494384765625
+      ],
+      "packed_sdpa_raw_ms": [
+        18.20684814453125,
+        18.12771224975586,
+        18.107807159423828,
+        18.210752487182617,
+        18.065311431884766
+      ],
+      "packed_raw_ms": [
+        16.739776611328125,
+        16.734111785888672,
+        16.65488052368164,
+        16.756736755371094,
+        16.754976272583008
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 1,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        4096
+      ],
+      "total_prompt_tokens": 4096,
+      "serial_median_ms": 33.50822448730469,
+      "packed_sdpa_median_ms": 33.556575775146484,
+      "packed_median_ms": 32.75468826293945,
+      "serial_prompt_tokens_per_second": 122238.6462628558,
+      "packed_sdpa_prompt_tokens_per_second": 122062.51398969267,
+      "packed_prompt_tokens_per_second": 125050.80088441724,
+      "speedup": 1.0230054463750715,
+      "packed_attention_speedup": 1.0244816102589605,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        33.50822448730469,
+        33.68025588989258,
+        33.38768005371094,
+        33.2743034362793,
+        33.7723503112793
+      ],
+      "packed_sdpa_raw_ms": [
+        33.59904098510742,
+        33.33184051513672,
+        33.556575775146484,
+        33.71443176269531,
+        33.40399932861328
+      ],
+      "packed_raw_ms": [
+        32.27171325683594,
+        32.79334259033203,
+        32.99747085571289,
+        32.692222595214844,
+        32.75468826293945
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 2,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        128,
+        128
+      ],
+      "total_prompt_tokens": 256,
+      "serial_median_ms": 34.54694366455078,
+      "packed_sdpa_median_ms": 19.58131217956543,
+      "packed_median_ms": 15.8570556640625,
+      "serial_prompt_tokens_per_second": 7410.206890825079,
+      "packed_sdpa_prompt_tokens_per_second": 13073.689732966683,
+      "packed_prompt_tokens_per_second": 16144.232915835904,
+      "speedup": 2.178648066604568,
+      "packed_attention_speedup": 1.2348643149398388,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        34.835487365722656,
+        34.54694366455078,
+        34.499168395996094,
+        34.52105712890625,
+        39.78105545043945
+      ],
+      "packed_sdpa_raw_ms": [
+        19.553823471069336,
+        19.612096786499023,
+        19.739999771118164,
+        19.58131217956543,
+        19.484575271606445
+      ],
+      "packed_raw_ms": [
+        16.542943954467773,
+        15.88054370880127,
+        15.778783798217773,
+        15.8570556640625,
+        15.754303932189941
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 2,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        512,
+        512
+      ],
+      "total_prompt_tokens": 1024,
+      "serial_median_ms": 36.071006774902344,
+      "packed_sdpa_median_ms": 19.983840942382812,
+      "packed_median_ms": 16.035903930664062,
+      "serial_prompt_tokens_per_second": 28388.45076851261,
+      "packed_sdpa_prompt_tokens_per_second": 51241.400637264145,
+      "packed_prompt_tokens_per_second": 63856.70582884286,
+      "speedup": 2.249390301342907,
+      "packed_attention_speedup": 1.2461936058477785,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        48.13782501220703,
+        36.1926383972168,
+        35.91020965576172,
+        36.071006774902344,
+        35.62748718261719
+      ],
+      "packed_sdpa_raw_ms": [
+        19.95529556274414,
+        20.098304748535156,
+        20.011072158813477,
+        19.983840942382812,
+        19.98054313659668
+      ],
+      "packed_raw_ms": [
+        16.065759658813477,
+        15.950783729553223,
+        16.922880172729492,
+        16.035903930664062,
+        15.918463706970215
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 2,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        2048,
+        2048
+      ],
+      "total_prompt_tokens": 4096,
+      "serial_median_ms": 35.97024154663086,
+      "packed_sdpa_median_ms": 32.24435043334961,
+      "packed_median_ms": 28.656160354614258,
+      "serial_prompt_tokens_per_second": 113871.90699539939,
+      "packed_sdpa_prompt_tokens_per_second": 127030.00510016784,
+      "packed_prompt_tokens_per_second": 142936.10690730435,
+      "speedup": 1.255235910935251,
+      "packed_attention_speedup": 1.1252153126703723,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        36.07302474975586,
+        35.97024154663086,
+        35.94348907470703,
+        35.94428634643555,
+        37.07401657104492
+      ],
+      "packed_sdpa_raw_ms": [
+        32.247520446777344,
+        32.324222564697266,
+        32.24435043334961,
+        32.21513748168945,
+        32.14166259765625
+      ],
+      "packed_raw_ms": [
+        28.453535079956055,
+        28.883840560913086,
+        28.587200164794922,
+        28.703615188598633,
+        28.656160354614258
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 2,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        4096,
+        4096
+      ],
+      "total_prompt_tokens": 8192,
+      "serial_median_ms": 66.7495346069336,
+      "packed_sdpa_median_ms": 66.05763244628906,
+      "packed_median_ms": 62.02076721191406,
+      "serial_prompt_tokens_per_second": 122727.44743824861,
+      "packed_sdpa_prompt_tokens_per_second": 124012.92169623017,
+      "packed_prompt_tokens_per_second": 132084.7897932216,
+      "speedup": 1.0762449032412347,
+      "packed_attention_speedup": 1.0650889277228988,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        66.71782684326172,
+        66.68415832519531,
+        67.17974090576172,
+        66.7495346069336,
+        67.3015365600586
+      ],
+      "packed_sdpa_raw_ms": [
+        65.88787078857422,
+        65.89087677001953,
+        66.07855987548828,
+        66.05763244628906,
+        67.5033950805664
+      ],
+      "packed_raw_ms": [
+        63.20393753051758,
+        61.93164825439453,
+        62.25904083251953,
+        62.02076721191406,
+        61.824222564697266
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 4,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        128,
+        128,
+        128,
+        128
+      ],
+      "total_prompt_tokens": 512,
+      "serial_median_ms": 70.18355560302734,
+      "packed_sdpa_median_ms": 22.80022430419922,
+      "packed_median_ms": 16.246496200561523,
+      "serial_prompt_tokens_per_second": 7295.156188665868,
+      "packed_sdpa_prompt_tokens_per_second": 22455.919431709393,
+      "packed_prompt_tokens_per_second": 31514.48741189524,
+      "speedup": 4.319919491354795,
+      "packed_attention_speedup": 1.403393323873192,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        70.18355560302734,
+        75.14351654052734,
+        69.86083221435547,
+        79.59584045410156,
+        69.6648941040039
+      ],
+      "packed_sdpa_raw_ms": [
+        22.80022430419922,
+        22.716800689697266,
+        29.10985565185547,
+        32.562625885009766,
+        22.676288604736328
+      ],
+      "packed_raw_ms": [
+        19.26736068725586,
+        16.2259521484375,
+        16.26416015625,
+        16.183103561401367,
+        16.246496200561523
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 4,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        512,
+        512,
+        512,
+        512
+      ],
+      "total_prompt_tokens": 2048,
+      "serial_median_ms": 74.7074203491211,
+      "packed_sdpa_median_ms": 24.4270076751709,
+      "packed_median_ms": 16.783071517944336,
+      "serial_prompt_tokens_per_second": 27413.608854774146,
+      "packed_sdpa_prompt_tokens_per_second": 83841.62428874627,
+      "packed_prompt_tokens_per_second": 122027.72286409514,
+      "speedup": 4.451355657350591,
+      "packed_attention_speedup": 1.4554551381762106,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        73.54883575439453,
+        76.5733413696289,
+        74.7074203491211,
+        76.18595123291016,
+        73.14044952392578
+      ],
+      "packed_sdpa_raw_ms": [
+        24.30518341064453,
+        24.222976684570312,
+        25.164480209350586,
+        24.4270076751709,
+        25.15337562561035
+      ],
+      "packed_raw_ms": [
+        21.872224807739258,
+        16.6562557220459,
+        18.43062400817871,
+        16.783071517944336,
+        16.619007110595703
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 4,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        2048,
+        2048,
+        2048,
+        2048
+      ],
+      "total_prompt_tokens": 8192,
+      "serial_median_ms": 76.66496276855469,
+      "packed_sdpa_median_ms": 63.28940963745117,
+      "packed_median_ms": 54.59251022338867,
+      "serial_prompt_tokens_per_second": 106854.5487295283,
+      "packed_sdpa_prompt_tokens_per_second": 129437.13722291424,
+      "packed_prompt_tokens_per_second": 150057.21419438158,
+      "speedup": 1.404312834395178,
+      "packed_attention_speedup": 1.159305724878292,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        76.66496276855469,
+        75.37923431396484,
+        76.24771118164062,
+        86.14380645751953,
+        77.08585357666016
+      ],
+      "packed_sdpa_raw_ms": [
+        63.01264190673828,
+        64.38687896728516,
+        63.28940963745117,
+        63.36851119995117,
+        63.193790435791016
+      ],
+      "packed_raw_ms": [
+        54.59251022338867,
+        54.61654281616211,
+        54.54163360595703,
+        54.56313705444336,
+        54.78972625732422
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 4,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        4096,
+        4096,
+        4096,
+        4096
+      ],
+      "total_prompt_tokens": 16384,
+      "serial_median_ms": 134.73011779785156,
+      "packed_sdpa_median_ms": 127.89417266845703,
+      "packed_median_ms": 117.85929870605469,
+      "serial_prompt_tokens_per_second": 121606.06899032387,
+      "packed_sdpa_prompt_tokens_per_second": 128105.9148994428,
+      "packed_prompt_tokens_per_second": 139013.21473889204,
+      "speedup": 1.1431437254168066,
+      "packed_attention_speedup": 1.0851428276985566,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        134.7072296142578,
+        134.73011779785156,
+        133.6729278564453,
+        134.81231689453125,
+        135.1999053955078
+      ],
+      "packed_sdpa_raw_ms": [
+        127.6088638305664,
+        128.05760192871094,
+        128.0820770263672,
+        127.89417266845703,
+        127.36438751220703
+      ],
+      "packed_raw_ms": [
+        116.21222686767578,
+        118.32902526855469,
+        117.88963317871094,
+        117.85929870605469,
+        117.10086059570312
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 8,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "total_prompt_tokens": 1024,
+      "serial_median_ms": 140.55967712402344,
+      "packed_sdpa_median_ms": 29.81782341003418,
+      "packed_median_ms": 16.413759231567383,
+      "serial_prompt_tokens_per_second": 7285.161868268017,
+      "packed_sdpa_prompt_tokens_per_second": 34341.8761966176,
+      "packed_prompt_tokens_per_second": 62386.683364443146,
+      "speedup": 8.563527412641418,
+      "packed_attention_speedup": 1.816635847361995,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        139.93321228027344,
+        140.93212890625,
+        140.55967712402344,
+        140.16928100585938,
+        141.3270721435547
+      ],
+      "packed_sdpa_raw_ms": [
+        29.81782341003418,
+        29.730783462524414,
+        29.81260871887207,
+        29.878528594970703,
+        29.86089515686035
+      ],
+      "packed_raw_ms": [
+        16.370784759521484,
+        16.413759231567383,
+        16.627552032470703,
+        16.331071853637695,
+        17.31545639038086
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 8,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512
+      ],
+      "total_prompt_tokens": 4096,
+      "serial_median_ms": 143.98634338378906,
+      "packed_sdpa_median_ms": 32.239105224609375,
+      "packed_median_ms": 26.01430320739746,
+      "serial_prompt_tokens_per_second": 28447.142303505116,
+      "packed_sdpa_prompt_tokens_per_second": 127050.67251287613,
+      "packed_prompt_tokens_per_second": 157451.8436009947,
+      "speedup": 5.5348914109236995,
+      "packed_attention_speedup": 1.239283826577443,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        156.9382781982422,
+        143.98634338378906,
+        143.9800567626953,
+        145.3047637939453,
+        143.89878845214844
+      ],
+      "packed_sdpa_raw_ms": [
+        32.195518493652344,
+        36.390113830566406,
+        32.239105224609375,
+        32.068031311035156,
+        35.98771286010742
+      ],
+      "packed_raw_ms": [
+        26.184223175048828,
+        26.149471282958984,
+        26.001056671142578,
+        25.83558464050293,
+        26.01430320739746
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 8,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048
+      ],
+      "total_prompt_tokens": 16384,
+      "serial_median_ms": 147.35052490234375,
+      "packed_sdpa_median_ms": 121.13314819335938,
+      "packed_median_ms": 104.17766571044922,
+      "serial_prompt_tokens_per_second": 111190.64564485576,
+      "packed_sdpa_prompt_tokens_per_second": 135256.12307084564,
+      "packed_prompt_tokens_per_second": 157269.7937534672,
+      "speedup": 1.4144156897495566,
+      "packed_attention_speedup": 1.1627554463548466,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        145.98287963867188,
+        157.60182189941406,
+        147.3962860107422,
+        145.87350463867188,
+        147.35052490234375
+      ],
+      "packed_sdpa_raw_ms": [
+        120.80770874023438,
+        121.43395233154297,
+        121.13314819335938,
+        120.84089660644531,
+        123.65267181396484
+      ],
+      "packed_raw_ms": [
+        104.2805404663086,
+        103.96476745605469,
+        104.17766571044922,
+        103.69805145263672,
+        105.80413055419922
+      ]
+    },
+    {
+      "pattern": "uniform",
+      "batch_size": 8,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
+      "total_prompt_tokens": 32768,
+      "serial_median_ms": 270.240478515625,
+      "packed_sdpa_median_ms": 256.103515625,
+      "packed_median_ms": 236.7041015625,
+      "serial_prompt_tokens_per_second": 121254.96587331343,
+      "packed_sdpa_prompt_tokens_per_second": 127948.26310772164,
+      "packed_prompt_tokens_per_second": 138434.44107514905,
+      "speedup": 1.141680590795635,
+      "packed_attention_speedup": 1.081956391690905,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        270.8036193847656,
+        270.66363525390625,
+        270.240478515625,
+        269.87518310546875,
+        269.1417541503906
+      ],
+      "packed_sdpa_raw_ms": [
+        256.103515625,
+        255.94412231445312,
+        256.23944091796875,
+        256.2889404296875,
+        255.40249633789062
+      ],
+      "packed_raw_ms": [
+        238.16400146484375,
+        234.9627227783203,
+        233.54544067382812,
+        236.7041015625,
+        237.19676208496094
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 1,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        128
+      ],
+      "total_prompt_tokens": 128,
+      "serial_median_ms": 18.45465660095215,
+      "packed_sdpa_median_ms": 17.838848114013672,
+      "packed_median_ms": 16.042816162109375,
+      "serial_prompt_tokens_per_second": 6935.918818093639,
+      "packed_sdpa_prompt_tokens_per_second": 7175.351187582958,
+      "packed_prompt_tokens_per_second": 7978.64905429235,
+      "speedup": 1.1503377221599762,
+      "packed_attention_speedup": 1.1119524112073442,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        18.016159057617188,
+        20.713024139404297,
+        18.45465660095215,
+        19.55948829650879,
+        17.760576248168945
+      ],
+      "packed_sdpa_raw_ms": [
+        17.82851219177246,
+        17.91360092163086,
+        17.883487701416016,
+        17.838848114013672,
+        17.815488815307617
+      ],
+      "packed_raw_ms": [
+        16.159616470336914,
+        16.056800842285156,
+        16.021120071411133,
+        16.042816162109375,
+        16.020864486694336
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 1,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        512
+      ],
+      "total_prompt_tokens": 512,
+      "serial_median_ms": 18.782207489013672,
+      "packed_sdpa_median_ms": 20.303775787353516,
+      "packed_median_ms": 16.213760375976562,
+      "serial_prompt_tokens_per_second": 27259.841544157447,
+      "packed_sdpa_prompt_tokens_per_second": 25216.984533433737,
+      "packed_prompt_tokens_per_second": 31578.11563310229,
+      "speedup": 1.158411562369128,
+      "packed_attention_speedup": 1.2522558195344373,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        18.782207489013672,
+        18.247711181640625,
+        20.27440071105957,
+        20.936351776123047,
+        18.678752899169922
+      ],
+      "packed_sdpa_raw_ms": [
+        20.176799774169922,
+        25.611167907714844,
+        23.177888870239258,
+        18.37936019897461,
+        20.303775787353516
+      ],
+      "packed_raw_ms": [
+        16.213760375976562,
+        16.18332862854004,
+        16.249343872070312,
+        18.105695724487305,
+        16.091167449951172
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 1,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        2048
+      ],
+      "total_prompt_tokens": 2048,
+      "serial_median_ms": 20.17638397216797,
+      "packed_sdpa_median_ms": 18.727903366088867,
+      "packed_median_ms": 16.8287353515625,
+      "serial_prompt_tokens_per_second": 101504.80893033583,
+      "packed_sdpa_prompt_tokens_per_second": 109355.54076535712,
+      "packed_prompt_tokens_per_second": 121696.60745243398,
+      "speedup": 1.1989245508156767,
+      "packed_attention_speedup": 1.1128526876709148,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        18.656511306762695,
+        20.395519256591797,
+        20.4421443939209,
+        20.17638397216797,
+        19.574783325195312
+      ],
+      "packed_sdpa_raw_ms": [
+        20.398303985595703,
+        18.660959243774414,
+        18.727903366088867,
+        18.57980728149414,
+        20.525375366210938
+      ],
+      "packed_raw_ms": [
+        18.575040817260742,
+        16.8287353515625,
+        16.76470375061035,
+        18.470272064208984,
+        16.77132797241211
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 1,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        4096
+      ],
+      "total_prompt_tokens": 4096,
+      "serial_median_ms": 33.5445442199707,
+      "packed_sdpa_median_ms": 33.6769905090332,
+      "packed_median_ms": 32.76607894897461,
+      "serial_prompt_tokens_per_second": 122106.29463736912,
+      "packed_sdpa_prompt_tokens_per_second": 121626.069850313,
+      "packed_prompt_tokens_per_second": 125007.32865774228,
+      "speedup": 1.0237582675732537,
+      "packed_attention_speedup": 1.0278004445230424,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        1
+      ],
+      "packed_prefill_batch_sizes": [
+        1
+      ],
+      "serial_raw_ms": [
+        33.65913772583008,
+        33.47942352294922,
+        33.5445442199707,
+        33.5912971496582,
+        33.40313720703125
+      ],
+      "packed_sdpa_raw_ms": [
+        33.46099090576172,
+        33.51884841918945,
+        33.701759338378906,
+        33.6769905090332,
+        33.7790412902832
+      ],
+      "packed_raw_ms": [
+        32.76607894897461,
+        32.70918273925781,
+        32.76847839355469,
+        32.72361755371094,
+        32.968448638916016
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 2,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        64,
+        128
+      ],
+      "total_prompt_tokens": 192,
+      "serial_median_ms": 37.35676956176758,
+      "packed_sdpa_median_ms": 21.792896270751953,
+      "packed_median_ms": 16.114879608154297,
+      "serial_prompt_tokens_per_second": 5139.630708231809,
+      "packed_sdpa_prompt_tokens_per_second": 8810.210337103354,
+      "packed_prompt_tokens_per_second": 11914.454508418792,
+      "speedup": 2.3181538100268937,
+      "packed_attention_speedup": 1.3523462042946024,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        36.624542236328125,
+        46.95151901245117,
+        37.35676956176758,
+        37.841217041015625,
+        36.88275146484375
+      ],
+      "packed_sdpa_raw_ms": [
+        31.095680236816406,
+        19.872095108032227,
+        21.792896270751953,
+        21.845247268676758,
+        19.876192092895508
+      ],
+      "packed_raw_ms": [
+        16.114879608154297,
+        16.053728103637695,
+        16.190048217773438,
+        17.717344284057617,
+        15.907103538513184
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 2,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        256,
+        512
+      ],
+      "total_prompt_tokens": 768,
+      "serial_median_ms": 37.126625061035156,
+      "packed_sdpa_median_ms": 20.718048095703125,
+      "packed_median_ms": 16.45088005065918,
+      "serial_prompt_tokens_per_second": 20685.963206659075,
+      "packed_sdpa_prompt_tokens_per_second": 37069.129121255464,
+      "packed_prompt_tokens_per_second": 46684.43254312262,
+      "speedup": 2.256816957312111,
+      "packed_attention_speedup": 1.259388435871123,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        36.90470504760742,
+        37.80857467651367,
+        37.126625061035156,
+        36.93904113769531,
+        37.14031982421875
+      ],
+      "packed_sdpa_raw_ms": [
+        20.718048095703125,
+        20.713632583618164,
+        22.32159996032715,
+        20.628000259399414,
+        22.39481544494629
+      ],
+      "packed_raw_ms": [
+        16.494943618774414,
+        16.677600860595703,
+        16.325952529907227,
+        16.402080535888672,
+        16.45088005065918
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 2,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        1024,
+        2048
+      ],
+      "total_prompt_tokens": 3072,
+      "serial_median_ms": 36.462528228759766,
+      "packed_sdpa_median_ms": 25.448448181152344,
+      "packed_median_ms": 23.266464233398438,
+      "serial_prompt_tokens_per_second": 84250.87752354387,
+      "packed_sdpa_prompt_tokens_per_second": 120714.62975393477,
+      "packed_prompt_tokens_per_second": 132035.53273858517,
+      "speedup": 1.5671710090104152,
+      "packed_attention_speedup": 1.0937823609924244,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        37.644927978515625,
+        36.462528228759766,
+        36.34396743774414,
+        36.63951873779297,
+        36.238529205322266
+      ],
+      "packed_sdpa_raw_ms": [
+        25.42198371887207,
+        25.408287048339844,
+        25.448448181152344,
+        25.485824584960938,
+        25.639135360717773
+      ],
+      "packed_raw_ms": [
+        23.120447158813477,
+        23.223487854003906,
+        23.266464233398438,
+        23.881919860839844,
+        23.32931137084961
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 2,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        2048,
+        4096
+      ],
+      "total_prompt_tokens": 6144,
+      "serial_median_ms": 51.96905517578125,
+      "packed_sdpa_median_ms": 48.97062301635742,
+      "packed_median_ms": 45.71984100341797,
+      "serial_prompt_tokens_per_second": 118224.20052122176,
+      "packed_sdpa_prompt_tokens_per_second": 125462.97395374671,
+      "packed_prompt_tokens_per_second": 134383.66943447333,
+      "speedup": 1.1366849497988434,
+      "packed_attention_speedup": 1.071102216053123,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        2
+      ],
+      "packed_prefill_batch_sizes": [
+        2
+      ],
+      "serial_raw_ms": [
+        51.99728012084961,
+        51.96905517578125,
+        52.04742431640625,
+        51.84902572631836,
+        51.525726318359375
+      ],
+      "packed_sdpa_raw_ms": [
+        48.632415771484375,
+        48.816062927246094,
+        49.740447998046875,
+        49.390560150146484,
+        48.97062301635742
+      ],
+      "packed_raw_ms": [
+        46.01036834716797,
+        45.48128128051758,
+        45.86211013793945,
+        45.71984100341797,
+        45.635807037353516
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 4,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        32,
+        64,
+        96,
+        128
+      ],
+      "total_prompt_tokens": 320,
+      "serial_median_ms": 71.89730834960938,
+      "packed_sdpa_median_ms": 23.297311782836914,
+      "packed_median_ms": 15.986944198608398,
+      "serial_prompt_tokens_per_second": 4450.792489253718,
+      "packed_sdpa_prompt_tokens_per_second": 13735.490299603725,
+      "packed_prompt_tokens_per_second": 20016.333079329488,
+      "speedup": 4.497251473228245,
+      "packed_attention_speedup": 1.4572711015570352,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        68.69366455078125,
+        71.96355438232422,
+        71.61459350585938,
+        72.17948913574219,
+        71.89730834960938
+      ],
+      "packed_sdpa_raw_ms": [
+        23.32089614868164,
+        23.297311782836914,
+        23.226112365722656,
+        25.014368057250977,
+        23.249088287353516
+      ],
+      "packed_raw_ms": [
+        16.189151763916016,
+        15.87945556640625,
+        16.07334327697754,
+        15.986944198608398,
+        15.930047988891602
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 4,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        128,
+        256,
+        384,
+        512
+      ],
+      "total_prompt_tokens": 1280,
+      "serial_median_ms": 76.47625732421875,
+      "packed_sdpa_median_ms": 24.002368927001953,
+      "packed_median_ms": 16.588895797729492,
+      "serial_prompt_tokens_per_second": 16737.220737326086,
+      "packed_sdpa_prompt_tokens_per_second": 53328.069570668,
+      "packed_prompt_tokens_per_second": 77160.04823993122,
+      "speedup": 4.610087269020401,
+      "packed_attention_speedup": 1.4468937064688259,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        87.00605010986328,
+        74.72553253173828,
+        76.47625732421875,
+        77.15087890625,
+        74.78681945800781
+      ],
+      "packed_sdpa_raw_ms": [
+        25.915775299072266,
+        25.197216033935547,
+        24.002368927001953,
+        23.8319034576416,
+        23.884159088134766
+      ],
+      "packed_raw_ms": [
+        16.67750358581543,
+        16.51353645324707,
+        16.588895797729492,
+        16.58732795715332,
+        17.194623947143555
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 4,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        512,
+        1024,
+        1536,
+        2048
+      ],
+      "total_prompt_tokens": 5120,
+      "serial_median_ms": 76.3828125,
+      "packed_sdpa_median_ms": 38.9977912902832,
+      "packed_median_ms": 34.865726470947266,
+      "serial_prompt_tokens_per_second": 67030.78653983839,
+      "packed_sdpa_prompt_tokens_per_second": 131289.48667602395,
+      "packed_prompt_tokens_per_second": 146849.08413614635,
+      "speedup": 2.1907707147203106,
+      "packed_attention_speedup": 1.1185136590450535,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        77.36102294921875,
+        73.72857666015625,
+        76.3828125,
+        77.95126342773438,
+        74.41494750976562
+      ],
+      "packed_sdpa_raw_ms": [
+        38.90214538574219,
+        39.09059143066406,
+        42.61929702758789,
+        38.84646224975586,
+        38.9977912902832
+      ],
+      "packed_raw_ms": [
+        34.95600128173828,
+        34.80137634277344,
+        34.60889434814453,
+        35.00137710571289,
+        34.865726470947266
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 4,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        1024,
+        2048,
+        3072,
+        4096
+      ],
+      "total_prompt_tokens": 10240,
+      "serial_median_ms": 96.200927734375,
+      "packed_sdpa_median_ms": 78.90751647949219,
+      "packed_median_ms": 72.77446746826172,
+      "serial_prompt_tokens_per_second": 106443.87992051548,
+      "packed_sdpa_prompt_tokens_per_second": 129772.17452612822,
+      "packed_prompt_tokens_per_second": 140708.69023488014,
+      "speedup": 1.3219049356332286,
+      "packed_attention_speedup": 1.0842747356949771,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        4
+      ],
+      "packed_prefill_batch_sizes": [
+        4
+      ],
+      "serial_raw_ms": [
+        96.200927734375,
+        96.2507553100586,
+        96.39532470703125,
+        95.42444610595703,
+        95.38995361328125
+      ],
+      "packed_sdpa_raw_ms": [
+        78.6665267944336,
+        78.90751647949219,
+        78.68867492675781,
+        80.3609619140625,
+        79.08470153808594
+      ],
+      "packed_raw_ms": [
+        72.77446746826172,
+        75.22179412841797,
+        72.1173095703125,
+        73.24028778076172,
+        72.39529418945312
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 8,
+      "max_prompt_length": 128,
+      "prompt_lengths": [
+        16,
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128
+      ],
+      "total_prompt_tokens": 576,
+      "serial_median_ms": 142.6313934326172,
+      "packed_sdpa_median_ms": 29.959135055541992,
+      "packed_median_ms": 16.30067253112793,
+      "serial_prompt_tokens_per_second": 4038.3816363128885,
+      "packed_sdpa_prompt_tokens_per_second": 19226.189238512365,
+      "packed_prompt_tokens_per_second": 35335.96536585007,
+      "speedup": 8.750031212531068,
+      "packed_attention_speedup": 1.8379079144330839,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        142.45762634277344,
+        143.1381378173828,
+        142.6313934326172,
+        140.1234893798828,
+        143.86448669433594
+      ],
+      "packed_sdpa_raw_ms": [
+        30.032928466796875,
+        29.926944732666016,
+        29.919519424438477,
+        29.959135055541992,
+        41.872928619384766
+      ],
+      "packed_raw_ms": [
+        16.266719818115234,
+        16.338687896728516,
+        16.365856170654297,
+        16.30067253112793,
+        16.19651222229004
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 8,
+      "max_prompt_length": 512,
+      "prompt_lengths": [
+        64,
+        128,
+        192,
+        256,
+        320,
+        384,
+        448,
+        512
+      ],
+      "total_prompt_tokens": 2304,
+      "serial_median_ms": 143.3887939453125,
+      "packed_sdpa_median_ms": 31.880672454833984,
+      "packed_median_ms": 17.182207107543945,
+      "serial_prompt_tokens_per_second": 16068.201263194456,
+      "packed_sdpa_prompt_tokens_per_second": 72269.49190811848,
+      "packed_prompt_tokens_per_second": 134092.20279904644,
+      "speedup": 8.345190640983303,
+      "packed_attention_speedup": 1.8554468733435645,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        142.3456268310547,
+        143.85462951660156,
+        143.47567749023438,
+        143.3887939453125,
+        142.24700927734375
+      ],
+      "packed_sdpa_raw_ms": [
+        32.644222259521484,
+        31.883935928344727,
+        31.7871036529541,
+        31.880672454833984,
+        31.84828758239746
+      ],
+      "packed_raw_ms": [
+        17.213279724121094,
+        18.134368896484375,
+        17.08687973022461,
+        17.182207107543945,
+        17.09382438659668
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 8,
+      "max_prompt_length": 2048,
+      "prompt_lengths": [
+        256,
+        512,
+        768,
+        1024,
+        1280,
+        1536,
+        1792,
+        2048
+      ],
+      "total_prompt_tokens": 9216,
+      "serial_median_ms": 146.10467529296875,
+      "packed_sdpa_median_ms": 68.58019256591797,
+      "packed_median_ms": 59.33091354370117,
+      "serial_prompt_tokens_per_second": 63078.06359734963,
+      "packed_sdpa_prompt_tokens_per_second": 134382.82476593746,
+      "packed_prompt_tokens_per_second": 155332.17760437485,
+      "speedup": 2.462538777282654,
+      "packed_attention_speedup": 1.1558930828766707,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        144.95321655273438,
+        147.50994873046875,
+        158.3704376220703,
+        146.10467529296875,
+        146.02169799804688
+      ],
+      "packed_sdpa_raw_ms": [
+        68.60079956054688,
+        68.4901123046875,
+        68.6036148071289,
+        68.53663635253906,
+        68.58019256591797
+      ],
+      "packed_raw_ms": [
+        59.33091354370117,
+        58.98185729980469,
+        59.13123321533203,
+        59.661407470703125,
+        61.520511627197266
+      ]
+    },
+    {
+      "pattern": "ramp",
+      "batch_size": 8,
+      "max_prompt_length": 4096,
+      "prompt_lengths": [
+        512,
+        1024,
+        1536,
+        2048,
+        2560,
+        3072,
+        3584,
+        4096
+      ],
+      "total_prompt_tokens": 18432,
+      "serial_median_ms": 182.17459106445312,
+      "packed_sdpa_median_ms": 138.73391723632812,
+      "packed_median_ms": 125.04364776611328,
+      "serial_prompt_tokens_per_second": 101177.66639299759,
+      "packed_sdpa_prompt_tokens_per_second": 132858.64312907538,
+      "packed_prompt_tokens_per_second": 147404.52897276287,
+      "speedup": 1.456888009258974,
+      "packed_attention_speedup": 1.1094839259313811,
+      "tokens_match": true,
+      "admission_shape_match": true,
+      "serial_prefill_batch_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "packed_sdpa_prefill_batch_sizes": [
+        8
+      ],
+      "packed_prefill_batch_sizes": [
+        8
+      ],
+      "serial_raw_ms": [
+        181.4986572265625,
+        181.47232055664062,
+        183.01324462890625,
+        182.17459106445312,
+        182.94332885742188
+      ],
+      "packed_sdpa_raw_ms": [
+        139.9008026123047,
+        138.32131958007812,
+        138.73391723632812,
+        139.0076446533203,
+        137.9805145263672
+      ],
+      "packed_raw_ms": [
+        125.04364776611328,
+        124.96076965332031,
+        124.9692153930664,
+        125.60304260253906,
+        126.1447982788086
+      ]
+    }
+  ]
+}
