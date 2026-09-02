@@ -1,0 +1,6 @@
+# Reproducible external-reference environment for the H100 scorecard.
+# Install with uv's CUDA 12.8 PyTorch index; see benchmarks/README.md.
+vllm==0.10.2
+# vLLM 0.10.2 only declared a lower bound, so an unconstrained install can select
+# Transformers 5 and fail while initializing Qwen2Tokenizer.
+transformers==4.55.2
