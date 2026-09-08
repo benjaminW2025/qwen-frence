@@ -47,6 +47,14 @@ def build_parser():
     parser.add_argument("--context-lengths", default="512,2048,4096,8192,16384")
     parser.add_argument("--k-splits", default="1,2,4,8,16,auto",
                         help="Split factors to test. 'auto' uses compute_split_k.")
+    parser.add_argument(
+        "--auto-k-neighbor-factors",
+        default="",
+        help=(
+            "comma-separated positive factors that add per-shape K candidates "
+            "around auto-K (for example: 0.5,0.75,1.25,1.5)"
+        ),
+    )
     parser.add_argument("--page-size", type=int, default=16)
     parser.add_argument("--dtype", choices=("float16", "bfloat16"), default="float16")
     parser.add_argument("--device", default="cuda")
@@ -68,6 +76,52 @@ def parse_k_splits(value: str) -> list:
         else:
             result.append(int(p))
     return result
+
+
+def parse_auto_k_neighbor_factors(value: str) -> list[float]:
+    """Parse optional positive multipliers used to bracket a shape's auto-K."""
+    if not value.strip():
+        return []
+    factors = [float(part.strip()) for part in value.split(",") if part.strip()]
+    if not factors or any(factor <= 0 for factor in factors):
+        raise ValueError("auto-K neighbor factors must be positive")
+    return factors
+
+
+def _rounded_positive(value: float) -> int:
+    return max(1, int(value + 0.5))
+
+
+def materialize_k_candidates(k_values, auto_k, num_kv_blocks, neighbor_factors):
+    """Return labeled, executable K values for one benchmark shape.
+
+    The explicitly requested values and the auto-policy row are retained even when
+    they use the same K. Neighbor rows only add new K values, avoiding redundant
+    measurements while still bracketing the architecture-specific auto choice.
+    """
+    candidates = []
+    present_actual = set()
+    for requested in k_values:
+        actual = auto_k if requested == "auto" else requested
+        label = f"auto({auto_k})" if requested == "auto" else str(requested)
+        candidates.append((label, actual, requested == "auto"))
+        present_actual.add(actual)
+
+    for factor in neighbor_factors:
+        actual = min(_rounded_positive(auto_k * factor), num_kv_blocks)
+        if actual in present_actual:
+            continue
+        candidates.append((f"auto*{factor:g}({actual})", actual, False))
+        present_actual.add(actual)
+
+    return candidates
+
+
+def _attention_operation(production_attention, splitk_attention, tensors, k_actual):
+    """Select direct production attention for K=1 without wrapper overhead."""
+    if k_actual == 1:
+        return lambda: production_attention(*tensors)
+    return lambda: splitk_attention(*tensors, k_splits=k_actual)
 
 
 def _make_test_inputs(torch, batch_size, context_length, *, page_size, dtype, device, seed):
@@ -94,7 +148,7 @@ def _make_test_inputs(torch, batch_size, context_length, *, page_size, dtype, de
 
 
 def _correctness_preflight(torch, splitk_attention, production_attention, *,
-                           page_size, dtype, device, k_values, seed):
+                           page_size, dtype, device, k_actuals, seed):
     """Verify Split-K correctness on edge cases before benchmarking."""
     # Test various edge cases
     test_cases = [
@@ -112,11 +166,20 @@ def _correctness_preflight(torch, splitk_attention, production_attention, *,
             torch, batch, ctx, page_size=page_size, dtype=dtype, device=device, seed=seed
         )
         reference = production_attention(q, k_pool, v_pool, block_table, seq_lens)
+        num_kv_blocks = (ctx + page_size - 1) // page_size
+        candidates = [
+            (str(k_actual), k_actual, False)
+            for k_actual in sorted(k_actuals)
+            if k_actual <= num_kv_blocks
+        ]
 
-        for k in k_values:
+        for label, k_actual, _ in candidates:
             try:
-                k_arg = None if k == "auto" else k
-                actual = splitk_attention(q, k_pool, v_pool, block_table, seq_lens, k_splits=k_arg)
+                operation = _attention_operation(
+                    production_attention, splitk_attention,
+                    (q, k_pool, v_pool, block_table, seq_lens), k_actual,
+                )
+                actual = operation()
                 torch.cuda.synchronize()
 
                 max_error = (actual.float() - reference.float()).abs().max().item()
@@ -125,7 +188,7 @@ def _correctness_preflight(torch, splitk_attention, production_attention, *,
                     raise AssertionError(f"max error {max_error:.6f} exceeds threshold")
 
                 status, error = "ok", None
-                available.add(k)
+                available.add(k_actual)
             except Exception as exc:
                 torch.cuda.synchronize()
                 max_error = None
@@ -134,15 +197,15 @@ def _correctness_preflight(torch, splitk_attention, production_attention, *,
             records.append({
                 "batch_size": batch,
                 "context_length": ctx,
-                "k_splits": k,
+                "k_splits": label,
+                "k_actual": k_actual,
                 "max_abs_error": max_error,
                 "status": status,
                 "error": error,
             })
 
-            k_str = "auto" if k == "auto" else str(k)
             suffix = f" max_err={max_error:.6f}" if max_error is not None else f" {error}"
-            print(f"  preflight B={batch} C={ctx} K={k_str}: {status.upper()}{suffix}")
+            print(f"  preflight B={batch} C={ctx} K={label}: {status.upper()}{suffix}")
 
         del q, k_pool, v_pool, block_table, seq_lens, reference
         torch.cuda.empty_cache()
@@ -158,6 +221,7 @@ def main():
     batches = parse_int_list(args.batch_sizes)
     contexts = parse_int_list(args.context_lengths)
     k_values = parse_k_splits(args.k_splits)
+    neighbor_factors = parse_auto_k_neighbor_factors(args.auto_k_neighbor_factors)
 
     import torch
     from paged_decode_splitk import paged_decode_attention_splitk, compute_split_k, get_num_sms
@@ -176,10 +240,24 @@ def main():
     print()
 
     print("Correctness preflight...")
+    preflight_k_actuals = {
+        k_actual
+        for batch in batches
+        for context in contexts
+        for _, k_actual, _ in materialize_k_candidates(
+            k_values,
+            compute_split_k(
+                batch, query_heads,
+                (context + args.page_size - 1) // args.page_size,
+            ),
+            (context + args.page_size - 1) // args.page_size,
+            neighbor_factors,
+        )
+    }
     preflight, available_k = _correctness_preflight(
         torch, paged_decode_attention_splitk, paged_decode_attention,
         page_size=args.page_size, dtype=dtype, device=args.device,
-        k_values=k_values, seed=args.seed,
+        k_actuals=preflight_k_actuals, seed=args.seed,
     )
     print()
 
@@ -224,18 +302,20 @@ def main():
             print(f"\nB={batch} C={context} blocks={num_kv_blocks} "
                   f"auto_k={auto_k} prod={production_ms:.3f}ms ({production_gbps:.1f} GB/s)")
 
-            for k in k_values:
-                if k not in available_k:
-                    print(f"  K={k}: SKIPPED (preflight failed)")
+            candidates = materialize_k_candidates(
+                k_values, auto_k, num_kv_blocks, neighbor_factors,
+            )
+            for label, k_actual, _ in candidates:
+                if k_actual not in available_k:
+                    print(f"  K={label}: SKIPPED (preflight failed)")
                     continue
 
-                k_actual = auto_k if k == "auto" else k
                 splitk_programs = production_programs * k_actual
 
                 base = {
                     "batch_size": batch,
                     "context_length": context,
-                    "k_splits": k if k != "auto" else f"auto({auto_k})",
+                    "k_splits": label,
                     "k_actual": k_actual,
                     "num_kv_blocks": num_kv_blocks,
                     "production_programs": production_programs,
@@ -246,17 +326,21 @@ def main():
                 }
 
                 try:
-                    k_arg = None if k == "auto" else k
-                    operation = lambda ka=k_arg: paged_decode_attention_splitk(
-                        q, k_pool, v_pool, block_table, seq_lens, k_splits=ka
-                    )
+                    if k_actual == 1:
+                        raw = production_raw
+                        median_ms = production_ms
+                        max_error = 0.0
+                    else:
+                        operation = _attention_operation(
+                            paged_decode_attention, paged_decode_attention_splitk,
+                            (q, k_pool, v_pool, block_table, seq_lens), k_actual,
+                        )
+                        actual = operation()
+                        torch.cuda.synchronize()
+                        max_error = (actual.float() - reference.float()).abs().max().item()
+                        raw = measure(operation)
+                        median_ms = statistics.median(raw)
 
-                    actual = operation()
-                    torch.cuda.synchronize()
-                    max_error = (actual.float() - reference.float()).abs().max().item()
-
-                    raw = measure(operation)
-                    median_ms = statistics.median(raw)
                     speedup = production_ms / median_ms
                     splitk_gbps = kv_bytes / (median_ms * 1e-3) / 1e9
 
@@ -270,9 +354,8 @@ def main():
                         "error": None,
                     }
 
-                    k_str = f"auto({auto_k})" if k == "auto" else str(k)
                     marker = "**" if speedup > 1.1 else ""
-                    print(f"  K={k_str}: {median_ms:.3f}ms {speedup:.2f}x "
+                    print(f"  K={label}: {median_ms:.3f}ms {speedup:.2f}x "
                           f"({splitk_gbps:.1f} GB/s) {marker}")
 
                 except Exception as exc:
@@ -286,8 +369,7 @@ def main():
                         "status": "failed",
                         "error": f"{type(exc).__name__}: {exc}",
                     }
-                    k_str = f"auto({auto_k})" if k == "auto" else str(k)
-                    print(f"  K={k_str}: FAILED {row['error']}")
+                    print(f"  K={label}: FAILED {row['error']}")
 
                 rows.append(row)
 
@@ -342,6 +424,7 @@ def main():
             "batch_sizes": batches,
             "context_lengths": contexts,
             "k_splits": k_values,
+            "auto_k_neighbor_factors": neighbor_factors,
             "page_size": args.page_size,
             "dtype": args.dtype,
             "warmups": args.warmups,

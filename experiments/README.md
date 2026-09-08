@@ -60,6 +60,29 @@ Run one frontier while iterating:
 python3 experiments/run_dispatch_policy_experiment.py --sweeps decode
 ```
 
+## Split-K decode dispatch sweep
+
+The Split-K decode sweep measures the production control directly when `K=1`, so
+that the no-split fallback carries no wrapper/import overhead. It can also add
+per-shape candidates around the device's computed auto-K, which is required when
+profiling a new GPU architecture.
+
+For an H100 dispatch fit, use the dense boundary grid below. The fixed K values
+cover small splits while the neighbor factors bracket the H100-specific auto-K:
+
+```bash
+python3 experiments/decode/benchmark_splitk_decode.py \
+  --batch-sizes 1,2,4,8,16,32,64 \
+  --context-lengths 512,1024,1536,2048,3072,4096,8192,16384 \
+  --k-splits 1,2,4,8,16,auto \
+  --auto-k-neighbor-factors 0.5,0.75,1.25,1.5 \
+  --warmups 10 \
+  --repetitions 100
+```
+
+Do not promote the fitted threshold until its selected actions are compared with
+the production control on a held-out H100 shape set.
+
 The fitter can also analyze existing result files without rerunning CUDA work:
 
 ```bash
