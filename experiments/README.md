@@ -5,6 +5,74 @@ CPU control-plane tests, and the measurements collected from them. The stable
 cross-backend benchmark harness remains in `benchmarks/`; numerical and state-machine
 gates remain in `correctness/`.
 
+## Grouped decode → split-K → pipelining
+
+Run the numerical regression suite on a CUDA machine with the repository's
+PyTorch/Triton dependencies, then run the matched ablation:
+
+```bash
+python3 -m unittest discover -s experiments/tests -p 'test_grouped_splitk_pipelined.py' -v
+python3 experiments/decode/benchmark_grouped_splitk_pipelined.py --dump-ir
+```
+
+The GPU tests skip explicitly when CUDA or Triton is unavailable. The benchmark
+always runs its own dense FP32 reference preflight, covering ragged sequences,
+shuffled page IDs, NaN padding, separate K/V strides, empty partitions, and large
+unnormalized accumulators. It also checks every measured shape against the
+preflight-validated production kernel and aborts on a failure.
+
+| Configuration | Query heads per KV-head program | Split-K | Loop stages |
+| --- | --- | --- | --- |
+| A | 1 | 1 | 1 |
+| B | `--heads-per-program` (default 6) | 1 | 1 |
+| C | Same as B | Auto or `--split-k` | 1 |
+| D | Same as B | Same as C | `--pipeline-stages` (default 2) |
+
+All four use the same partial-kernel source and warp count. K=1 normalizes in
+the attention kernel; K>1 writes FP32 partials and launches the shared reducer.
+The output always has the query dtype; a sequence of length zero returns zero.
+Head dimensions and page sizes must be powers of two. Page IDs and sequence
+lengths must be valid for the supplied pools/table. Only metadata is validated
+in the wrapper, so an explicit `split_k` call performs no host read of GPU data.
+Automatic K selection reads the maximum length and should happen before graph
+capture or a timed serving loop.
+
+Timing uses repeated CUDA graph execution on fixed inputs, includes reduction,
+and excludes host dispatch, allocation, and K selection. This is a warm-cache
+device microbenchmark. Use end-to-end measurements separately before changing
+serving dispatch. JSON includes raw latency samples, randomized configuration
+order per shape, numerical errors, device/software versions, and per-kernel
+register, spill, and shared-memory usage. `--dump-ir` also writes TTGIR and PTX
+beside the CSV/JSON results.
+
+For a controlled K/stage sweep at a representative low-batch shape:
+
+```bash
+for k in 1 2 4 8 16 32; do
+  for stages in 2 3 4; do
+    python3 experiments/decode/benchmark_grouped_splitk_pipelined.py \
+      --batch-sizes 1,8 --context-lengths 8192 \
+      --split-k "$k" --pipeline-stages "$stages" --dump-ir
+  done
+done
+```
+
+Interpret A/B as query-head sharing, B/C as the net benefit of more programs
+including reduction overhead, and C/D as the pipeline-stage effect at fixed K.
+The auto-K heuristic targets **launched programs per SM**, not measured resident
+occupancy. Inspect active program counts and pages per split: aggressive K can
+leave too few page iterations to benefit from a pipeline. Check achieved SM
+utilization, memory stalls/traffic, and spills with a GPU profiler before
+claiming saturation or memory-latency hiding. Head sharing reduces repeated
+logical loads; an equivalent reduction in DRAM traffic is not guaranteed by
+the source because caches and compiler layouts also matter.
+
+Pipelining uses loop-level `tl.range(..., num_stages=...)`, which
+[Triton 3.2 documents](https://github.com/triton-lang/triton/blob/v3.2.0/python/triton/language/core.py)
+as targeting loads beyond those feeding `tl.dot`. Stage count is a compiler
+request. Compare C/D generated code and profiler measurements to establish
+whether it produced useful overlap on the target GPU.
+
 ## One-shot H100 intervention suite
 
 Run every remaining isolated hypothesis plus the updated launch-bound profile with one
