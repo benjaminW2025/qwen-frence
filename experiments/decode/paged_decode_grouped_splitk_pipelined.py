@@ -1,11 +1,12 @@
 """Grouped + Split-K + Pipelined decode attention experiment.
 
 Isolates three optimizations for ablation study:
-1. Grouping (hpp): Share KV reads across GQA heads (6x reduction at hpp=6)
-2. Split-K: Parallelize across KV blocks to saturate SMs
-3. Pipelining: Async loads to hide memory latency within each program
+1. Grouping (hpp): Share KV loads across GQA query heads
+2. Split-K: Increase the number of independent programs across KV pages
+3. Pipelining: Request software pipelining of page loads with tl.range
 
-Each can be toggled independently to measure incremental benefit.
+Each can be toggled independently to measure incremental benefit. Actual load
+overlap and SM utilization must be verified on the target GPU.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ import triton
 import triton.language as tl
 
 
-def get_num_sms() -> int:
+def get_num_sms(device=None) -> int:
     """Query SM count from current CUDA device."""
-    return torch.cuda.get_device_properties(torch.cuda.current_device()).multi_processor_count
+    return torch.cuda.get_device_properties(
+        torch.cuda.current_device() if device is None else device
+    ).multi_processor_count
 
 
 def compute_split_k(
@@ -26,9 +29,15 @@ def compute_split_k(
     head_tiles: int,
     num_kv_blocks: int,
     target_occupancy: int = 4,
+    *,
+    num_sms: int | None = None,
 ) -> int:
-    """Compute K to reach target_occupancy programs per SM."""
-    num_sms = get_num_sms()
+    """Target launched programs per SM, not measured resident occupancy."""
+    if min(batch_size, kv_heads, head_tiles, target_occupancy) < 1 or num_kv_blocks < 0:
+        raise ValueError("launch dimensions/target must be positive and blocks non-negative")
+    num_sms = get_num_sms() if num_sms is None else num_sms
+    if num_sms < 1:
+        raise ValueError("num_sms must be positive")
     current_programs = batch_size * kv_heads * head_tiles
     target_programs = num_sms * target_occupancy
 
@@ -43,15 +52,17 @@ def compute_split_k(
 
 
 # =============================================================================
-# NON-PIPELINED KERNEL (sequential loads)
+# SHARED KERNEL (one-stage or software-pipelined page loop)
 # =============================================================================
 
 @triton.jit
-def _grouped_splitk_sequential_kernel(
+def _grouped_splitk_kernel(
     q_ptr, k_pool_ptr, v_pool_ptr, block_table_ptr, seq_lens_ptr,
     partial_out_ptr, partial_max_ptr, partial_sum_ptr,
     stride_qb, stride_qh, stride_qd,
     stride_pblk, stride_pt, stride_pkv, stride_pd,
+    stride_vblk, stride_vt, stride_vkv, stride_vd,
+    stride_sl,
     stride_btb, stride_btm,
     stride_pob, stride_pok, stride_poh, stride_pod,
     stride_pmb, stride_pmk, stride_pmh,
@@ -62,8 +73,9 @@ def _grouped_splitk_sequential_kernel(
     PAGE_SIZE: tl.constexpr,
     D_HEAD: tl.constexpr,
     SPLIT_K: tl.constexpr,
+    PIPELINE_STAGES: tl.constexpr,
 ):
-    """Non-pipelined: load -> compute -> load -> compute (sequential)."""
+    """Identical arithmetic/layout across ablations; only loop stages change."""
     sequence = tl.program_id(0)
     kv_head = tl.program_id(1)
     head_tile = tl.program_id(2) % tl.cdiv(GROUP, HEADS_PER_PROGRAM)
@@ -85,12 +97,12 @@ def _grouped_splitk_sequential_kernel(
         other=0.0,
     )
 
-    seq_len = tl.load(seq_lens_ptr + sequence)
+    seq_len = tl.load(seq_lens_ptr + sequence * stride_sl)
     total_pages = tl.cdiv(seq_len, PAGE_SIZE)
 
-    pages_per_chunk = tl.cdiv(total_pages, SPLIT_K)
-    start_page = k_idx * pages_per_chunk
-    end_page = tl.minimum(start_page + pages_per_chunk, total_pages)
+    # Balanced contiguous partitions: no empty programs when SPLIT_K <= pages.
+    start_page = (k_idx * total_pages) // SPLIT_K
+    end_page = ((k_idx + 1) * total_pages) // SPLIT_K
 
     running_max = tl.full([BLOCK_H], float("-inf"), tl.float32)
     running_sum = tl.zeros([BLOCK_H], tl.float32)
@@ -98,8 +110,11 @@ def _grouped_splitk_sequential_kernel(
 
     pool_offsets = token_offsets[:, None] * stride_pt + dim_offsets[None, :] * stride_pd
 
-    # Sequential: load then compute, no overlap
-    for page_index in range(start_page, end_page):
+    value_offsets = token_offsets[:, None] * stride_vt + dim_offsets[None, :] * stride_vd
+
+    # Loop-level stages also target loads without tl.dot (Triton 3.2+).
+    # One stage disables software pipelining for the sequential control.
+    for page_index in tl.range(start_page, end_page, num_stages=PIPELINE_STAGES):
         page_id = tl.load(
             block_table_ptr + sequence * stride_btb + page_index * stride_btm
         )
@@ -107,14 +122,13 @@ def _grouped_splitk_sequential_kernel(
         token_mask = positions < seq_len
         base = page_id * stride_pblk + kv_head * stride_pkv
 
-        # Load K, V (blocking)
         keys = tl.load(
             k_pool_ptr + base + pool_offsets,
             mask=token_mask[:, None],
             other=0.0,
         )
         values = tl.load(
-            v_pool_ptr + base + pool_offsets,
+            v_pool_ptr + page_id * stride_vblk + kv_head * stride_vkv + value_offsets,
             mask=token_mask[:, None],
             other=0.0,
         )
@@ -142,7 +156,9 @@ def _grouped_splitk_sequential_kernel(
         running_sum = running_sum * correction + tl.sum(probabilities, axis=1)
         running_max = new_max
 
-    running_max = tl.where(running_sum > 0, running_max, 0.0)
+    if SPLIT_K == 1:
+        # Normalize while the accumulator is still FP32, including empty rows.
+        accumulator = accumulator / tl.where(running_sum > 0, running_sum, 1.0)[:, None]
 
     tl.store(
         partial_out_ptr
@@ -153,178 +169,23 @@ def _grouped_splitk_sequential_kernel(
         accumulator.to(partial_out_ptr.dtype.element_ty),
         mask=head_mask[:, None],
     )
-    tl.store(
-        partial_max_ptr
-        + sequence * stride_pmb
-        + k_idx * stride_pmk
-        + query_heads * stride_pmh,
-        running_max,
-        mask=head_mask,
-    )
-    tl.store(
-        partial_sum_ptr
-        + sequence * stride_pmb
-        + k_idx * stride_pmk
-        + query_heads * stride_pmh,
-        running_sum,
-        mask=head_mask,
-    )
-
-
-# =============================================================================
-# PIPELINED KERNEL (overlapped loads)
-# =============================================================================
-
-@triton.jit
-def _grouped_splitk_pipelined_kernel(
-    q_ptr, k_pool_ptr, v_pool_ptr, block_table_ptr, seq_lens_ptr,
-    partial_out_ptr, partial_max_ptr, partial_sum_ptr,
-    stride_qb, stride_qh, stride_qd,
-    stride_pblk, stride_pt, stride_pkv, stride_pd,
-    stride_btb, stride_btm,
-    stride_pob, stride_pok, stride_poh, stride_pod,
-    stride_pmb, stride_pmk, stride_pmh,
-    scale,
-    GROUP: tl.constexpr,
-    HEADS_PER_PROGRAM: tl.constexpr,
-    BLOCK_H: tl.constexpr,
-    PAGE_SIZE: tl.constexpr,
-    D_HEAD: tl.constexpr,
-    SPLIT_K: tl.constexpr,
-):
-    """Pipelined: prefetch next page while computing current (double-buffered)."""
-    sequence = tl.program_id(0)
-    kv_head = tl.program_id(1)
-    head_tile = tl.program_id(2) % tl.cdiv(GROUP, HEADS_PER_PROGRAM)
-    k_idx = tl.program_id(2) // tl.cdiv(GROUP, HEADS_PER_PROGRAM)
-
-    head_offsets = tl.arange(0, BLOCK_H)
-    dim_offsets = tl.arange(0, D_HEAD)
-    token_offsets = tl.arange(0, PAGE_SIZE)
-    heads_in_group = head_tile * HEADS_PER_PROGRAM + head_offsets
-    head_mask = (head_offsets < HEADS_PER_PROGRAM) & (heads_in_group < GROUP)
-    query_heads = kv_head * GROUP + heads_in_group
-
-    q = tl.load(
-        q_ptr
-        + sequence * stride_qb
-        + query_heads[:, None] * stride_qh
-        + dim_offsets[None, :] * stride_qd,
-        mask=head_mask[:, None],
-        other=0.0,
-    )
-
-    seq_len = tl.load(seq_lens_ptr + sequence)
-    total_pages = tl.cdiv(seq_len, PAGE_SIZE)
-
-    pages_per_chunk = tl.cdiv(total_pages, SPLIT_K)
-    start_page = k_idx * pages_per_chunk
-    end_page = tl.minimum(start_page + pages_per_chunk, total_pages)
-
-    running_max = tl.full([BLOCK_H], float("-inf"), tl.float32)
-    running_sum = tl.zeros([BLOCK_H], tl.float32)
-    accumulator = tl.zeros([BLOCK_H, D_HEAD], tl.float32)
-
-    pool_offsets = token_offsets[:, None] * stride_pt + dim_offsets[None, :] * stride_pd
-
-    # Prefetch first page
-    if start_page < end_page:
-        page_id_curr = tl.load(
-            block_table_ptr + sequence * stride_btb + start_page * stride_btm
+    if SPLIT_K > 1:
+        tl.store(
+            partial_max_ptr
+            + sequence * stride_pmb
+            + k_idx * stride_pmk
+            + query_heads * stride_pmh,
+            running_max,
+            mask=head_mask,
         )
-        positions_curr = start_page * PAGE_SIZE + token_offsets
-        token_mask_curr = positions_curr < seq_len
-        base_curr = page_id_curr * stride_pblk + kv_head * stride_pkv
-
-        keys_curr = tl.load(
-            k_pool_ptr + base_curr + pool_offsets,
-            mask=token_mask_curr[:, None],
-            other=0.0,
+        tl.store(
+            partial_sum_ptr
+            + sequence * stride_pmb
+            + k_idx * stride_pmk
+            + query_heads * stride_pmh,
+            running_sum,
+            mask=head_mask,
         )
-        values_curr = tl.load(
-            v_pool_ptr + base_curr + pool_offsets,
-            mask=token_mask_curr[:, None],
-            other=0.0,
-        )
-
-    for page_index in range(start_page, end_page):
-        # Use already-loaded data
-        keys = keys_curr
-        values = values_curr
-        positions = page_index * PAGE_SIZE + token_offsets
-        token_mask = positions < seq_len
-
-        # Prefetch NEXT page while we compute on current
-        next_page = page_index + 1
-        if next_page < end_page:
-            page_id_next = tl.load(
-                block_table_ptr + sequence * stride_btb + next_page * stride_btm
-            )
-            positions_next = next_page * PAGE_SIZE + token_offsets
-            token_mask_next = positions_next < seq_len
-            base_next = page_id_next * stride_pblk + kv_head * stride_pkv
-
-            keys_curr = tl.load(
-                k_pool_ptr + base_next + pool_offsets,
-                mask=token_mask_next[:, None],
-                other=0.0,
-            )
-            values_curr = tl.load(
-                v_pool_ptr + base_next + pool_offsets,
-                mask=token_mask_next[:, None],
-                other=0.0,
-            )
-
-        # Compute attention on current page
-        scores = tl.sum(
-            q[:, None, :].to(tl.float32) * keys[None, :, :].to(tl.float32),
-            axis=2,
-        ) * scale
-
-        score_mask = head_mask[:, None] & token_mask[None, :]
-        scores = tl.where(score_mask, scores, float("-inf"))
-        scores = tl.where(head_mask[:, None], scores, 0.0)
-
-        page_max = tl.max(scores, axis=1)
-        new_max = tl.maximum(running_max, page_max)
-        correction = tl.exp(running_max - new_max)
-        probabilities = tl.exp(scores - new_max[:, None])
-        probabilities = tl.where(score_mask, probabilities, 0.0)
-
-        accumulator = (
-            accumulator * correction[:, None]
-            + tl.sum(probabilities[:, :, None] * values[None, :, :].to(tl.float32), axis=1)
-        )
-        running_sum = running_sum * correction + tl.sum(probabilities, axis=1)
-        running_max = new_max
-
-    running_max = tl.where(running_sum > 0, running_max, 0.0)
-
-    tl.store(
-        partial_out_ptr
-        + sequence * stride_pob
-        + k_idx * stride_pok
-        + query_heads[:, None] * stride_poh
-        + dim_offsets[None, :] * stride_pod,
-        accumulator.to(partial_out_ptr.dtype.element_ty),
-        mask=head_mask[:, None],
-    )
-    tl.store(
-        partial_max_ptr
-        + sequence * stride_pmb
-        + k_idx * stride_pmk
-        + query_heads * stride_pmh,
-        running_max,
-        mask=head_mask,
-    )
-    tl.store(
-        partial_sum_ptr
-        + sequence * stride_pmb
-        + k_idx * stride_pmk
-        + query_heads * stride_pmh,
-        running_sum,
-        mask=head_mask,
-    )
 
 
 # =============================================================================
@@ -375,15 +236,17 @@ def _splitk_reduce_kernel(
             + dim_offsets * stride_pod,
         ).to(tl.float32)
 
-        new_max = tl.maximum(global_max, partial_max)
-        alpha_global = tl.exp(global_max - new_max)
-        alpha_partial = tl.exp(partial_max - new_max)
+        # Empty partitions must not participate in the maximum or rescaling.
+        # This also handles an empty first partition when pages < SPLIT_K.
+        if partial_sum > 0:
+            new_max = tl.maximum(global_max, partial_max)
+            alpha_global = tl.where(global_sum > 0, tl.exp(global_max - new_max), 0.0)
+            alpha_partial = tl.exp(partial_max - new_max)
+            accumulator = accumulator * alpha_global + partial_out * alpha_partial
+            global_sum = global_sum * alpha_global + partial_sum * alpha_partial
+            global_max = new_max
 
-        accumulator = accumulator * alpha_global + partial_out * alpha_partial
-        global_sum = global_sum * alpha_global + partial_sum * alpha_partial
-        global_max = new_max
-
-    output = accumulator / global_sum
+    output = accumulator / tl.where(global_sum > 0, global_sum, 1.0)
     tl.store(
         out_ptr
         + sequence * stride_ob
@@ -411,6 +274,7 @@ def grouped_splitk_attention(
     scale: float | None = None,
     num_warps: int = 4,
     num_stages: int = 2,
+    diagnostics: dict | None = None,
 ) -> torch.Tensor:
     """Configurable decode attention with isolated optimizations.
 
@@ -419,18 +283,52 @@ def grouped_splitk_attention(
         k_pool: Key pool [num_pages, page_size, kv_heads, head_dim]
         v_pool: Value pool [num_pages, page_size, kv_heads, head_dim]
         block_table: Page table [batch, max_pages]
-        seq_lens: Sequence lengths [batch]
+        seq_lens: Sequence lengths [batch]; zero-length rows return zeros
         heads_per_program: Query heads per program (1=no grouping, 6=full)
         split_k: Manual K value, or None for auto (set to 1 to disable)
         target_occupancy: Programs per SM when auto-computing K
-        pipelined: Whether to use double-buffered loads
+        pipelined: Request loop software pipelining (otherwise one stage)
         scale: Attention scale (default: 1/sqrt(head_dim))
         num_warps: Warps per program
-        num_stages: Pipeline stages
+        num_stages: Loop pipeline stages when pipelined=True
+        diagnostics: Optional destination for compiled kernels; use outside timing
 
     Returns:
         Output tensor [batch, query_heads, head_dim]
     """
+    # Metadata-only validation keeps explicit split_k calls CUDA-graph safe.
+    # Caller must provide valid page IDs and 0 <= lengths <= page-table capacity.
+    if q.ndim != 3 or any(size < 1 for size in q.shape):
+        raise ValueError("q must have non-empty shape [batch, query_heads, head_dim]")
+    if k_pool.ndim != 4 or k_pool.shape != v_pool.shape:
+        raise ValueError("K/V pools must have matching rank-four shapes")
+    if k_pool.shape[2] < 1 or k_pool.shape[-1] != q.shape[-1]:
+        raise ValueError("KV heads must be positive and head dimensions must match")
+    if q.shape[1] % k_pool.shape[2]:
+        raise ValueError("query heads must be divisible by KV heads")
+    if block_table.ndim != 2 or seq_lens.ndim != 1:
+        raise ValueError("block table and sequence lengths must be rank two and one")
+    if block_table.shape[0] != q.shape[0] or seq_lens.numel() != q.shape[0]:
+        raise ValueError("batch dimensions must match")
+    for size in (q.shape[-1], k_pool.shape[1]):
+        if size < 1 or size & (size - 1):
+            raise ValueError("head dimension and page size must be powers of two")
+    tensors = (q, k_pool, v_pool, block_table, seq_lens)
+    if not all(t.is_cuda and t.device == q.device for t in tensors):
+        raise ValueError("all tensors must be on the same CUDA device")
+    if q.dtype not in (torch.float16, torch.bfloat16, torch.float32):
+        raise ValueError("Q/K/V must use float16, bfloat16, or float32")
+    if k_pool.dtype != q.dtype or v_pool.dtype != q.dtype:
+        raise ValueError("Q/K/V dtypes must match")
+    if any(t.dtype not in (torch.int32, torch.int64) for t in (block_table, seq_lens)):
+        raise ValueError("page table and lengths must use integer tensors")
+    if split_k is not None and (not isinstance(split_k, int) or split_k < 1):
+        raise ValueError("split_k must be a positive integer")
+    if num_warps not in (1, 2, 4, 8) or not isinstance(num_stages, int) or num_stages < 1:
+        raise ValueError("num_warps must be 1, 2, 4, or 8 and num_stages a positive integer")
+    if not isinstance(target_occupancy, int) or target_occupancy < 1:
+        raise ValueError("target_occupancy must be a positive integer")
+
     batch_size, query_heads, head_dim = q.shape
     page_size = k_pool.shape[1]
     kv_heads = k_pool.shape[2]
@@ -440,25 +338,22 @@ def grouped_splitk_attention(
         raise ValueError("heads_per_program must divide GROUP evenly")
 
     head_tiles = (group + heads_per_program - 1) // heads_per_program
-    max_context = seq_lens.max().item()
-    num_kv_blocks = (max_context + page_size - 1) // page_size
-
     # Auto-compute split_k if not provided
     if split_k is None:
+        max_context = int(seq_lens.max().item())
+        num_kv_blocks = triton.cdiv(max_context, page_size)
         split_k = compute_split_k(
-            batch_size, kv_heads, head_tiles, num_kv_blocks, target_occupancy
+            batch_size, kv_heads, head_tiles, num_kv_blocks, target_occupancy,
+            num_sms=get_num_sms(q.device),
         )
 
     if scale is None:
         scale = head_dim ** -0.5
 
-    # Select kernel
-    kernel = _grouped_splitk_pipelined_kernel if pipelined else _grouped_splitk_sequential_kernel
-
     # Allocate partial results
     partial_out = torch.empty(
         (batch_size, split_k, query_heads, head_dim),
-        dtype=q.dtype, device=q.device
+        dtype=q.dtype if split_k == 1 else torch.float32, device=q.device
     )
     partial_max = torch.empty(
         (batch_size, split_k, query_heads),
@@ -470,11 +365,13 @@ def grouped_splitk_attention(
     block_h = triton.next_power_of_2(heads_per_program)
     grid_partial = (batch_size, kv_heads, head_tiles * split_k)
 
-    kernel[grid_partial](
+    partial_kernel = _grouped_splitk_kernel[grid_partial](
         q, k_pool, v_pool, block_table, seq_lens,
         partial_out, partial_max, partial_sum,
         q.stride(0), q.stride(1), q.stride(2),
         k_pool.stride(0), k_pool.stride(1), k_pool.stride(2), k_pool.stride(3),
+        v_pool.stride(0), v_pool.stride(1), v_pool.stride(2), v_pool.stride(3),
+        seq_lens.stride(0),
         block_table.stride(0), block_table.stride(1),
         partial_out.stride(0), partial_out.stride(1), partial_out.stride(2), partial_out.stride(3),
         partial_max.stride(0), partial_max.stride(1), partial_max.stride(2),
@@ -485,21 +382,23 @@ def grouped_splitk_attention(
         PAGE_SIZE=page_size,
         D_HEAD=head_dim,
         SPLIT_K=split_k,
+        PIPELINE_STAGES=num_stages if pipelined else 1,
         num_warps=num_warps,
-        num_stages=num_stages,
+        num_stages=1,
     )
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics["partial"] = partial_kernel
 
     # For K=1, can skip reduce kernel
     if split_k == 1:
-        output = partial_out.squeeze(1)
-        output = output / partial_sum.squeeze(1).unsqueeze(-1)
-        return output
+        return partial_out.squeeze(1)
 
     # Launch reduce kernel
     output = torch.empty_like(q)
     grid_reduce = (batch_size, query_heads)
 
-    _splitk_reduce_kernel[grid_reduce](
+    reduce_kernel = _splitk_reduce_kernel[grid_reduce](
         partial_out, partial_max, partial_sum, output,
         partial_out.stride(0), partial_out.stride(1), partial_out.stride(2), partial_out.stride(3),
         partial_max.stride(0), partial_max.stride(1), partial_max.stride(2),
@@ -509,6 +408,8 @@ def grouped_splitk_attention(
         num_warps=4,
         num_stages=1,
     )
+    if diagnostics is not None:
+        diagnostics["reduce"] = reduce_kernel
 
     return output
 
