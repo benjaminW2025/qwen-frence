@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Benchmark for grouped + Split-K + pipelined decode attention.
+"""Ablation study: Grouped + Split-K + Pipelined decode attention.
 
-Sweeps:
-- batch_size: 1 to 256
-- context_length: 512 to 16384
-- heads_per_program: 1, 2, 3, 6
-- target_occupancy: 1, 2, 4, 8 (programs per SM)
+Tests four configurations to isolate each optimization's effect:
+  A: hpp=1, K=1, no pipeline  (baseline)
+  B: hpp=6, K=1, no pipeline  (+grouping only)
+  C: hpp=6, K=auto, no pipeline  (+grouping +split-k)
+  D: hpp=6, K=auto, pipeline  (+grouping +split-k +pipeline)
 
-Measures speedup vs production kernel and tracks:
-- Actual K value computed
-- Total programs dispatched
-- Effective bandwidth
+Measures:
+  - B vs A = grouping effect (fewer programs, fewer KV reads)
+  - C vs B = split-k effect (more programs, same KV reads)
+  - D vs C = pipelining effect (latency hiding)
+  - D vs production = total improvement
 """
 
 from __future__ import annotations
@@ -29,43 +30,35 @@ import torch
 SCRIPT_DIR = Path(__file__).resolve().parent
 EXPERIMENTS_DIR = SCRIPT_DIR.parent
 ROOT = EXPERIMENTS_DIR.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(SCRIPT_DIR))
+for path in (SCRIPT_DIR, ROOT / "custom_kernels", ROOT / "engine" / "kvcache"):
+    value = str(path)
+    if value not in sys.path:
+        sys.path.insert(0, value)
 
 from paged_decode_grouped_splitk_pipelined import (
-    grouped_splitk_pipelined_attention,
+    grouped_splitk_attention,
     compute_split_k,
     get_num_sms,
 )
-from custom_kernels.paged_decode import paged_decode_attention
+from paged_decode_attention import paged_decode_attention
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Grouped + Split-K + Pipelined benchmark")
+    parser = argparse.ArgumentParser(description="Ablation: Group + Split-K + Pipeline")
     parser.add_argument(
         "--batch-sizes",
-        default="1,4,8,16,32,64,96,128,192,256",
+        default="1,4,8,16,32,64,96,128,256",
         help="Comma-separated batch sizes",
     )
     parser.add_argument(
         "--context-lengths",
-        default="512,1024,2048,4096,8192,16384",
+        default="512,2048,8192,16384",
         help="Comma-separated context lengths",
     )
     parser.add_argument(
-        "--heads-per-program",
-        default="1,2,3,6",
-        help="Comma-separated hpp values (1=no grouping, 6=full grouping)",
-    )
-    parser.add_argument(
         "--target-occupancy",
-        default="1,2,4,8",
-        help="Comma-separated target programs per SM",
-    )
-    parser.add_argument(
-        "--num-warps",
-        default="4",
-        help="Comma-separated warp counts",
+        type=int, default=4,
+        help="Target programs per SM for split-k",
     )
     parser.add_argument(
         "--warmup", type=int, default=5, help="Warmup iterations"
@@ -75,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-dir",
-        default=str(EXPERIMENTS_DIR / "results" / "grouped-splitk-pipelined"),
+        default=str(EXPERIMENTS_DIR / "results" / "ablation-grouped-splitk-pipelined"),
         help="Output directory",
     )
     parser.add_argument(
@@ -102,11 +95,9 @@ def create_test_inputs(
     k_pool = torch.randn(total_pages, page_size, kv_heads, head_dim, dtype=dtype, device=device)
     v_pool = torch.randn(total_pages, page_size, kv_heads, head_dim, dtype=dtype, device=device)
 
-    # Simple contiguous block table
     block_table = torch.arange(total_pages, device=device, dtype=torch.int32)
     block_table = block_table.view(batch_size, num_pages_per_seq)
 
-    # All sequences have same length
     seq_lens = torch.full((batch_size,), context_length, device=device, dtype=torch.int32)
 
     return q, k_pool, v_pool, block_table, seq_lens
@@ -114,12 +105,10 @@ def create_test_inputs(
 
 def benchmark_kernel(fn, warmup: int, reps: int) -> float:
     """Benchmark a kernel and return median time in ms."""
-    # Warmup
     for _ in range(warmup):
         fn()
     torch.cuda.synchronize()
 
-    # Timed runs
     times = []
     for _ in range(reps):
         start = torch.cuda.Event(enable_timing=True)
@@ -134,174 +123,159 @@ def benchmark_kernel(fn, warmup: int, reps: int) -> float:
     return times[len(times) // 2]
 
 
-def compute_bandwidth_gbps(
-    batch_size: int,
-    context_length: int,
-    query_heads: int,
-    kv_heads: int,
-    head_dim: int,
-    kv_read_factor: int,
-    time_ms: float,
-) -> float:
-    """Compute effective bandwidth in GB/s."""
-    # Bytes read: Q + K + V (with read amplification)
-    bytes_q = batch_size * query_heads * head_dim * 2  # fp16
-    bytes_kv = batch_size * context_length * kv_heads * head_dim * 2 * 2  # K + V
-    bytes_kv *= kv_read_factor  # Read amplification from non-grouped programs
-    bytes_out = batch_size * query_heads * head_dim * 2
-
-    total_bytes = bytes_q + bytes_kv + bytes_out
-    return (total_bytes / 1e9) / (time_ms / 1e3)
-
-
-def correctness_check(
-    q, k_pool, v_pool, block_table, seq_lens,
-    hpp: int, target_occ: int, num_warps: int,
-) -> tuple[bool, float]:
-    """Check correctness against production kernel."""
-    # Production output
-    prod_out = paged_decode_attention(q, k_pool, v_pool, block_table, seq_lens)
-
-    # Experimental output
-    exp_out = grouped_splitk_pipelined_attention(
-        q, k_pool, v_pool, block_table, seq_lens,
-        heads_per_program=hpp,
-        target_occupancy=target_occ,
-        num_warps=num_warps,
-    )
-
-    max_err = (prod_out - exp_out).abs().max().item()
-    # Allow larger tolerance due to fp16 and different reduction order
-    ok = max_err < 1e-2
-    return ok, max_err
-
-
 def main():
     parser = build_parser()
     args = parser.parse_args()
 
     batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
     context_lengths = [int(x) for x in args.context_lengths.split(",")]
-    hpp_values = [int(x) for x in args.heads_per_program.split(",")]
-    target_occs = [int(x) for x in args.target_occupancy.split(",")]
-    num_warps_values = [int(x) for x in args.num_warps.split(",")]
 
     os.makedirs(args.output_dir, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    base_name = f"grouped-splitk-pipelined-{timestamp}"
+    base_name = f"ablation-{timestamp}"
 
     csv_path = Path(args.output_dir) / f"{base_name}.csv"
-    summary_path = Path(args.output_dir) / f"{base_name}-summary.csv"
     json_path = Path(args.output_dir) / f"{base_name}.json"
 
     num_sms = get_num_sms()
     print(f"Device: {torch.cuda.get_device_name()}")
     print(f"SMs: {num_sms}")
-    print(f"Sweeping: {len(batch_sizes)} batches x {len(context_lengths)} contexts")
-    print(f"         x {len(hpp_values)} hpp x {len(target_occs)} occupancy x {len(num_warps_values)} warps")
+    print(f"Target occupancy: {args.target_occupancy} programs/SM")
+    print()
+    print("Configs:")
+    print("  A: hpp=1, K=1, no pipeline  (baseline)")
+    print("  B: hpp=6, K=1, no pipeline  (+grouping)")
+    print("  C: hpp=6, K=auto, no pipeline  (+split-k)")
+    print("  D: hpp=6, K=auto, pipeline  (+pipeline)")
     print()
 
     all_results = []
-    summaries = []
 
     for B in batch_sizes:
         for C in context_lengths:
-            print(f"B={B:3d} C={C:5d}", end=" ", flush=True)
-
             q, k_pool, v_pool, block_table, seq_lens = create_test_inputs(
                 B, C, args.page_size
             )
             num_kv_blocks = (C + args.page_size - 1) // args.page_size
 
+            # Compute K for this config
+            # hpp=6 means head_tiles=1 (6 heads per program, GROUP=6)
+            actual_k = compute_split_k(B, 2, 1, num_kv_blocks, args.target_occupancy)
+
+            # Programs for each config
+            progs_A = B * 2 * 6  # hpp=1, K=1: batch * kv_heads * GROUP
+            progs_B = B * 2 * 1  # hpp=6, K=1: batch * kv_heads * 1
+            progs_C = B * 2 * 1 * actual_k  # hpp=6, K=auto
+            progs_D = progs_C  # same as C
+
+            print(f"B={B:3d} C={C:5d} blocks={num_kv_blocks:3d} K={actual_k:2d}")
+            print(f"  programs: A={progs_A:4d} B={progs_B:4d} C={progs_C:4d} D={progs_D:4d}")
+
             # Production baseline
-            prod_time = benchmark_kernel(
-                lambda: paged_decode_attention(q, k_pool, v_pool, block_table, seq_lens),
-                args.warmup, args.repetitions
-            )
-            prod_gbps = compute_bandwidth_gbps(B, C, 12, 2, 128, 6, prod_time)
-            print(f"prod={prod_time:.3f}ms ({prod_gbps:.1f} GB/s)", end=" ", flush=True)
+            try:
+                prod_time = benchmark_kernel(
+                    lambda: paged_decode_attention(q, k_pool, v_pool, block_table, seq_lens),
+                    args.warmup, args.repetitions
+                )
+            except Exception as e:
+                print(f"  PROD ERROR: {e}")
+                continue
 
-            best_config = None
-            best_speedup = 0.0
+            # Config A: hpp=1, K=1, no pipeline (our baseline)
+            try:
+                time_A = benchmark_kernel(
+                    lambda: grouped_splitk_attention(
+                        q, k_pool, v_pool, block_table, seq_lens,
+                        heads_per_program=1, split_k=1, pipelined=False
+                    ),
+                    args.warmup, args.repetitions
+                )
+            except Exception as e:
+                print(f"  A ERROR: {e}")
+                continue
 
-            for hpp in hpp_values:
-                head_tiles = 12 // hpp  # GROUP=6 for 12 query / 2 KV heads
-                kv_read_factor = 6 // hpp
+            # Config B: hpp=6, K=1, no pipeline (+grouping)
+            try:
+                time_B = benchmark_kernel(
+                    lambda: grouped_splitk_attention(
+                        q, k_pool, v_pool, block_table, seq_lens,
+                        heads_per_program=6, split_k=1, pipelined=False
+                    ),
+                    args.warmup, args.repetitions
+                )
+            except Exception as e:
+                print(f"  B ERROR: {e}")
+                continue
 
-                for target_occ in target_occs:
-                    for nw in num_warps_values:
-                        # Compute actual K
-                        actual_k = compute_split_k(B, 2, head_tiles, num_kv_blocks, target_occ)
-                        total_programs = B * 2 * head_tiles * actual_k
+            # Config C: hpp=6, K=auto, no pipeline (+split-k)
+            try:
+                time_C = benchmark_kernel(
+                    lambda: grouped_splitk_attention(
+                        q, k_pool, v_pool, block_table, seq_lens,
+                        heads_per_program=6, split_k=None,
+                        target_occupancy=args.target_occupancy, pipelined=False
+                    ),
+                    args.warmup, args.repetitions
+                )
+            except Exception as e:
+                print(f"  C ERROR: {e}")
+                continue
 
-                        # Correctness check (only on first iteration)
-                        if len(all_results) < 10:
-                            ok, max_err = correctness_check(
-                                q, k_pool, v_pool, block_table, seq_lens,
-                                hpp, target_occ, nw
-                            )
-                            if not ok:
-                                print(f"\nFAIL: hpp={hpp} occ={target_occ} err={max_err:.2e}")
-                                continue
-                        else:
-                            ok, max_err = True, 0.0
+            # Config D: hpp=6, K=auto, pipeline (+pipeline)
+            try:
+                time_D = benchmark_kernel(
+                    lambda: grouped_splitk_attention(
+                        q, k_pool, v_pool, block_table, seq_lens,
+                        heads_per_program=6, split_k=None,
+                        target_occupancy=args.target_occupancy, pipelined=True
+                    ),
+                    args.warmup, args.repetitions
+                )
+            except Exception as e:
+                print(f"  D ERROR: {e}")
+                continue
 
-                        # Benchmark
-                        try:
-                            exp_time = benchmark_kernel(
-                                lambda hpp=hpp, occ=target_occ, nw=nw: grouped_splitk_pipelined_attention(
-                                    q, k_pool, v_pool, block_table, seq_lens,
-                                    heads_per_program=hpp,
-                                    target_occupancy=occ,
-                                    num_warps=nw,
-                                ),
-                                args.warmup, args.repetitions
-                            )
-                        except Exception as e:
-                            print(f"\nERROR: {e}")
-                            continue
+            # Calculate speedups
+            speedup_B_vs_A = time_A / time_B  # grouping effect
+            speedup_C_vs_B = time_B / time_C  # split-k effect
+            speedup_D_vs_C = time_C / time_D  # pipeline effect
+            speedup_D_vs_prod = prod_time / time_D  # total vs production
 
-                        speedup = prod_time / exp_time
-                        exp_gbps = compute_bandwidth_gbps(B, C, 12, 2, 128, kv_read_factor, exp_time)
+            # Markers
+            def marker(speedup):
+                if speedup > 1.05:
+                    return "**"
+                elif speedup < 0.95:
+                    return "--"
+                return "  "
 
-                        result = {
-                            "batch_size": B,
-                            "context_length": C,
-                            "heads_per_program": hpp,
-                            "target_occupancy": target_occ,
-                            "num_warps": nw,
-                            "actual_k": actual_k,
-                            "total_programs": total_programs,
-                            "kv_read_factor": kv_read_factor,
-                            "production_ms": prod_time,
-                            "experimental_ms": exp_time,
-                            "speedup": speedup,
-                            "production_gbps": prod_gbps,
-                            "experimental_gbps": exp_gbps,
-                            "max_error": max_err,
-                            "status": "ok" if ok else "fail",
-                        }
-                        all_results.append(result)
+            print(f"  prod={prod_time:.3f}ms  A={time_A:.3f}ms  B={time_B:.3f}ms  C={time_C:.3f}ms  D={time_D:.3f}ms")
+            print(f"  B/A={speedup_B_vs_A:.2f}x{marker(speedup_B_vs_A)} (grouping)  "
+                  f"C/B={speedup_C_vs_B:.2f}x{marker(speedup_C_vs_B)} (split-k)  "
+                  f"D/C={speedup_D_vs_C:.2f}x{marker(speedup_D_vs_C)} (pipeline)  "
+                  f"D/prod={speedup_D_vs_prod:.2f}x{marker(speedup_D_vs_prod)} (total)")
+            print()
 
-                        if speedup > best_speedup:
-                            best_speedup = speedup
-                            best_config = result.copy()
-
-            # Print best for this B,C
-            if best_config:
-                cfg = best_config
-                marker = "**" if cfg["speedup"] > 1.05 else ("--" if cfg["speedup"] < 0.95 else "  ")
-                print(f"best: hpp={cfg['heads_per_program']} occ={cfg['target_occupancy']} "
-                      f"K={cfg['actual_k']} progs={cfg['total_programs']:4d} "
-                      f"{cfg['speedup']:.2f}x {marker}")
-                summaries.append({
-                    "batch_size": B,
-                    "context_length": C,
-                    "production_ms": prod_time,
-                    **{f"best_{k}": v for k, v in best_config.items() if k not in ("batch_size", "context_length", "production_ms")}
-                })
-            else:
-                print("NO VALID CONFIG")
+            result = {
+                "batch_size": B,
+                "context_length": C,
+                "num_kv_blocks": num_kv_blocks,
+                "actual_k": actual_k,
+                "programs_A": progs_A,
+                "programs_B": progs_B,
+                "programs_C": progs_C,
+                "programs_D": progs_D,
+                "prod_ms": prod_time,
+                "time_A_ms": time_A,
+                "time_B_ms": time_B,
+                "time_C_ms": time_C,
+                "time_D_ms": time_D,
+                "speedup_B_vs_A": speedup_B_vs_A,
+                "speedup_C_vs_B": speedup_C_vs_B,
+                "speedup_D_vs_C": speedup_D_vs_C,
+                "speedup_D_vs_prod": speedup_D_vs_prod,
+            }
+            all_results.append(result)
 
     # Write results
     if all_results:
@@ -315,12 +289,32 @@ def main():
 
         print(f"\nWrote {len(all_results)} results to {csv_path}")
 
-    if summaries:
-        with open(summary_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=summaries[0].keys())
-            writer.writeheader()
-            writer.writerows(summaries)
-        print(f"Wrote summary to {summary_path}")
+        # Summary
+        print("\n" + "="*60)
+        print("SUMMARY")
+        print("="*60)
+
+        # Find where each optimization helps most
+        best_grouping = max(all_results, key=lambda r: r["speedup_B_vs_A"])
+        best_splitk = max(all_results, key=lambda r: r["speedup_C_vs_B"])
+        best_pipeline = max(all_results, key=lambda r: r["speedup_D_vs_C"])
+        best_total = max(all_results, key=lambda r: r["speedup_D_vs_prod"])
+
+        print(f"\nBest GROUPING effect (B/A):")
+        print(f"  B={best_grouping['batch_size']} C={best_grouping['context_length']}: "
+              f"{best_grouping['speedup_B_vs_A']:.2f}x")
+
+        print(f"\nBest SPLIT-K effect (C/B):")
+        print(f"  B={best_splitk['batch_size']} C={best_splitk['context_length']}: "
+              f"{best_splitk['speedup_C_vs_B']:.2f}x (K={best_splitk['actual_k']})")
+
+        print(f"\nBest PIPELINE effect (D/C):")
+        print(f"  B={best_pipeline['batch_size']} C={best_pipeline['context_length']}: "
+              f"{best_pipeline['speedup_D_vs_C']:.2f}x")
+
+        print(f"\nBest TOTAL vs production (D/prod):")
+        print(f"  B={best_total['batch_size']} C={best_total['context_length']}: "
+              f"{best_total['speedup_D_vs_prod']:.2f}x")
 
 
 if __name__ == "__main__":
