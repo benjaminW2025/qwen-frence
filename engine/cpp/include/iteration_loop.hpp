@@ -1,0 +1,166 @@
+#pragma once
+
+#include <torch/torch.h>
+#include <vector>
+#include <queue>
+#include <memory>
+#include <optional>
+#include <functional>
+
+namespace inference_engine {
+
+// Forward declarations
+struct Request;
+struct IterationPlan;
+struct BatchMetadata;
+
+// Request state mirrors Python RequestState
+struct Request {
+    int64_t request_id;
+    std::vector<int64_t> prompt_ids;
+    std::vector<int64_t> output_ids;
+    int64_t num_prompt_tokens_computed;
+    int64_t max_output_tokens;
+
+    // KV cache state
+    std::vector<int64_t> block_ids;
+    int64_t current_slot;
+
+    enum class Status {
+        PENDING,
+        PREFILLING,
+        DECODING,
+        COMPLETED,
+        PREEMPTED
+    };
+    Status status;
+
+    // Computed properties
+    int64_t total_tokens() const {
+        return prompt_ids.size() + output_ids.size();
+    }
+    int64_t remaining_prefill() const {
+        return static_cast<int64_t>(prompt_ids.size()) - num_prompt_tokens_computed;
+    }
+    bool is_prefill_complete() const {
+        return num_prompt_tokens_computed >= static_cast<int64_t>(prompt_ids.size());
+    }
+};
+
+// Pre-allocated batch metadata buffers (eliminates per-iteration allocation)
+struct BatchMetadata {
+    // Decode tokens
+    torch::Tensor decode_input_ids;      // (max_decode_batch,)
+    torch::Tensor decode_positions;       // (max_decode_batch,)
+    torch::Tensor decode_slot_mapping;    // (max_decode_batch,)
+    torch::Tensor decode_seq_lens;        // (max_decode_batch,)
+    torch::Tensor decode_block_table;     // (max_decode_batch, max_blocks)
+
+    // Prefill tokens (packed ragged)
+    torch::Tensor prefill_input_ids;      // (max_prefill_tokens,)
+    torch::Tensor prefill_positions;      // (max_prefill_tokens,)
+    torch::Tensor prefill_slot_mapping;   // (max_prefill_tokens,)
+    torch::Tensor prefill_cu_seqlens;     // (max_prefill_seqs + 1,)
+    torch::Tensor prefill_block_table;    // (max_prefill_seqs, max_blocks)
+
+    // Current batch sizes (updated each iteration)
+    int64_t num_decode_tokens;
+    int64_t num_prefill_tokens;
+    int64_t num_prefill_seqs;
+
+    // Pre-allocate buffers
+    static BatchMetadata allocate(
+        int64_t max_decode_batch,
+        int64_t max_prefill_tokens,
+        int64_t max_prefill_seqs,
+        int64_t max_blocks,
+        torch::Device device
+    );
+
+    // Reset for new iteration (just reset counts, don't reallocate)
+    void reset();
+};
+
+// Iteration plan built by scheduler
+struct IterationPlan {
+    std::vector<Request*> decode_requests;
+    std::vector<Request*> prefill_requests;
+    std::vector<int64_t> prefill_chunk_sizes;  // tokens per prefill request this iter
+
+    bool empty() const {
+        return decode_requests.empty() && prefill_requests.empty();
+    }
+};
+
+// Configuration
+struct SchedulerConfig {
+    int64_t max_batch_size = 256;
+    int64_t max_prefill_tokens_per_iter = 2048;
+    int64_t max_context_length = 32768;
+    int64_t block_size = 16;
+    int64_t num_kv_heads = 2;
+    int64_t head_dim = 128;
+};
+
+// The main C++ iteration loop
+class IterationLoop {
+public:
+    IterationLoop(
+        SchedulerConfig config,
+        torch::Device device
+    );
+
+    // Submit new request (called from Python)
+    int64_t submit_request(
+        std::vector<int64_t> prompt_ids,
+        int64_t max_output_tokens
+    );
+
+    // Run one iteration: schedule → build batch → forward → sample → update
+    // Returns number of completed requests
+    int64_t step(
+        const std::function<torch::Tensor(
+            torch::Tensor,  // input_ids
+            torch::Tensor,  // positions
+            torch::Tensor,  // slot_mapping
+            torch::Tensor,  // seq_lens (decode) or cu_seqlens (prefill)
+            torch::Tensor,  // block_table
+            bool            // is_decode
+        )>& forward_fn
+    );
+
+    // Get completed request outputs
+    std::vector<std::pair<int64_t, std::vector<int64_t>>> pop_completed();
+
+    // Stats
+    int64_t num_pending() const { return pending_queue_.size(); }
+    int64_t num_running() const { return running_requests_.size(); }
+
+private:
+    SchedulerConfig config_;
+    torch::Device device_;
+    BatchMetadata batch_metadata_;
+
+    // Request management
+    std::queue<std::unique_ptr<Request>> pending_queue_;
+    std::vector<std::unique_ptr<Request>> running_requests_;
+    std::vector<std::pair<int64_t, std::vector<int64_t>>> completed_outputs_;
+
+    int64_t next_request_id_ = 0;
+
+    // KV cache block allocator (simplified)
+    std::vector<int64_t> free_blocks_;
+    int64_t total_blocks_;
+
+    // Internal methods
+    IterationPlan schedule();
+    void build_batch(const IterationPlan& plan);
+    torch::Tensor sample(torch::Tensor logits);
+    void update_requests(const IterationPlan& plan, torch::Tensor next_tokens);
+
+    // Block allocation
+    std::optional<int64_t> allocate_block();
+    void free_block(int64_t block_id);
+};
+
+}  // namespace inference_engine
