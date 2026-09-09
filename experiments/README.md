@@ -5,7 +5,71 @@ CPU control-plane tests, and the measurements collected from them. The stable
 cross-backend benchmark harness remains in `benchmarks/`; numerical and state-machine
 gates remain in `correctness/`.
 
-## Grouped decode → split-K → pipelining
+## Joint decode sweep: grouping × split-K × pipeline stages
+
+Run the full factorial experiment on the GPU:
+
+```bash
+python3 experiments/decode/benchmark_decode_joint_sweep.py
+```
+
+Defaults sweep heads per program `1,2,3,6`, K `1,2,4,8,16,32,auto`, and
+pipeline stages `1,2,3` over the existing batch/context grid. Stage 1 disables
+loop pipelining. The warp count stays fixed at 4; use `--num-warps` for a
+separate matched run. The previous four-configuration ladder remains available
+in `benchmark_grouped_splitk_pipelined.py`.
+
+For a shorter initial run that still tests all three axes:
+
+```bash
+python3 experiments/decode/benchmark_decode_joint_sweep.py \
+  --batch-sizes 16,32 --context-lengths 8192 \
+  --k-splits 1,2,4,8,16,32,auto --dump-ir
+```
+
+Inspect the complete plan without CUDA (132 SMs for the recorded H100):
+
+```bash
+python3 experiments/decode/benchmark_decode_joint_sweep.py \
+  --dry-run --num-sms 132
+```
+
+Actual GPU runs query the SM count. Auto-K is computed separately for each head
+size and input shape. Its distinct K choices are added to **every** head size's
+sweep so comparisons hold K fixed. Duplicate explicit/auto configurations are
+timed once; `is_auto_k` records which rows match that head size's policy.
+Head size 1, K=1, and stage 1 are always included as controls, even when custom
+axes omit them. Explicit K values larger than the page count are retained;
+active program and page counts make the empty partitions visible.
+
+Each unique configuration passes the independent adversarial correctness cases
+before timing; every measured shape is also checked against the validated
+production kernel. Candidate and production timing order is shuffled per shape.
+The timing method, FP32 partials, and GPU diagnostics are shared with the ladder
+described below. This experiment does not modify production dispatch.
+
+Results under `experiments/results/decode-joint-sweep/` include:
+
+- `.csv`: one row per candidate, with absolute latency and speedup versus production
+  and ungrouped K=1/stage=1. Three additional ratios vary only one axis: grouping
+  at fixed K/stages, split-K at fixed heads/stages, and pipelining at fixed heads/K.
+  Values above 1 mean the candidate is faster than its matched control.
+- `-summary.csv`: the fastest combination per shape, the fastest **tuned ungrouped**
+  combination, and their ratio. These are observed minima across the sweep;
+  small differences should be checked against the raw samples and repeated runs.
+- `.json`: the resolved plan, raw samples, production timings, measurement order,
+  correctness errors, resource usage, software/device metadata, and run status.
+  Completed shapes are saved after each shape. A failure aborts the run and saves
+  its configuration and any collected rows from the incomplete shape.
+- Optional `--dump-ir`: TTGIR/PTX per configuration, including reduction kernels.
+
+Run the CPU planning/reporting tests with:
+
+```bash
+python3 -m unittest discover -s experiments/tests -p 'test_decode_joint_sweep.py' -v
+```
+
+## Grouped decode → split-K → pipelining ladder
 
 Run the numerical regression suite on a CUDA machine with the repository's
 PyTorch/Triton dependencies, then run the matched ablation:
