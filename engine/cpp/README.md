@@ -116,8 +116,19 @@ loop = cpp.IterationLoop(config, torch.device('cuda'))
 req_id = loop.submit_request([1, 2, 3, 4, 5], max_output_tokens=10)
 
 # Dummy forward function
-def forward_fn(input_ids, positions, slot_mapping, seq_lens, block_table, is_decode):
-    batch_size = input_ids.shape[0]
+def forward_fn(
+    input_ids,
+    positions,
+    slot_mapping,
+    cu_seqlens,
+    context_lens,
+    block_table,
+    max_query_length,
+    is_decode,
+):
+    # The callback returns one sampling row per sequence. During prefill,
+    # input_ids.shape[0] is the number of packed tokens, not the batch size.
+    batch_size = context_lens.shape[0]
     return torch.randn(batch_size, 32000, device='cuda')  # fake logits
 
 # Run
@@ -129,29 +140,25 @@ for req_id, output_ids in loop.pop_completed():
     print(f"Request {req_id}: {output_ids}")
 ```
 
-## C++ Concepts You'll Learn
+## KV-cache metadata ownership
 
-1. **Smart Pointers** (`std::unique_ptr`)
-   - Automatic memory management
-   - `std::move` for ownership transfer
+This teaching implementation leaves the actual K/V pools behind `forward_fn`.
+`IterationLoop` acts as a small block manager: its free-list allocates physical
+page IDs, and each `Request::block_ids` vector persistently records that
+request's logical-to-physical page mapping.
 
-2. **STL Containers**
-   - `std::vector` - dynamic array
-   - `std::queue` - FIFO queue
-   - `std::optional` - nullable value
+`BatchMetadata::{decode,prefill}_block_table` do not own page allocations. They
+are temporary padded GPU views assembled in current batch order for the paged
+attention kernels.
 
-3. **Tensor Accessors**
-   - `.accessor<T, N>()` for element access
-   - `.slice()` for views
-   - `.copy_()` for data transfer
+Packed-paged prefill has three distinct pieces of sequence metadata:
 
-4. **Lambda Functions**
-   - Capture by reference `[&]`
-   - Capture specific vars `[this, &plan]`
+- `cu_seqlens`: boundaries of current query chunks in the packed token tensor.
+- `context_lens`: visible lengths after adding the current chunks.
+- `block_table`: locations of those complete contexts in the paged K/V pools.
 
-5. **Move Semantics**
-   - `std::move()` to transfer ownership
-   - Avoid unnecessary copies
+For decode, `cu_seqlens` is an empty tensor, every query has length one, and
+`context_lens` is the existing `decode_seq_lens` tensor.
 
 ## Performance Checklist
 

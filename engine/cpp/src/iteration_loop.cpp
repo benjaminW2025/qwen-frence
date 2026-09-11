@@ -44,6 +44,7 @@ BatchMetadata BatchMetadata::allocate(
     meta.prefill_positions = torch::empty({max_prefill_tokens}, opts_long);
     meta.prefill_slot_mapping = torch::empty({max_prefill_tokens}, opts_long);
     meta.prefill_cu_seqlens = torch::empty({max_prefill_seqs + 1}, opts_int);
+    meta.prefill_context_lens = torch::empty({max_prefill_seqs}, opts_int);
     meta.prefill_block_table = torch::empty({max_prefill_seqs, max_blocks}, opts_int);
 
     meta.reset();
@@ -54,6 +55,7 @@ void BatchMetadata::reset() {
     num_decode_tokens = 0;
     num_prefill_tokens = 0;
     num_prefill_seqs = 0;
+    max_prefill_chunk_length = 0;
 }
 
 // =============================================================================
@@ -106,7 +108,7 @@ int64_t IterationLoop::submit_request(
     request->output_ids = {};
     request->num_prompt_tokens_computed = 0;
     request->max_output_tokens = max_output_tokens;
-    request->block_ids = {};
+    request->block_ids = {}; // NEED THIS FOR BLOCK_TABLE
     request->current_slot = 0;
     request->status = Request::Status::PENDING;
 
@@ -228,30 +230,6 @@ IterationPlan IterationLoop::schedule() {
 void IterationLoop::build_batch(const IterationPlan& plan) {
     batch_metadata_.reset();
 
-    // ==========================================================================
-    // TODO(you): Implement batch building
-    //
-    // This is where the Python version wastes most of its time.
-    // Python does:
-    //   tokens = []
-    //   for req in decode_requests:
-    //       tokens.append(req.last_token())
-    //   input_ids = torch.tensor(tokens, device='cuda')
-    //
-    // We do:
-    //   Write directly into pre-allocated decode_input_ids tensor
-    //   No Python list, no torch.tensor() call, no allocation
-    //
-    // HINT: Use tensor accessors for fast element access:
-    //   auto accessor = tensor.accessor<int64_t, 1>();
-    //   accessor[i] = value;
-    //
-    // Or for GPU tensors, stage through CPU then copy:
-    //   auto cpu_tensor = torch::empty({n}, torch::kCPU);
-    //   // fill cpu_tensor
-    //   tensor.copy_(cpu_tensor);
-    // ==========================================================================
-
     // Build decode batch
     if (!plan.decode_requests.empty()) {
         int64_t n = plan.decode_requests.size();
@@ -300,39 +278,119 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
         batch_metadata_.decode_slot_mapping.slice(0, 0, n).copy_(cpu_slots);
         batch_metadata_.decode_seq_lens.slice(0, 0, n).copy_(cpu_seq_lens);
 
-        // TODO(you): Build block table
-        // HINT: Each row is the block IDs for one request
-        //       decode_block_table[i, :num_blocks] = req->block_ids
+        int64_t max_blocks = batch_metadata_.decode_block_table.size(1); // <- get the max blocks
+
+        auto cpu_block_table = torch::zeros({n, max_blocks}, torch::kInt32); // 2D tensor
+        auto block_table_acc = cpu_block_table.accessor<int32_t, 2>(); // Get accessor
+        // Now loop through requests
+        for (int64_t i = 0; i < n; ++i) {
+            Request* req = plan.decode_requests[i]; // Get the request at index i
+            for (size_t j = 0; j < req->block_ids.size(); ++j) { // Loop through block_ids
+                block_table_acc[i][j] =  static_cast<int32_t>(req->block_ids[j]); // Cast down to int32
+            }
+        }
+
+        // Copy to GPU
+        batch_metadata_.decode_block_table.slice(0, 0, n).copy_(cpu_block_table);
     }
 
     // Build prefill batch (packed ragged format)
     if (!plan.prefill_requests.empty()) {
-        // TODO(you): Implement prefill batch building
-        //
-        // This is more complex because prefill is "ragged" - different
-        // sequence lengths packed together.
-        //
-        // DESIGN: Packed format
-        //   input_ids = [tok0_seq0, tok1_seq0, ..., tok0_seq1, tok1_seq1, ...]
-        //   cu_seqlens = [0, len(seq0), len(seq0)+len(seq1), ...]
-        //
-        // The attention kernel uses cu_seqlens to know where each sequence
-        // starts/ends in the packed tensor.
-        //
-        // HINT:
-        //   1. Calculate total tokens: sum of plan.prefill_chunk_sizes
-        //   2. Build cu_seqlens: cumulative sum of chunk sizes
-        //   3. For each request, copy its tokens starting at cu_seqlens[i]
-
         int64_t total_tokens = 0;
-        for (int64_t chunk : plan.prefill_chunk_sizes) {
-            total_tokens += chunk;
-        }
-        batch_metadata_.num_prefill_tokens = total_tokens;
-        batch_metadata_.num_prefill_seqs = plan.prefill_requests.size();
+        int64_t num_seqs = static_cast<int64_t>(plan.prefill_requests.size());
+        int64_t max_blocks = batch_metadata_.prefill_block_table.size(1);
 
-        // TODO(you): Fill in the prefill tensors
-        // This is left as an exercise - follow the decode pattern above
+        for (size_t i = 0; i < plan.prefill_chunk_sizes.size(); ++i) {
+            // First we should acc
+            total_tokens += plan.prefill_chunk_sizes[i];
+        }
+
+        // First we want to build a tensor input that is the length of all prefill tokens added up
+        auto cpu_ids = torch::empty({total_tokens}, torch::kInt64); // Token ids
+        auto cpu_positions = torch::empty({total_tokens}, torch::kInt64); // Absolute positions within sequence
+        auto cpu_slots = torch::empty({total_tokens}, torch::kInt64);
+        auto cpu_cu_seqlens = torch::empty({num_seqs + 1}, torch::kInt32); // Keeps ending position for each sequence + 0 as starting position
+        // Unlike cu_seqlens (chunk boundaries), context_lens contains each
+        // request's full visible length: previous prefix + this chunk.
+        auto cpu_context_lens = torch::empty({num_seqs}, torch::kInt32);
+        auto cpu_block_table = torch::zeros({num_seqs, max_blocks}, torch::kInt32);
+
+        batch_metadata_.num_prefill_tokens = total_tokens;
+        batch_metadata_.num_prefill_seqs = num_seqs;
+
+        auto ids_acc = cpu_ids.accessor<int64_t, 1>(); // Accessor for ids
+        auto positions_acc = cpu_positions.accessor<int64_t, 1>(); // Accessor for positions
+        auto slots_acc = cpu_slots.accessor<int64_t, 1>(); // Accessor for slots
+        auto cu_seqlens_acc = cpu_cu_seqlens.accessor<int32_t, 1>(); // Accessor for end points
+        auto context_lens_acc = cpu_context_lens.accessor<int32_t, 1>(); // Accessor for context lens
+        auto block_table_acc = cpu_block_table.accessor<int32_t, 2>(); // Accessor for block table
+
+        int64_t packed_idx = 0; // Index of packed input
+        cu_seqlens_acc[0] = 0; // Set the begin index
+
+        // Loop through every request
+        for (size_t i = 0; i < plan.prefill_requests.size(); ++i) {
+            // Get pointer to this request
+            Request* req = plan.prefill_requests[i];
+            int64_t chunk_size = plan.prefill_chunk_sizes[i]; // Get the chunk size for chunk i
+            int64_t start = req->num_prompt_tokens_computed; // How many tokens in the prompt have been processed already
+            // Update max_prefill_chunk_length
+            if (batch_metadata_.max_prefill_chunk_length < chunk_size) {
+                batch_metadata_.max_prefill_chunk_length = chunk_size;
+            }
+            // Now we want to get its prompt_ids
+            // Loop through each token in the chunk
+            for (int64_t j = 0; j < chunk_size; ++j) {
+                // For each token in prompt_ids write it into cpu_ids
+                int64_t prompt_idx = start + j;
+                ids_acc[packed_idx] = req->prompt_ids[prompt_idx];
+                positions_acc[packed_idx] = prompt_idx;
+
+                // Now update slots by
+                // 1) Compute the token's logical block
+                // 2) Compute the token's offset
+                // 3) Get the physical block and compute physical index
+                int64_t logical_block = prompt_idx / config_.block_size;
+                int64_t block_offset = prompt_idx % config_.block_size;
+                int64_t physical_block_id = req->block_ids[logical_block];
+                slots_acc[packed_idx] = physical_block_id * config_.block_size + block_offset;
+
+                ++packed_idx; // Increment the token index within the packed input
+
+            }
+            // Build block table
+            for (size_t j = 0; j < req->block_ids.size(); ++j) {
+                block_table_acc[i][j] = static_cast<int32_t>(req->block_ids[j]); // Write i'th request's block ids into i'th row of block_table
+            }
+            // Update end point
+            cu_seqlens_acc[i+1] = static_cast<int32_t>(packed_idx);
+
+            // Update the context length
+            context_lens_acc[i] = static_cast<int32_t>(
+                req->num_prompt_tokens_computed + chunk_size
+            );
+        }
+
+        // Copy the active portions of the CPU staging tensors to the
+        // pre-allocated device buffers.
+        batch_metadata_.prefill_input_ids
+            .slice(0, 0, total_tokens)
+            .copy_(cpu_ids);
+        batch_metadata_.prefill_positions
+            .slice(0, 0, total_tokens)
+            .copy_(cpu_positions);
+        batch_metadata_.prefill_slot_mapping
+            .slice(0, 0, total_tokens)
+            .copy_(cpu_slots);
+        batch_metadata_.prefill_cu_seqlens
+            .slice(0, 0, num_seqs + 1)
+            .copy_(cpu_cu_seqlens);
+        batch_metadata_.prefill_context_lens
+            .slice(0, 0, num_seqs)
+            .copy_(cpu_context_lens);
+        batch_metadata_.prefill_block_table
+            .slice(0, 0, num_seqs)
+            .copy_(cpu_block_table);
     }
 }
 
@@ -448,7 +506,8 @@ void IterationLoop::update_requests(
 int64_t IterationLoop::step(
     const std::function<torch::Tensor(
         torch::Tensor, torch::Tensor, torch::Tensor,
-        torch::Tensor, torch::Tensor, bool
+        torch::Tensor, torch::Tensor, torch::Tensor,
+        int64_t, bool
     )>& forward_fn
 ) {
     // Schedule
@@ -460,16 +519,6 @@ int64_t IterationLoop::step(
     // Build batch (writes to pre-allocated buffers)
     build_batch(plan);
 
-    // ==========================================================================
-    // TODO(you): Call forward function and handle mixed batch
-    //
-    // DESIGN: How to handle decode + prefill together?
-    //   Option 1: Two separate forward calls (simpler)
-    //   Option 2: Single fused forward (what we do in Python)
-    //
-    // For now, do two calls. Later optimize to single call.
-    // ==========================================================================
-
     torch::Tensor logits;
 
     if (batch_metadata_.num_decode_tokens > 0) {
@@ -478,16 +527,38 @@ int64_t IterationLoop::step(
             batch_metadata_.decode_input_ids.slice(0, 0, n),
             batch_metadata_.decode_positions.slice(0, 0, n),
             batch_metadata_.decode_slot_mapping.slice(0, 0, n),
+            // Decode has no packed-query boundaries. This zero-length view is a
+            // real device tensor, which is cleaner to pass through pybind than
+            // an undefined torch::Tensor().
+            batch_metadata_.decode_seq_lens.slice(0, 0, 0),
             batch_metadata_.decode_seq_lens.slice(0, 0, n),
             batch_metadata_.decode_block_table.slice(0, 0, n),
+            /*max_query_length=*/1,
             /*is_decode=*/true
         );
         logits = decode_logits;
     }
 
     if (batch_metadata_.num_prefill_tokens > 0) {
-        // TODO(you): Handle prefill forward call
-        // Remember to concatenate logits if both decode and prefill
+        int64_t num_tokens = batch_metadata_.num_prefill_tokens;
+        int64_t num_seqs = batch_metadata_.num_prefill_seqs;
+
+        auto prefill_logits = forward_fn(
+            batch_metadata_.prefill_input_ids.slice(0, 0, num_tokens),
+            batch_metadata_.prefill_positions.slice(0, 0, num_tokens),
+            batch_metadata_.prefill_slot_mapping.slice(0, 0, num_tokens),
+            batch_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
+            batch_metadata_.prefill_context_lens.slice(0, 0, num_seqs),
+            batch_metadata_.prefill_block_table.slice(0, 0, num_seqs),
+            batch_metadata_.max_prefill_chunk_length,
+            /*is_decode=*/false
+        );
+
+        if (logits.defined()) {
+            logits = torch::cat({logits, prefill_logits}, 0);
+        } else {
+            logits = prefill_logits;
+        }
     }
 
     // Sample
