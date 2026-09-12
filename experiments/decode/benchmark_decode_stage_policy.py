@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
-from functools import partial
 import json
 import math
 from pathlib import Path
@@ -30,7 +29,8 @@ from benchmark_grouped_splitk_pipelined import kernel_diagnostics
 
 SUITES = ("mechanism", "train", "validation", "test", "ragged")
 SOURCES = ("benchmark_decode_stage_policy.py", "decode_stage_policy.py", "grouped_splitk_validation.py",
-           "paged_decode_grouped_splitk_pipelined.py", "benchmark_grouped_splitk_pipelined.py")
+           "paged_decode_grouped_splitk_pipelined.py", "benchmark_grouped_splitk_pipelined.py",
+           "../../engine/kvcache/paged_decode_attention.py")
 
 
 def parser():
@@ -87,6 +87,34 @@ def ensure_manifest(directory, spec):
     manifest = {"fingerprint": identity, "created_at": datetime.now(timezone.utc).isoformat(), **spec}
     atomic_json(path, manifest)
     return manifest
+
+
+def planned_observations(case, caches):
+    observations = {("production", "full", cache) for cache in caches}
+    for k, stages in case["actions"]:
+        for role in (("partial", "full") if k == 1 else ("partial", "reduce", "full")):
+            observations.update(((k, stages), role, cache) for cache in caches)
+    return observations
+
+
+def validate_checkpoint(payload, manifest, case, trial):
+    if (payload.get("status") != "complete" or payload.get("fingerprint") != manifest["fingerprint"]
+            or payload.get("case_id") != case["id"] or payload.get("trial") != trial):
+        raise ValueError("invalid checkpoint identity")
+    wanted = planned_observations(case, manifest["cache_modes"])
+    seen = set()
+    for record in payload.get("records", []):
+        action = record["action"] if record["action"] == "production" else tuple(record["action"])
+        key = (action, record["role"], record["cache"])
+        samples = record["samples_ms"]
+        if (key not in wanted or key in seen or record["case_id"] != case["id"] or record["trial"] != trial
+                or len(samples) != manifest["samples"]
+                or any(not math.isfinite(x) or x <= 0 for x in samples)
+                or not math.isclose(record["median_ms"], statistics.median(samples), rel_tol=1e-10)):
+            raise ValueError("invalid/duplicate checkpoint observation")
+        seen.add(key)
+    if seen != wanted:
+        raise ValueError("incomplete checkpoint observations")
 
 
 def telemetry():
@@ -213,8 +241,7 @@ def run(args, cache_modes):
         checkpoint = trial_dir / f"{case['id']}-t{trial}.json"
         if checkpoint.exists():
             saved = json.loads(checkpoint.read_text())
-            if saved.get("fingerprint") != manifest["fingerprint"] or saved.get("status") != "complete":
-                raise ValueError(f"invalid checkpoint {checkpoint}")
+            validate_checkpoint(saved, manifest, case, trial)
             continue
         print(f"Running {case['id']} trial {trial + 1}/{args.trials}", flush=True)
         started = datetime.now(timezone.utc).isoformat()
@@ -231,7 +258,12 @@ def run(args, cache_modes):
             prepared[tuple(action)] = {"output": output, "launches": launches,
                 "graphs": {role: capture(torch, launch) for role, launch in launches.items()},
                 "error": error, "resources": kernel_diagnostics(compiled)}
-        prod = partial(paged_decode_attention, *tensors)
+        prod_output = [None]
+        def prod():
+            # Keep the actual capture output alive and validate that same buffer
+            # after replay, not merely the earlier eager invocation.
+            prod_output[0] = paged_decode_attention(*tensors)
+            return prod_output[0]
         prod_error = check_output(prod(), expected)
         prod_graph = capture(torch, prod)
         tasks = [(action, role, cache) for action, item in prepared.items() for role in item["graphs"] for cache in cache_modes]
@@ -264,6 +296,8 @@ def run(args, cache_modes):
         for item in prepared.values():
             item["graphs"]["full"].replay()
             check_output(item["output"], expected)
+        prod_graph.replay()
+        prod_error = check_output(prod_output[0], expected)
         rows = []
         for (action, role, cache), values in samples.items():
             row = {"case_id": case["id"], "suite": case["suite"], "trial": trial,
@@ -280,13 +314,16 @@ def run(args, cache_modes):
                                 "started_at": started, "wall_seconds": time.perf_counter() - wall_start,
                                 "orders": orders, "records": rows})
         # Graphs/closures retain their own buffers; release before constructing another case.
-        del prepared, tensors, expected, prod, prod_graph, item, graph, output, launches, compiled
+        del prepared, tensors, expected, prod, prod_graph, prod_output, item, graph, output, launches, compiled
     print(f"Completed selected work; resumable checkpoints: {trial_dir}")
 
 
 def analyze(args):
     directory = args.output_dir
     manifest = json.loads((directory / "manifest.json").read_text())
+    # A failed re-analysis must never leave an earlier passing policy available.
+    atomic_json(directory / "policy-report.json", {"status": "validating", "production_ready": False,
+                                                   "fingerprint": manifest["fingerprint"]})
     records = load_records(directory)
     for path in (directory / "trials").glob("*.json"):
         if json.loads(path.read_text())["fingerprint"] != manifest["fingerprint"]:
@@ -294,6 +331,7 @@ def analyze(args):
     trials = manifest["trials"]
     plan = manifest["plan"]
     cases_by_id = {case["id"]: case for case in plan}
+    planned_by_id = {case["id"]: planned_observations(case, manifest["cache_modes"]) for case in plan}
     seen = set()
     for record in records:
         action = record["action"] if record["action"] == "production" else tuple(record["action"])
@@ -306,8 +344,8 @@ def analyze(args):
                 or len(samples) != manifest.get("samples", len(samples))
                 or not math.isclose(record["median_ms"], statistics.median(samples), rel_tol=1e-10)):
             raise ValueError(f"invalid/duplicate timing record: {key}")
-        if action != "production" and list(action) not in case["actions"]:
-            raise ValueError(f"unplanned action: {key}")
+        if (action, record["role"], record["cache"]) not in planned_by_id[case["id"]]:
+            raise ValueError(f"unplanned action/role: {key}")
         seen.add(key)
     # Always emit matched stage-effect estimates, even for a mechanism-only run.
     index = {(r["case_id"], tuple(r["action"]), r["role"], r["cache"], r["trial"]): r["median_ms"]
@@ -329,6 +367,16 @@ def analyze(args):
     atomic_json(directory / "stage-effects.json", effects)
     dispatch_plan = [c for c in plan if c["suite"] != "mechanism"]
     try:
+        # Require full paired observations for every dispatch trial/cache, even
+        # when the fit cache alone is already populated. This also covers the
+        # production denominator before constructing policy speedup intervals.
+        if args.fit_cache not in manifest["cache_modes"]:
+            raise ValueError("fit cache was not measured")
+        for case in dispatch_plan:
+            for action, role, cache in planned_observations(case, manifest["cache_modes"]):
+                for trial in range(trials):
+                    if (case["id"], action, role, cache, trial) not in seen:
+                        raise ValueError(f"incomplete data: {case['id']} {action} {role} {cache} trial {trial}")
         data = aggregate_cases(dispatch_plan, records, trials, args.fit_cache)
     except ValueError as exc:
         atomic_json(directory / "policy-report.json", {"status": "incomplete_data", "production_ready": False,

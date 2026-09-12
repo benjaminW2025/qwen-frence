@@ -13,7 +13,7 @@ for path in (ROOT / "experiments/integration", ROOT / "engine/cpp/build", ROOT /
              ROOT / "engine/model_runner", ROOT / "engine/kvcache"):
     sys.path.insert(0, str(path))
 from design import (load_policy, make_plan, make_requests, select_action, stable_hash,
-                    summarize, validate_tree, variant_order)
+                    summarize, validate_checkpoint, validate_tree, variant_order)
 import torch
 from python_control import PythonControl
 try:
@@ -63,10 +63,11 @@ class DesignTests(unittest.TestCase):
             (directory / "trials").mkdir()
             def write(trial):
                 records = [{"case_id": "a", "trial": trial, "sample": 0, "variant": name,
-                            "wall_ms": value, "decode_wall_ms": value / 2}
+                            "wall_ms": value, "decode_wall_ms": value / 2, "prefill_wall_ms": value / 2, "mixed_wall_ms": 0}
                            for name, value in (("python-production", 10), ("cpp-production", 5))]
                 (directory / "trials" / f"a-{trial}.json").write_text(json.dumps(
-                    {"status": "complete", "fingerprint": "test", "records": records}))
+                    {"status": "complete", "fingerprint": "test", "records": records, "case_id": "a", "trial": trial,
+                     "checks": {name: {"metadata_equal": True, "outputs_equal": True} for name in ("python-production", "cpp-production")}}))
             write(0)
             with redirect_stdout(io.StringIO()):
                 analyze(SimpleNamespace(output_dir=directory))
@@ -83,6 +84,25 @@ class DesignTests(unittest.TestCase):
             self.assertEqual(len(report["phase_effects"]["decode"]), 1)
             self.assertEqual(report["phase_effects"]["mixed"], [])
 
+    def test_complete_checkpoint_rejects_missing_pairs_and_nonfinite_times(self):
+        manifest = {"fingerprint": "test", "phase": "scheduler", "trials": 1, "samples": 1,
+                    "plan": [{"id": "a"}]}
+        names = ("python-production", "cpp-production")
+        payload = {"status": "complete", "fingerprint": "test", "case_id": "a", "trial": 0,
+                   "checks": {n: {"metadata_equal": True, "outputs_equal": True} for n in names},
+                   "records": [{"case_id": "a", "trial": 0, "sample": 0, "variant": n,
+                                "wall_ms": 2., "decode_wall_ms": 1., "prefill_wall_ms": 1., "mixed_wall_ms": 0.}
+                               for n in names]}
+        validate_checkpoint(payload, manifest)
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            validate_checkpoint({**payload, "records": payload["records"][:1]}, manifest)
+        bad = copy.deepcopy(payload)
+        bad["records"][0]["mixed_wall_ms"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "timing"):
+            validate_checkpoint(bad, manifest)
+        with self.assertRaisesRegex(ValueError, "correctness"):
+            validate_checkpoint({**payload, "checks": {}}, manifest)
+
     def test_dispatch_fallback_and_tree_validation(self):
         policy = {"tree": {"feature": "max_pages", "threshold": 16,
                             "left": {"action": [4, 2]}, "right": {"action": [16, 3]}},
@@ -97,7 +117,8 @@ class DesignTests(unittest.TestCase):
 
     def test_policy_requires_gate_source_identity_and_hardware(self):
         source = ROOT / "experiments/decode/paged_decode_grouped_splitk_pipelined.py"
-        spec = {"hardware": {"name": "H100"}, "source_hashes": {source.name: stable_hash(source.read_text())},
+        spec = {"hardware": {"name": "H100"}, "source_hashes": {source.name: stable_hash(source.read_text()),
+                    "../../engine/kvcache/paged_decode_attention.py": stable_hash((ROOT / "engine/kvcache/paged_decode_attention.py").read_text())},
                 "plan": [{"suite": "train", "batch": 1, "features": {"max_pages": 8}},
                          {"suite": "test", "batch": 128, "features": {"max_pages": 1024}}]}
         fingerprint = stable_hash(spec)
@@ -119,6 +140,25 @@ class DesignTests(unittest.TestCase):
 
 @unittest.skipIf(cpp is None, "build C++ extension first")
 class MatchedSchedulerTests(unittest.TestCase):
+    def test_full_plan_drains_and_saturation_cases_reach_target_batch(self):
+        from benchmark_scheduler_decode import execute, make_config
+        fake_torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+        class Adapter:
+            def __init__(self):
+                self.decisions = {}
+                self.step_calls = []
+            def __call__(self, ids, pos, slots, cu, context, blocks, maximum, decode):
+                self.step_calls.append((decode, ids.numel(), context.numel(), maximum))
+                return torch.zeros((context.numel(), 2))
+        for case in make_plan("full"):
+            requests = [{"id": i, "prompt": [1] * length, "output": case["outputs"][i],
+                         "arrival": case["arrivals"][i]} for i, length in enumerate(case["lengths"])]
+            result = execute(fake_torch, cpp.IterationLoop(make_config(cpp, case), torch.device("cpu")), Adapter(), requests)
+            self.assertEqual([len(result["outputs"][i]) for i in range(len(requests))], case["outputs"])
+            if case["kind"] == "saturated":
+                self.assertEqual(result["max_actual_decode_batch"], case["max_running"])
+                self.assertGreaterEqual(result["decode_batch_histogram"][str(case["max_running"])], 64)
+
     def test_metadata_page_reuse_eos_and_mixed_schedule(self):
         for eos in (-1, 9):
             config = cpp.SchedulerConfig()

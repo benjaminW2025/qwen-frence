@@ -33,6 +33,18 @@ def make_plan(preset="full"):
                       "lengths": [length] * batch, "arrivals": [0] * batch,
                       "outputs": [output] * batch, "max_running": batch,
                       "prefill_budget": 128 if preset == "smoke" else 2048})
+    if preset == "full":
+        # With a 2048-token prefill budget, long prompts admit slowly: 64
+        # generated tokens only sustain ~16 concurrent decode requests. Add
+        # explicit saturation cases that keep early arrivals alive long enough
+        # to reach the declared batch and then decode together for >=64 steps.
+        for batch in (32, 128):
+            length, budget = 8192, 2048
+            limit = math.ceil(batch * length / budget) + output
+            cases.append({"id": f"saturated-b{batch}-l{length}", "kind": "saturated",
+                          "lengths": [length] * batch, "arrivals": [0] * batch,
+                          "outputs": [limit] * batch, "max_running": batch,
+                          "prefill_budget": budget})
     batch, length = (4, 769) if preset == "smoke" else (32, 6145)
     for kind in ("ragged", "staggered"):
         lengths = [max(1, length // (1 + i % 4)) for i in range(batch)]
@@ -86,9 +98,12 @@ def load_policy(directory, hardware=None):
     spec = {k: v for k, v in manifest.items() if k not in ("fingerprint", "created_at")}
     if stable_hash(spec) != manifest["fingerprint"]:
         raise ValueError("decode manifest fingerprint is invalid")
-    source = DECODE / "paged_decode_grouped_splitk_pipelined.py"
-    if manifest["source_hashes"].get(source.name) != stable_hash(source.read_text()):
-        raise ValueError("decode kernel changed since the sweep; rerun in a new directory")
+    required = {"paged_decode_grouped_splitk_pipelined.py", "../../engine/kvcache/paged_decode_attention.py"}
+    if not required <= set(manifest["source_hashes"]):
+        raise ValueError("decode sweep did not fingerprint both candidate and production kernels")
+    for name, digest in manifest["source_hashes"].items():
+        if stable_hash((DECODE / name).read_text()) != digest:
+            raise ValueError(f"decode source changed since sweep: {name}; use a new sweep directory")
     if hardware is not None:
         for key in ("name", "sms", "capability", "memory", "uuid", "torch", "triton", "cuda", "driver", "python"):
             if hardware.get(key) != manifest["hardware"].get(key):
@@ -110,6 +125,40 @@ def select_action(policy, batch, context):
             or not policy["pages_range"][0] <= pages <= policy["pages_range"][1]):
         return None  # Explicit production fallback; never extrapolate silently.
     return predict(policy["tree"], {"batch": batch, "max_pages": pages})
+
+
+def validate_checkpoint(payload, manifest, case_id=None, trial=None):
+    """A complete trial must contain every paired arm/sample, not just a flag."""
+    if payload.get("status") != "complete" or payload.get("fingerprint") != manifest["fingerprint"]:
+        raise ValueError("invalid checkpoint status/fingerprint")
+    case_id = payload.get("case_id") if case_id is None else case_id
+    trial = payload.get("trial") if trial is None else trial
+    if (payload.get("case_id") != case_id or payload.get("trial") != trial
+            or case_id not in {c["id"] for c in manifest["plan"]}
+            or type(trial) is not int or not 0 <= trial < manifest["trials"]):
+        raise ValueError("checkpoint case/trial mismatch")
+    names = list(VARIANTS) if manifest["phase"] == "combined" else list(VARIANTS)[:2]
+    wanted = {(sample, name) for sample in range(manifest["samples"]) for name in names}
+    seen = set()
+    for record in payload.get("records", []):
+        key = (record.get("sample"), record.get("variant"))
+        if (record.get("case_id") != case_id or record.get("trial") != trial
+                or type(record.get("sample")) is not int or key not in wanted or key in seen):
+            raise ValueError("duplicate/unplanned checkpoint observation")
+        for metric in ("wall_ms", "decode_wall_ms", "prefill_wall_ms", "mixed_wall_ms"):
+            value = record.get(metric)
+            if (not isinstance(value, (int, float)) or not math.isfinite(value)
+                    or value < 0 or (metric == "wall_ms" and value == 0)):
+                raise ValueError(f"invalid checkpoint timing: {metric}")
+        seen.add(key)
+    if seen != wanted:
+        raise ValueError("incomplete checkpoint observations")
+    if set(payload.get("checks", {})) != set(names):
+        raise ValueError("missing checkpoint correctness checks")
+    for check in payload["checks"].values():
+        if check.get("outputs_equal") is not True or check.get("metadata_equal") is not True:
+            raise ValueError("checkpoint correctness checks did not pass")
+    return payload["records"]
 
 
 def summarize(records, phase, expected_trials, expected_samples, seed=0, metric="wall_ms"):
