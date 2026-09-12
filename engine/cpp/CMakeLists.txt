@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(inference_engine_cpp LANGUAGES CXX CUDA)
+project(inference_engine_cpp LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,11 +29,6 @@ target_include_directories(inference_engine_cpp PRIVATE
 
 target_link_libraries(inference_engine_cpp PRIVATE
     ${TORCH_LIBRARIES}
-)
-
-# CUDA flags
-target_compile_options(inference_engine_cpp PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
 )
 
 # Install

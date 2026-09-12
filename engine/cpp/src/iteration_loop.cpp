@@ -13,8 +13,31 @@
 #include "iteration_loop.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 
 namespace inference_engine {
+
+namespace {
+
+void validate_logits(
+    const torch::Tensor& logits,
+    int64_t expected_rows,
+    const char* phase
+) {
+    if (!logits.defined()) {
+        throw std::runtime_error(std::string(phase) + " forward returned undefined logits");
+    }
+    if (logits.dim() != 2) {
+        throw std::runtime_error(std::string(phase) + " logits must be rank two");
+    }
+    if (logits.size(0) != expected_rows) {
+        throw std::runtime_error(
+            std::string(phase) + " logits row count does not match scheduled sequences"
+        );
+    }
+}
+
+}  // namespace
 
 // =============================================================================
 // BatchMetadata - Pre-allocated buffers
@@ -66,6 +89,25 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
     : config_(config)
     , device_(device)
 {
+    if (config_.max_batch_size <= 0) {
+        throw std::invalid_argument("max_batch_size must be positive");
+    }
+    if (config_.max_prefill_tokens_per_iter <= 0) {
+        throw std::invalid_argument("max_prefill_tokens_per_iter must be positive");
+    }
+    if (config_.max_context_length <= 0) {
+        throw std::invalid_argument("max_context_length must be positive");
+    }
+    if (config_.block_size <= 0) {
+        throw std::invalid_argument("block_size must be positive");
+    }
+    if (config_.num_kv_heads <= 0) {
+        throw std::invalid_argument("num_kv_heads must be positive");
+    }
+    if (config_.head_dim <= 0) {
+        throw std::invalid_argument("head_dim must be positive");
+    }
+
     // Pre-allocate batch metadata buffers
     int64_t max_blocks = (config_.max_context_length + config_.block_size - 1)
                          / config_.block_size;
@@ -115,7 +157,10 @@ int64_t IterationLoop::submit_request(
     }
 
     int64_t prompt_length = static_cast<int64_t>(prompt_ids.size());
-    if (prompt_length + max_output_tokens > config_.max_context_length) {
+    if (
+        prompt_length > config_.max_context_length
+        || max_output_tokens > config_.max_context_length - prompt_length
+    ) {
         throw std::invalid_argument(
             "prompt and output exceed max_context_length"
         );
@@ -144,7 +189,7 @@ IterationPlan IterationLoop::schedule() {
     IterationPlan plan;
 
     // ==========================================================================
-    // TODO(you): Implement FCFS scheduling
+    // FCFS scheduling
     //
     // DESIGN CHOICES:
     //   1. Decode-first vs prefill-first?
@@ -189,7 +234,7 @@ IterationPlan IterationLoop::schedule() {
     }
 
     // Step 3: Admit new requests from pending queue
-    // TODO(you): Implement admission control
+    // Admission control
     //
     // DESIGN CHOICE: When to admit new requests?
     //   - Always admit if memory available (aggressive)
@@ -207,7 +252,9 @@ IterationPlan IterationLoop::schedule() {
         auto& req = pending_queue_.front();
 
         // Calculate blocks needed for this request
-        int64_t blocks_needed = (req->prompt_ids.size() + req->max_output_tokens
+        int64_t request_tokens =
+            static_cast<int64_t>(req->prompt_ids.size()) + req->max_output_tokens;
+        int64_t blocks_needed = (request_tokens
                                  + config_.block_size - 1) / config_.block_size;
 
         // Try to allocate blocks
@@ -282,7 +329,7 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             lens_acc[i] = static_cast<int32_t>(req->total_tokens());
 
             // Compute slot mapping
-            // TODO(you): Implement slot mapping calculation
+            // Slot mapping calculation
             //
             // DESIGN: slot = physical_position_in_kv_cache
             //   slot = block_id * block_size + offset_in_block
@@ -423,7 +470,7 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
 
 torch::Tensor IterationLoop::sample(torch::Tensor logits) {
     // ==========================================================================
-    // TODO(you): Implement sampling
+    // Greedy sampling
     //
     // DESIGN CHOICES:
     //   1. Greedy (argmax) - simplest, deterministic
@@ -438,8 +485,8 @@ torch::Tensor IterationLoop::sample(torch::Tensor logits) {
     //   - Last token of each prefill sequence
     //   - Each decode token
     //
-    // HINT: For prefill, you need to extract the last logit of each sequence
-    //       using cu_seqlens to find the boundaries.
+    // CONTRACT: forward_fn already returns only the final-position logit row
+    // for each decode request or scheduled prefill sequence.
     // ==========================================================================
 
     // Simple greedy for now
@@ -455,7 +502,7 @@ void IterationLoop::update_requests(
     torch::Tensor next_tokens
 ) {
     // ==========================================================================
-    // TODO(you): Update request state after sampling
+    // Update request state after sampling
     //
     // For decode requests:
     //   1. Append next_token to output_ids
@@ -584,6 +631,7 @@ int64_t IterationLoop::step(
             /*max_query_length=*/1,
             /*is_decode=*/true
         );
+        validate_logits(decode_logits, n, "decode");
         logits = decode_logits;
     }
 
@@ -601,6 +649,7 @@ int64_t IterationLoop::step(
             batch_metadata_.max_prefill_chunk_length,
             /*is_decode=*/false
         );
+        validate_logits(prefill_logits, num_seqs, "prefill");
 
         if (logits.defined()) {
             logits = torch::cat({logits, prefill_logits}, 0);

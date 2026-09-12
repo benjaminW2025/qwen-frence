@@ -68,33 +68,58 @@ for (int i = 0; i < n; ++i) {
 batch_metadata_.decode_input_ids.slice(0, 0, n).copy_(cpu_staging);
 ```
 
-## Your Implementation Tasks
+## Implementation Status
 
-### 1. Prefill Batch Building (iteration_loop.cpp:200-230)
-Build the packed ragged format for prefill:
-- `prefill_input_ids`: all tokens concatenated
-- `prefill_cu_seqlens`: cumulative sequence lengths
+- [x] FCFS scheduling and admission limits
+- [x] Decode metadata construction
+- [x] Packed-paged prefill metadata construction
+- [x] Separate decode/prefill forward calls and mixed-logit ordering
+- [x] Greedy batched sampling
+- [x] EOS/output-limit completion and block reclamation
+- [x] Request, configuration, and callback-logit validation
+- [ ] Integrate a real model/KV-pool `forward_fn`
+- [ ] Size the physical block pool from actual KV-cache memory
 
-### 2. Block Table (iteration_loop.cpp:180)
-Fill the block table for paged attention:
-- `decode_block_table[i, j]` = physical block ID for request i, logical block j
+## Build and test
 
-### 3. Completion Handling (iteration_loop.cpp:290-300)
-Move completed requests out of `running_requests_`:
-- Free their KV cache blocks
-- Store outputs for `pop_completed()`
+The setuptools path uses PyTorch's extension tooling without requiring Ninja:
 
-### 4. Mixed Forward (iteration_loop.cpp:330)
-Handle both decode and prefill in one step:
-- Concatenate outputs if both present
-- Extract correct logits for sampling
+```bash
+make cpp-scheduler-build
+make cpp-scheduler-test
+```
 
-## Building
+The behavioral suite runs on CPU and exercises the real compiled extension. It
+checks packed/chunked metadata, mixed decode/prefill logit ordering, EOS cleanup,
+invalid-input handling, and exact deterministic logit/output parity with the
+Python scheduler.
+
+Run the scheduler-overhead comparison with:
+
+```bash
+make cpp-scheduler-benchmark
+```
+
+Or select a device and workload explicitly:
+
+```bash
+python3 experiments/scheduler/benchmark_cpp_scheduler.py \
+    --device cuda \
+    --num-requests 8 \
+    --prompt-length 128 \
+    --output-length 16
+```
+
+This benchmark deliberately replaces transformer execution with identical
+deterministic logits. It measures scheduler/control-plane overhead and performs
+an exact-logit correctness preflight; it is not a model-throughput benchmark.
+
+## Alternative CMake build
 
 ```bash
 cd engine/cpp
 mkdir build && cd build
-cmake .. -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')"
+cmake .. -DCMAKE_PREFIX_PATH="$(python3 -c 'import torch; print(torch.utils.cmake_prefix_path)')"
 make -j
 ```
 
