@@ -82,7 +82,8 @@ struct BatchMetadata {
         int64_t max_prefill_tokens,
         int64_t max_prefill_seqs,
         int64_t max_blocks,
-        torch::Device device
+        torch::Device device,
+        bool pinned_memory = false
     );
 
     // Reset for new iteration (just reset counts, don't reallocate)
@@ -119,13 +120,18 @@ public:
         torch::Device device
     );
 
+    ~IterationLoop();
+
     // Submit new request (called from Python)
     int64_t submit_request(
         std::vector<int64_t> prompt_ids,
         int64_t max_output_tokens
     );
 
-    // Run one iteration: schedule → build batch → forward → sample → update
+    // Run one iteration: schedule → build batch → forward → sample → update.
+    // Single-threaded. Callback views are reused next step; consume on the
+    // current stream (or join side streams before returning). CUDA transfers
+    // are asynchronous, but step waits for sampled tokens to update requests.
     // Returns number of completed requests
     int64_t step(
         const std::function<torch::Tensor(
@@ -144,6 +150,8 @@ public:
     std::vector<std::pair<int64_t, std::vector<int64_t>>> pop_completed();
 
     // Stats
+    // Host-side dispatch feature; never reads a CUDA tensor.
+    int64_t max_decode_context_length() const { return max_decode_context_length_; }
     int64_t num_pending() const { return pending_queue_.size(); }
     int64_t num_running() const { return running_requests_.size(); }
 
@@ -151,6 +159,9 @@ private:
     SchedulerConfig config_;
     torch::Device device_;
     BatchMetadata batch_metadata_;
+    BatchMetadata host_metadata_;
+    struct MetadataTransfer;
+    std::unique_ptr<MetadataTransfer> metadata_transfer_;
 
     // Request management
     std::queue<std::unique_ptr<Request>> pending_queue_;
@@ -158,6 +169,7 @@ private:
     std::vector<std::pair<int64_t, std::vector<int64_t>>> completed_outputs_;
 
     int64_t next_request_id_ = 0;
+    int64_t max_decode_context_length_ = 0;
 
     // Simplified block manager. It owns page-ID allocation, but not the actual
     // K/V tensors; those remain behind forward_fn in this prototype.
@@ -167,6 +179,7 @@ private:
     // Internal methods
     IterationPlan schedule();
     void build_batch(const IterationPlan& plan);
+    void copy_batch();
     torch::Tensor sample(torch::Tensor logits);
     void update_requests(const IterationPlan& plan, torch::Tensor next_tokens);
 

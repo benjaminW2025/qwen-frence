@@ -51,6 +51,7 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
              "Run one iteration, returns number of newly completed requests")
         .def("pop_completed", &IterationLoop::pop_completed,
              "Get and clear completed request outputs")
+        .def("max_decode_context_length", &IterationLoop::max_decode_context_length)
         .def("num_pending", &IterationLoop::num_pending)
         .def("num_running", &IterationLoop::num_running);
 

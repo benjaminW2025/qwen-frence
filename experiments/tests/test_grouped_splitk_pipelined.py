@@ -149,6 +149,25 @@ class GroupedSplitKKernelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "divisible"):
             self.attention(*invalid)
 
+    def test_preallocated_partial_reduce_and_full_replays(self):
+        from benchmark_decode_stage_policy import capture, prepare
+        tensors = make_inputs([1, 17, 81])
+        for k in (1, 4):
+            for stages in (1, 4):
+                with self.subTest(k=k, stages=stages):
+                    output, launches, compiled = prepare(torch, self.attention, tensors, [k, stages])
+                    self.assertEqual(set(compiled), {'partial'} if k == 1 else {'partial', 'reduce'})
+                    graphs = {role: capture(torch, launch) for role, launch in launches.items()}
+                    tensors[0].mul_(0.5)
+                    expected = attention_reference(*tensors)
+                    graphs['partial'].replay()
+                    if k > 1:
+                        graphs['reduce'].replay()
+                    check_output(output, expected)
+                    output.zero_()
+                    graphs['full'].replay()
+                    check_output(output, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

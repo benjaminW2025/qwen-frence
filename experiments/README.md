@@ -5,6 +5,20 @@ CPU control-plane tests, and the measurements collected from them. The stable
 cross-backend benchmark harness remains in `benchmarks/`; numerical and state-machine
 gates remain in `correctness/`.
 
+## Pages per program and stage dispatch study
+
+The controlled follow-up to the joint sweep is
+[`decode/benchmark_decode_stage_policy.py`](decode/benchmark_decode_stage_policy.py).
+It tests exact pages per program versus K/stages, separately times partial and
+full attention, interleaves independent trials under warm-cache and eviction
+conditions, and evaluates a small `(K, stages)` policy on held-out uniform and
+ragged shapes. Runs resume from atomic case/trial checkpoints.
+
+Start with the plan and the GPU smoke check in the
+[experiment protocol](decode/STAGE_POLICY.md). The full study has 290 cases;
+profiling and final full-engine validation are separate from microbenchmark
+policy selection.
+
 ## Joint decode sweep: grouping × split-K × pipeline stages
 
 Run the full factorial experiment on the GPU:
@@ -765,3 +779,12 @@ python3 correctness/run_correctness.py --checks baseline-vs-hf
 ```
 
 Use `--checks all` when also validating the legacy CUDA-graph ablations.
+
+### Scheduler × decode integration
+
+[Real-model integration protocol](integration/README.md) compares a matched Python
+scheduler control and the pinned C++ loop, runs the existing held-out decode
+policy study, then evaluates the complete 2×2 scheduler/decode matrix. The model
+adapter consumes native GPU metadata directly. See the protocol for H100 commands,
+correctness gates, resumable trials, and the distinction from a production-engine
+or serving benchmark.

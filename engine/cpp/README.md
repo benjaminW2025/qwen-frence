@@ -55,18 +55,35 @@ for req in decode_requests:
 input_ids = torch.tensor(tokens, device='cuda')  # Allocation + H2D copy
 ```
 
-C++ version (fast):
-```cpp
-// One-time allocation
-batch_metadata_ = BatchMetadata::allocate(...);
+The C++ loop allocates device metadata and matching CPU staging tensors once.
+For CUDA, staging uses `TensorOptions().device(torch::kCPU).pinned_memory(true)`.
+`build_batch()` writes directly into that storage; no temporary pageable metadata
+arrays are created each iteration. CPU execution uses ordinary reusable buffers.
 
-// Every iteration: just write to existing buffer
-auto acc = cpu_staging.accessor<int64_t, 1>();
-for (int i = 0; i < n; ++i) {
-    acc[i] = requests[i]->last_token();
-}
-batch_metadata_.decode_input_ids.slice(0, 0, n).copy_(cpu_staging);
-```
+For each CUDA step:
+
+1. Wait for the previous H2D copy before rewriting its pinned source buffer.
+2. Build all metadata synchronously on the calling CPU thread.
+3. On a persistent copy stream, wait for prior device-buffer consumers and copy
+   only active rows with `copy_(source, /*non_blocking=*/true)`.
+4. Record a copy-complete event and make the caller's current compute stream wait
+   for it before invoking `forward_fn`.
+5. Record completion of consumers before the next device-buffer reuse. Callback
+   exceptions drain both streams; destruction waits before freeing buffers.
+
+The stream wrappers restore the caller's stream/device. `forward_fn` must consume
+metadata on the current stream, or join any side-stream consumers back to it
+before returning. Its arguments are temporary views into reused storage: clone
+anything that must persist beyond the step. Call the loop from one thread; it is
+not reentrant. Capturing the entire `step()` in a CUDA graph is unsupported because
+it schedules and reads sampled tokens on the CPU.
+
+This implements pinned asynchronous **transfers**, while preserving the existing
+synchronous `step()` API. It still reads sampled tokens back before scheduling the
+next iteration. Consequently, it does **not** yet overlap next-batch construction
+with the current forward. One buffer set is sufficient under this API, and retains
+stable device addresses. Cross-iteration overlap requires a separate scheduling
+change and multiple buffer sets; no throughput improvement is assumed here.
 
 ## Implementation Status
 
@@ -77,6 +94,7 @@ batch_metadata_.decode_input_ids.slice(0, 0, n).copy_(cpu_staging);
 - [x] Greedy batched sampling
 - [x] EOS/output-limit completion and block reclamation
 - [x] Request, configuration, and callback-logit validation
+- [x] Reusable pinned CPU metadata, asynchronous H2D copies, and stream/event ordering
 - [ ] Integrate a real model/KV-pool `forward_fn`
 - [ ] Size the physical block pool from actual KV-cache memory
 
@@ -92,7 +110,10 @@ make cpp-scheduler-test
 The behavioral suite runs on CPU and exercises the real compiled extension. It
 checks packed/chunked metadata, mixed decode/prefill logit ordering, EOS cleanup,
 invalid-input handling, and exact deterministic logit/output parity with the
-Python scheduler.
+Python scheduler. On CUDA machines the same command also exercises metadata
+parity across alternating streams, delayed consumers and destruction, callback
+failure recovery, and (with two GPUs) device restoration. CUDA tests skip on CPU
+machines. Run `make cpp-scheduler-test` on the H100 before benchmarking this path.
 
 Run the scheduler-overhead comparison with:
 
