@@ -102,6 +102,7 @@ struct IterationPlan {
 
 // Configuration
 struct SchedulerConfig {
+    int64_t eos_token_id = -1;
     int64_t max_batch_size = 256;
     int64_t max_prefill_tokens_per_iter = 2048;
     int64_t max_context_length = 32768;

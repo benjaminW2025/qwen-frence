@@ -102,6 +102,25 @@ int64_t IterationLoop::submit_request(
     std::vector<int64_t> prompt_ids,
     int64_t max_output_tokens
 ) {
+    if (prompt_ids.empty()) {
+        throw std::invalid_argument(
+            "prompt_ids must contain at least one token"
+        );
+    }
+
+    if (max_output_tokens <= 0) {
+        throw std::invalid_argument(
+            "max_output_tokens must be positive"
+        );
+    }
+
+    int64_t prompt_length = static_cast<int64_t>(prompt_ids.size());
+    if (prompt_length + max_output_tokens > config_.max_context_length) {
+        throw std::invalid_argument(
+            "prompt and output exceed max_context_length"
+        );
+    }
+
     auto request = std::make_unique<Request>();
     request->request_id = next_request_id_++;
     request->prompt_ids = std::move(prompt_ids);
@@ -180,7 +199,11 @@ IterationPlan IterationLoop::schedule() {
     // HINT: You need to allocate KV cache blocks for new requests
     //       Use allocate_block() and check for std::nullopt
 
-    while (!pending_queue_.empty() && prefill_budget > 0) {
+    while (
+        !pending_queue_.empty()
+        && prefill_budget > 0
+        && static_cast<int64_t>(running_requests_.size()) < config_.max_batch_size
+        ) {
         auto& req = pending_queue_.front();
 
         // Calculate blocks needed for this request
@@ -458,9 +481,11 @@ void IterationLoop::update_requests(
         int64_t next_token = tokens_acc[token_idx++];
         req->output_ids.push_back(next_token);
 
+        bool hit_eos = config_.eos_token_id >= 0 && next_token == config_.eos_token_id;
+        bool hit_token_limit = static_cast<int64_t>(req->output_ids.size()) >= req->max_output_tokens;
+
         // Check completion
-        // TODO(you): Add EOS token check
-        if (static_cast<int64_t>(req->output_ids.size()) >= req->max_output_tokens) {
+        if (hit_eos || hit_token_limit) {
             req->status = Request::Status::COMPLETED;
         }
     }
@@ -471,32 +496,55 @@ void IterationLoop::update_requests(
         int64_t chunk = plan.prefill_chunk_sizes[i];
 
         req->num_prompt_tokens_computed += chunk;
+        // forward_fn returns one logits row for every scheduled prefill
+        // sequence. Always consume the corresponding sampled token so the
+        // cursor stays aligned, even when this chunk did not finish prefill.
+        int64_t next_token = tokens_acc[token_idx++];
 
         if (req->is_prefill_complete()) {
-            // Prefill done, get the next token
-            int64_t next_token = tokens_acc[token_idx++];
+            // Prefill is done, so this chunk's final-position prediction is the
+            // request's first generated token.
             req->output_ids.push_back(next_token);
-            req->status = Request::Status::DECODING;
+
+            bool hit_eos = config_.eos_token_id >= 0 && next_token == config_.eos_token_id;
+            bool hit_token_limit = static_cast<int64_t>(req->output_ids.size()) >= req->max_output_tokens;
+
+            if (hit_eos || hit_token_limit) {
+                req->status = Request::Status::COMPLETED;
+            }
+            else {
+                req->status = Request::Status::DECODING;
+            }
         }
     }
 
-    // Move completed requests to output
-    // TODO(you): Implement this
-    //
-    // HINT: Use std::remove_if with erase idiom
-    //   running_requests_.erase(
-    //       std::remove_if(running_requests_.begin(), running_requests_.end(),
-    //           [this](auto& req) {
-    //               if (req->status == Request::Status::COMPLETED) {
-    //                   completed_outputs_.emplace_back(req->request_id, req->output_ids);
-    //                   // Free blocks
-    //                   for (int64_t b : req->block_ids) free_block(b);
-    //                   return true;
-    //               }
-    //               return false;
-    //           }),
-    //       running_requests_.end()
-    //   );
+    // Compact retained requests in one pass, then erase the completed tail.
+    // This avoids repeatedly shifting the vector when several requests finish
+    // in the same iteration.
+    auto new_end = std::remove_if(
+        running_requests_.begin(),
+        running_requests_.end(),
+        [this](const std::unique_ptr<Request>& req) {
+            if (req->status != Request::Status::COMPLETED) {
+                return false;
+            }
+
+            // The request is about to be destroyed, so transfer its output
+            // vector instead of copying every generated token.
+            completed_outputs_.emplace_back(
+                req->request_id,
+                std::move(req->output_ids)
+            );
+
+            for (int64_t block_id : req->block_ids) {
+                free_block(block_id);
+            }
+
+            return true;
+        }
+    );
+
+    running_requests_.erase(new_end, running_requests_.end());
 }
 
 // =============================================================================
