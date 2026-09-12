@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "system": {
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "repository": {
+      "commit": "ec4ae5c3be3b99df56017807bf8a476b8fbf5d29",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0",
+      "transformers": "4.57.6",
+      "triton": null,
+      "vllm": null
+    },
+    "cuda_available": false,
+    "torch_cuda_version": null
+  },
+  "configuration": {
+    "device": "cpu",
+    "num_requests": 8,
+    "prompt_length": 128,
+    "output_length": 16,
+    "max_running": 8,
+    "max_prefill_tokens": 4096,
+    "block_size": 16,
+    "vocab_size": 256,
+    "warmups": 3,
+    "repetitions": 20,
+    "output": "experiments/results/cpp-scheduler.json"
+  },
+  "correctness": {
+    "outputs_equal": true,
+    "logit_events": 16,
+    "max_abs_logit_error": 0.0
+  },
+  "cpp": {
+    "median_ms": 0.2285625,
+    "raw_ms": [
+      0.211334,
+      0.208667,
+      0.21175,
+      0.22675,
+      0.231834,
+      0.23925,
+      0.235542,
+      0.236875,
+      0.223708,
+      0.210334,
+      0.2105,
+      0.209958,
+      0.268584,
+      0.251791,
+      0.249542,
+      0.2275,
+      0.239792,
+      0.229625,
+      0.207625,
+      0.238917
+    ]
+  },
+  "python": {
+    "median_ms": 0.48537549999999996,
+    "raw_ms": [
+      0.49675,
+      0.458458,
+      0.464083,
+      0.472584,
+      0.485417,
+      0.498375,
+      0.485334,
+      0.490083,
+      0.479625,
+      0.479042,
+      0.482208,
+      0.483875,
+      0.482959,
+      0.488292,
+      0.490166,
+      0.499709,
+      0.770709,
+      0.563791,
+      0.582083,
+      0.462958
+    ]
+  },
+  "speedup_python_over_cpp": 2.123600765654908,
+  "scope": "synthetic scheduler/control-plane overhead; no transformer layers"
+}

@@ -10,7 +10,8 @@ LOCAL_SUITE ?=
 
 .PHONY: help unit preflight-local preflight-vllm correctness correctness-primary \
 	benchmark-smoke phase-scorecard intervention-suite dispatch-policy-suite \
-	scorecard-local scorecard-vllm reproduce-local reproduce-vllm reproduce-experiments
+	scorecard-local scorecard-vllm reproduce-local reproduce-vllm reproduce-experiments \
+	cpp-scheduler-build cpp-scheduler-test cpp-scheduler-benchmark
 
 help:
 	@echo "Reproducible validation and benchmark targets"
@@ -22,6 +23,8 @@ help:
 	@echo "  make phase-scorecard      isolated prefill and decode surfaces"
 	@echo "  make intervention-suite   focused operator/intervention ablations"
 	@echo "  make dispatch-policy-suite  dense crossover sweeps and policy fit"
+	@echo "  make cpp-scheduler-test   build and test the C++ scheduler on CPU"
+	@echo "  make cpp-scheduler-benchmark  compare C++ and Python scheduler overhead"
 	@echo "  make scorecard-local      complete eight-cell local H100 scorecard"
 	@echo "  make scorecard-vllm LOCAL_SUITE=... VLLM_PYTHON=..."
 	@echo "  make reproduce-local      unit + preflight + correctness + local scorecard"
@@ -32,6 +35,15 @@ unit:
 	$(PYTHON) -m unittest discover -s benchmarks/tests -p 'test_*.py'
 	$(PYTHON) -m unittest discover -s correctness/tests -p 'test_*.py'
 	$(PYTHON) -m unittest discover -s experiments/tests -p 'test_*.py'
+
+cpp-scheduler-build:
+	cd engine/cpp && $(PYTHON) setup.py build_ext --build-lib build
+
+cpp-scheduler-test: cpp-scheduler-build
+	$(PYTHON) -m unittest discover -s engine/cpp/tests -p 'test_*.py'
+
+cpp-scheduler-benchmark: cpp-scheduler-build
+	$(PYTHON) experiments/scheduler/benchmark_cpp_scheduler.py
 
 preflight-local:
 	$(PYTHON) benchmarks/run_setup_checks.py \
