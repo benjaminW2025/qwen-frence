@@ -11,6 +11,9 @@
  */
 
 #include "iteration_loop.hpp"
+#include <c10/core/DeviceGuard.h>
+#include <c10/core/Event.h>
+#include <c10/core/StreamGuard.h>
 #include <algorithm>
 #include <stdexcept>
 #include <string>
@@ -39,6 +42,31 @@ void validate_logits(
 
 }  // namespace
 
+// Generic c10 wrappers dispatch to CUDA at runtime, so the CPU-only extension
+// can still compile without CUDA headers or a CUDA toolkit.
+struct IterationLoop::MetadataTransfer {
+    c10::Stream copy_stream;
+    c10::Event copied{c10::DeviceType::CUDA};
+    c10::Event consumed{c10::DeviceType::CUDA};
+
+    explicit MetadataTransfer(torch::Device device)
+        : copy_stream(c10::impl::VirtualGuardImpl(device.type())
+                          .getStreamFromGlobalPool(device)) {}
+
+    ~MetadataTransfer() {
+        // Buffers outlive both queues, even if the callback threw. Normal step()
+        // already waits for sampled tokens; this is principally a lifetime fence.
+        try {
+            copy_stream.synchronize();
+            consumed.synchronize();
+        } catch (...) {
+            // Destructors must not throw during exception unwinding.
+        }
+    }
+};
+
+IterationLoop::~IterationLoop() = default;
+
 // =============================================================================
 // BatchMetadata - Pre-allocated buffers
 // =============================================================================
@@ -48,12 +76,13 @@ BatchMetadata BatchMetadata::allocate(
     int64_t max_prefill_tokens,
     int64_t max_prefill_seqs,
     int64_t max_blocks,
-    torch::Device device
+    torch::Device device,
+    bool pinned_memory
 ) {
     BatchMetadata meta;
 
-    auto opts_long = torch::TensorOptions().dtype(torch::kInt64).device(device);
-    auto opts_int = torch::TensorOptions().dtype(torch::kInt32).device(device);
+    auto opts_long = torch::TensorOptions().dtype(torch::kInt64).device(device).pinned_memory(pinned_memory);
+    auto opts_int = torch::TensorOptions().dtype(torch::kInt32).device(device).pinned_memory(pinned_memory);
 
     // Decode buffers
     meta.decode_input_ids = torch::empty({max_decode_batch}, opts_long);
@@ -108,6 +137,11 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
         throw std::invalid_argument("head_dim must be positive");
     }
 
+    // Resolve an unspecified CUDA index and keep allocations on the requested
+    // device, restoring the caller's device when construction finishes.
+    c10::DeviceGuard device_guard(device_);
+    device_ = device_guard.current_device();
+
     // Pre-allocate batch metadata buffers
     int64_t max_blocks = (config_.max_context_length + config_.block_size - 1)
                          / config_.block_size;
@@ -119,6 +153,21 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
         max_blocks,
         device_
     );
+
+    host_metadata_ = BatchMetadata::allocate(
+        config_.max_batch_size,
+        config_.max_prefill_tokens_per_iter,
+        config_.max_batch_size,
+        max_blocks,
+        torch::Device(torch::kCPU),
+        /*pinned_memory=*/device_.is_cuda()
+    );
+    if (device_.is_cuda()) {
+        metadata_transfer_ = std::make_unique<MetadataTransfer>(device_);
+        // GPU buffers may have been recycled from allocator work on this stream.
+        metadata_transfer_->consumed.record(
+            c10::impl::VirtualGuardImpl(device_.type()).getStream(device_));
+    }
 
     // Initialize block allocator
     // TODO(you): Calculate total_blocks_ based on GPU memory
@@ -298,18 +347,19 @@ IterationPlan IterationLoop::schedule() {
 // =============================================================================
 
 void IterationLoop::build_batch(const IterationPlan& plan) {
-    batch_metadata_.reset();
+    host_metadata_.reset();
+    max_decode_context_length_ = 0;
 
+    // CPU writes are synchronous. Finish all writes before copy_batch().
     // Build decode batch
     if (!plan.decode_requests.empty()) {
         int64_t n = plan.decode_requests.size();
-        batch_metadata_.num_decode_tokens = n;
+        host_metadata_.num_decode_tokens = n;
 
-        // Stage on CPU for now (TODO: optimize with pinned memory)
-        auto cpu_ids = torch::empty({n}, torch::kInt64);
-        auto cpu_pos = torch::empty({n}, torch::kInt64);
-        auto cpu_slots = torch::empty({n}, torch::kInt64);
-        auto cpu_seq_lens = torch::empty({n}, torch::kInt32);
+        auto cpu_ids = host_metadata_.decode_input_ids.slice(0, 0, n);
+        auto cpu_pos = host_metadata_.decode_positions.slice(0, 0, n);
+        auto cpu_slots = host_metadata_.decode_slot_mapping.slice(0, 0, n);
+        auto cpu_seq_lens = host_metadata_.decode_seq_lens.slice(0, 0, n);
 
         auto ids_acc = cpu_ids.accessor<int64_t, 1>();
         auto pos_acc = cpu_pos.accessor<int64_t, 1>();
@@ -327,6 +377,7 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             ids_acc[i] = last_token;
             pos_acc[i] = req->total_tokens() - 1;
             lens_acc[i] = static_cast<int32_t>(req->total_tokens());
+            max_decode_context_length_ = std::max(max_decode_context_length_, req->total_tokens());
 
             // Compute slot mapping
             // Slot mapping calculation
@@ -342,15 +393,8 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             slots_acc[i] = req->block_ids[block_idx] * config_.block_size + offset;
         }
 
-        // Copy to GPU (TODO: use async copy with pinned memory)
-        batch_metadata_.decode_input_ids.slice(0, 0, n).copy_(cpu_ids);
-        batch_metadata_.decode_positions.slice(0, 0, n).copy_(cpu_pos);
-        batch_metadata_.decode_slot_mapping.slice(0, 0, n).copy_(cpu_slots);
-        batch_metadata_.decode_seq_lens.slice(0, 0, n).copy_(cpu_seq_lens);
-
-        int64_t max_blocks = batch_metadata_.decode_block_table.size(1); // <- get the max blocks
-
-        auto cpu_block_table = torch::zeros({n, max_blocks}, torch::kInt32); // 2D tensor
+        auto cpu_block_table = host_metadata_.decode_block_table.slice(0, 0, n);
+        cpu_block_table.zero_(); // Clear padding left by a previous, longer request.
         auto block_table_acc = cpu_block_table.accessor<int32_t, 2>(); // Get accessor
         // Now loop through requests
         for (int64_t i = 0; i < n; ++i) {
@@ -360,15 +404,12 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             }
         }
 
-        // Copy to GPU
-        batch_metadata_.decode_block_table.slice(0, 0, n).copy_(cpu_block_table);
     }
 
     // Build prefill batch (packed ragged format)
     if (!plan.prefill_requests.empty()) {
         int64_t total_tokens = 0;
         int64_t num_seqs = static_cast<int64_t>(plan.prefill_requests.size());
-        int64_t max_blocks = batch_metadata_.prefill_block_table.size(1);
 
         for (size_t i = 0; i < plan.prefill_chunk_sizes.size(); ++i) {
             // First we should acc
@@ -376,17 +417,18 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
         }
 
         // First we want to build a tensor input that is the length of all prefill tokens added up
-        auto cpu_ids = torch::empty({total_tokens}, torch::kInt64); // Token ids
-        auto cpu_positions = torch::empty({total_tokens}, torch::kInt64); // Absolute positions within sequence
-        auto cpu_slots = torch::empty({total_tokens}, torch::kInt64);
-        auto cpu_cu_seqlens = torch::empty({num_seqs + 1}, torch::kInt32); // Keeps ending position for each sequence + 0 as starting position
+        auto cpu_ids = host_metadata_.prefill_input_ids.slice(0, 0, total_tokens); // Token ids
+        auto cpu_positions = host_metadata_.prefill_positions.slice(0, 0, total_tokens); // Absolute positions within sequence
+        auto cpu_slots = host_metadata_.prefill_slot_mapping.slice(0, 0, total_tokens);
+        auto cpu_cu_seqlens = host_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1); // Keeps ending position for each sequence + 0 as starting position
         // Unlike cu_seqlens (chunk boundaries), context_lens contains each
         // request's full visible length: previous prefix + this chunk.
-        auto cpu_context_lens = torch::empty({num_seqs}, torch::kInt32);
-        auto cpu_block_table = torch::zeros({num_seqs, max_blocks}, torch::kInt32);
+        auto cpu_context_lens = host_metadata_.prefill_context_lens.slice(0, 0, num_seqs);
+        auto cpu_block_table = host_metadata_.prefill_block_table.slice(0, 0, num_seqs);
+        cpu_block_table.zero_();
 
-        batch_metadata_.num_prefill_tokens = total_tokens;
-        batch_metadata_.num_prefill_seqs = num_seqs;
+        host_metadata_.num_prefill_tokens = total_tokens;
+        host_metadata_.num_prefill_seqs = num_seqs;
 
         auto ids_acc = cpu_ids.accessor<int64_t, 1>(); // Accessor for ids
         auto positions_acc = cpu_positions.accessor<int64_t, 1>(); // Accessor for positions
@@ -405,8 +447,8 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             int64_t chunk_size = plan.prefill_chunk_sizes[i]; // Get the chunk size for chunk i
             int64_t start = req->num_prompt_tokens_computed; // How many tokens in the prompt have been processed already
             // Update max_prefill_chunk_length
-            if (batch_metadata_.max_prefill_chunk_length < chunk_size) {
-                batch_metadata_.max_prefill_chunk_length = chunk_size;
+            if (host_metadata_.max_prefill_chunk_length < chunk_size) {
+                host_metadata_.max_prefill_chunk_length = chunk_size;
             }
             // Now we want to get its prompt_ids
             // Loop through each token in the chunk
@@ -441,26 +483,37 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             );
         }
 
-        // Copy the active portions of the CPU staging tensors to the
-        // pre-allocated device buffers.
-        batch_metadata_.prefill_input_ids
-            .slice(0, 0, total_tokens)
-            .copy_(cpu_ids);
-        batch_metadata_.prefill_positions
-            .slice(0, 0, total_tokens)
-            .copy_(cpu_positions);
-        batch_metadata_.prefill_slot_mapping
-            .slice(0, 0, total_tokens)
-            .copy_(cpu_slots);
-        batch_metadata_.prefill_cu_seqlens
-            .slice(0, 0, num_seqs + 1)
-            .copy_(cpu_cu_seqlens);
-        batch_metadata_.prefill_context_lens
-            .slice(0, 0, num_seqs)
-            .copy_(cpu_context_lens);
-        batch_metadata_.prefill_block_table
-            .slice(0, 0, num_seqs)
-            .copy_(cpu_block_table);
+    }
+}
+
+void IterationLoop::copy_batch() {
+    auto& dst = batch_metadata_;
+    const auto& src = host_metadata_;
+    dst.num_decode_tokens = src.num_decode_tokens;
+    dst.num_prefill_tokens = src.num_prefill_tokens;
+    dst.num_prefill_seqs = src.num_prefill_seqs;
+    dst.max_prefill_chunk_length = src.max_prefill_chunk_length;
+
+    auto copy = [this](torch::Tensor to, const torch::Tensor& from, int64_t n) {
+        to.slice(0, 0, n).copy_(from.slice(0, 0, n), /*non_blocking=*/device_.is_cuda());
+    };
+    if (src.num_decode_tokens > 0) {
+        const auto n = src.num_decode_tokens;
+        copy(dst.decode_input_ids, src.decode_input_ids, n);
+        copy(dst.decode_positions, src.decode_positions, n);
+        copy(dst.decode_slot_mapping, src.decode_slot_mapping, n);
+        copy(dst.decode_seq_lens, src.decode_seq_lens, n);
+        copy(dst.decode_block_table, src.decode_block_table, n);
+    }
+    if (src.num_prefill_tokens > 0) {
+        const auto n = src.num_prefill_tokens;
+        const auto seqs = src.num_prefill_seqs;
+        copy(dst.prefill_input_ids, src.prefill_input_ids, n);
+        copy(dst.prefill_positions, src.prefill_positions, n);
+        copy(dst.prefill_slot_mapping, src.prefill_slot_mapping, n);
+        copy(dst.prefill_cu_seqlens, src.prefill_cu_seqlens, seqs + 1);
+        copy(dst.prefill_context_lens, src.prefill_context_lens, seqs);
+        copy(dst.prefill_block_table, src.prefill_block_table, seqs);
     }
 }
 
@@ -611,61 +664,97 @@ int64_t IterationLoop::step(
         return 0;
     }
 
-    // Build batch (writes to pre-allocated buffers)
+    c10::DeviceGuard device_guard(device_);
+    std::optional<c10::Stream> compute_stream;
+    c10::OptionalStreamGuard compute_guard;
+    if (metadata_transfer_) {
+        compute_stream = c10::impl::VirtualGuardImpl(device_.type()).getStream(device_);
+        compute_guard.reset_stream(*compute_stream);
+        // DMA must finish reading the host staging buffer before CPU reuse.
+        metadata_transfer_->copied.synchronize();
+    }
     build_batch(plan);
 
-    torch::Tensor logits;
-
-    if (batch_metadata_.num_decode_tokens > 0) {
-        int64_t n = batch_metadata_.num_decode_tokens;
-        auto decode_logits = forward_fn(
-            batch_metadata_.decode_input_ids.slice(0, 0, n),
-            batch_metadata_.decode_positions.slice(0, 0, n),
-            batch_metadata_.decode_slot_mapping.slice(0, 0, n),
-            // Decode has no packed-query boundaries. This zero-length view is a
-            // real device tensor, which is cleaner to pass through pybind than
-            // an undefined torch::Tensor().
-            batch_metadata_.decode_seq_lens.slice(0, 0, 0),
-            batch_metadata_.decode_seq_lens.slice(0, 0, n),
-            batch_metadata_.decode_block_table.slice(0, 0, n),
-            /*max_query_length=*/1,
-            /*is_decode=*/true
-        );
-        validate_logits(decode_logits, n, "decode");
-        logits = decode_logits;
-    }
-
-    if (batch_metadata_.num_prefill_tokens > 0) {
-        int64_t num_tokens = batch_metadata_.num_prefill_tokens;
-        int64_t num_seqs = batch_metadata_.num_prefill_seqs;
-
-        auto prefill_logits = forward_fn(
-            batch_metadata_.prefill_input_ids.slice(0, 0, num_tokens),
-            batch_metadata_.prefill_positions.slice(0, 0, num_tokens),
-            batch_metadata_.prefill_slot_mapping.slice(0, 0, num_tokens),
-            batch_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
-            batch_metadata_.prefill_context_lens.slice(0, 0, num_seqs),
-            batch_metadata_.prefill_block_table.slice(0, 0, num_seqs),
-            batch_metadata_.max_prefill_chunk_length,
-            /*is_decode=*/false
-        );
-        validate_logits(prefill_logits, num_seqs, "prefill");
-
-        if (logits.defined()) {
-            logits = torch::cat({logits, prefill_logits}, 0);
+    try {
+        if (metadata_transfer_) {
+            auto& transfer = *metadata_transfer_;
+            {
+                c10::StreamGuard copy_guard(transfer.copy_stream);
+                // Covers previous consumers, including a different caller stream.
+                transfer.consumed.block(transfer.copy_stream);
+                copy_batch();
+                transfer.copied.record(transfer.copy_stream);
+            }
+            // GPU-side dependency only: the CPU can immediately enqueue forward.
+            transfer.copied.block(*compute_stream);
         } else {
-            logits = prefill_logits;
+            copy_batch();
         }
+
+        torch::Tensor logits;
+
+        if (batch_metadata_.num_decode_tokens > 0) {
+            int64_t n = batch_metadata_.num_decode_tokens;
+            auto decode_logits = forward_fn(
+                batch_metadata_.decode_input_ids.slice(0, 0, n),
+                batch_metadata_.decode_positions.slice(0, 0, n),
+                batch_metadata_.decode_slot_mapping.slice(0, 0, n),
+                // Decode has no packed-query boundaries. This zero-length view is a
+                // real device tensor, which is cleaner to pass through pybind than
+                // an undefined torch::Tensor().
+                batch_metadata_.decode_seq_lens.slice(0, 0, 0),
+                batch_metadata_.decode_seq_lens.slice(0, 0, n),
+                batch_metadata_.decode_block_table.slice(0, 0, n),
+                /*max_query_length=*/1,
+                /*is_decode=*/true
+            );
+            validate_logits(decode_logits, n, "decode");
+            logits = decode_logits;
+        }
+
+        if (batch_metadata_.num_prefill_tokens > 0) {
+            int64_t num_tokens = batch_metadata_.num_prefill_tokens;
+            int64_t num_seqs = batch_metadata_.num_prefill_seqs;
+
+            auto prefill_logits = forward_fn(
+                batch_metadata_.prefill_input_ids.slice(0, 0, num_tokens),
+                batch_metadata_.prefill_positions.slice(0, 0, num_tokens),
+                batch_metadata_.prefill_slot_mapping.slice(0, 0, num_tokens),
+                batch_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
+                batch_metadata_.prefill_context_lens.slice(0, 0, num_seqs),
+                batch_metadata_.prefill_block_table.slice(0, 0, num_seqs),
+                batch_metadata_.max_prefill_chunk_length,
+                /*is_decode=*/false
+            );
+            validate_logits(prefill_logits, num_seqs, "prefill");
+
+            if (logits.defined()) {
+                logits = torch::cat({logits, prefill_logits}, 0);
+            } else {
+                logits = prefill_logits;
+            }
+        }
+
+        // Sample
+        torch::Tensor next_tokens = sample(logits);
+
+        // Update state
+        int64_t prev_completed = completed_outputs_.size();
+        update_requests(plan, next_tokens);
+
+        if (metadata_transfer_) {
+            metadata_transfer_->consumed.record(*compute_stream);
+        }
+        return completed_outputs_.size() - prev_completed;
+    } catch (...) {
+        // A callback can enqueue reads and then throw. Drain both queues before
+        // allowing a retry or freeing buffers, even if no event was recorded.
+        if (metadata_transfer_) {
+            metadata_transfer_->copy_stream.synchronize();
+            compute_stream->synchronize();
+        }
+        throw;
     }
-
-    // Sample
-    torch::Tensor next_tokens = sample(logits);
-
-    // Update state
-    int64_t prev_completed = completed_outputs_.size();
-    update_requests(plan, next_tokens);
-
-    return completed_outputs_.size() - prev_completed;
 }
 
 // =============================================================================

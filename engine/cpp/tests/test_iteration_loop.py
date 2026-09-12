@@ -296,6 +296,34 @@ class IterationLoopTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_batch_size"):
             cpp.IterationLoop(bad_config, torch.device("cpu"))
 
+    def test_reused_metadata_clears_padding_and_keeps_storage(self):
+        loop = cpp.IterationLoop(make_cpp_config(max_batch_size=1), torch.device("cpu"))
+        pointers = {}
+        widths = []
+
+        def forward(*args):
+            ids, positions, slots, cu, context, blocks, _, decode = args
+            ptrs = tuple(t.data_ptr() for t in (ids, positions, slots, context, blocks))
+            if decode in pointers:
+                self.assertEqual(ptrs, pointers[decode])
+            pointers[decode] = ptrs
+            # Admission reserves blocks for the whole prompt + output budget.
+            width = widths[-1]
+            self.assertEqual(torch.count_nonzero(blocks[:, width:]).item(), 0)
+            if decode:
+                expected_slots = blocks.gather(
+                    1, (positions // 4).reshape(-1, 1)
+                ).reshape(-1).to(torch.long) * 4 + positions % 4
+                torch.testing.assert_close(slots, expected_slots)
+            return cpp_forward()(*args)
+
+        for prompt in ([1] * 17, [5]):
+            widths.append((len(prompt) + 3 + 3) // 4)
+            loop.submit_request(prompt, 3)
+            while loop.num_pending() or loop.num_running():
+                loop.step(forward)
+            loop.pop_completed()
+
     def test_logits_and_outputs_match_python_scheduler(self):
         prompts = ([1, 2], [5], [8, 9, 10])
         output_lengths = (3, 2, 1)
@@ -315,6 +343,116 @@ class IterationLoopTests(unittest.TestCase):
         self.assertEqual(len(cpp_trace), len(python_trace))
         for (_, cpp_logits), (_, python_logits) in zip(cpp_trace, python_trace):
             torch.testing.assert_close(cpp_logits, python_logits, rtol=0, atol=0)
+
+
+@unittest.skipUnless(cpp is not None and torch.cuda.is_available(), "requires CUDA extension runtime")
+class PinnedMetadataCudaTests(unittest.TestCase):
+    def test_metadata_and_outputs_match_cpu_across_streams(self):
+        def run(device):
+            loop = cpp.IterationLoop(
+                make_cpp_config(max_prefill_tokens_per_iter=3), device
+            )
+            trace = []
+            pointers = {}
+            streams = [torch.cuda.Stream(device=device) for _ in range(2)] if device.type == "cuda" else []
+
+            def forward(*args):
+                tensors = args[:6]
+                decode = args[-1]
+                ptrs = tuple(t.data_ptr() for t in tensors if t.numel())
+                if decode in pointers:
+                    self.assertEqual(ptrs, pointers[decode])
+                pointers[decode] = ptrs
+                if streams:
+                    self.assertEqual(torch.cuda.current_stream(device), streams[iteration % 2])
+                    # Delay reads to exercise event ordering without an incidental
+                    # .cpu()/.item() synchronization inside the callback.
+                    torch.cuda._sleep(100_000)
+                trace.append(([t.clone() for t in tensors], args[6:]))
+                return cpp_forward()(*args)
+
+            loop.submit_request([1, 2, 3, 4, 5], 4)
+            iteration = 0
+            while loop.num_pending() or loop.num_running():
+                if iteration == 2:
+                    loop.submit_request([11, 12], 2)
+                if streams:
+                    with torch.cuda.stream(streams[iteration % 2]):
+                        loop.step(forward)
+                        self.assertEqual(torch.cuda.current_stream(device), streams[iteration % 2])
+                else:
+                    loop.step(forward)
+                iteration += 1
+                self.assertLess(iteration, 30)
+            return dict(loop.pop_completed()), [([t.cpu() for t in ts], flags) for ts, flags in trace]
+
+        expected, cpu_trace = run(torch.device("cpu"))
+        actual, gpu_trace = run(torch.device("cuda"))
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(cpu_trace), len(gpu_trace))
+        for (cpu_tensors, cpu_flags), (gpu_tensors, gpu_flags) in zip(cpu_trace, gpu_trace):
+            self.assertEqual(cpu_flags, gpu_flags)
+            for expected_tensor, actual_tensor in zip(cpu_tensors, gpu_tensors):
+                torch.testing.assert_close(actual_tensor, expected_tensor, rtol=0, atol=0)
+
+    def test_delayed_consumers_survive_reuse_and_destruction(self):
+        loop = cpp.IterationLoop(make_cpp_config(), torch.device("cuda"))
+        streams = [torch.cuda.Stream() for _ in range(2)]
+        snapshots = []
+
+        def forward(*args):
+            torch.cuda._sleep(1_000_000)
+            snapshots.append(args[0].clone())
+            # Deliberately return independent CPU logits: step's normal token
+            # readback cannot accidentally fence these outstanding GPU reads.
+            return deterministic_logits(torch.tensor([1]))
+
+        for i in range(12):
+            loop.submit_request([i + 1], 1)
+            with torch.cuda.stream(streams[i % 2]):
+                self.assertEqual(loop.step(forward), 1)
+        del loop  # Must finish the last consumer before releasing its buffers.
+        for i, snapshot in enumerate(snapshots):
+            torch.testing.assert_close(snapshot.cpu(), torch.tensor([i + 1]))
+
+    def test_failed_callback_drains_reads_and_restores_stream(self):
+        loop = cpp.IterationLoop(make_cpp_config(), torch.device("cuda"))
+        loop.submit_request([7, 8], 2)
+        stream = torch.cuda.Stream()
+        snapshots = []
+
+        def failing_forward(*args):
+            torch.cuda._sleep(1_000_000)
+            snapshots.append(args[0].clone())
+            raise RuntimeError("intentional callback failure")
+
+        with torch.cuda.stream(stream):
+            with self.assertRaisesRegex(RuntimeError, "intentional callback failure"):
+                loop.step(failing_forward)
+            self.assertEqual(torch.cuda.current_stream(), stream)
+            self.assertTrue(stream.query())
+        # Retry on another stream after changing the scheduled batch.
+        loop.submit_request([20], 1)
+        while loop.num_pending() or loop.num_running():
+            loop.step(cpp_forward())
+        torch.testing.assert_close(snapshots[0].cpu(), torch.tensor([7, 8]))
+        self.assertEqual(dict(loop.pop_completed()), {0: [9, 10], 1: [21]})
+
+    @unittest.skipUnless(torch.cuda.device_count() > 1, "requires two CUDA devices")
+    def test_requested_device_and_caller_device_are_preserved(self):
+        with torch.cuda.device(0):
+            loop = cpp.IterationLoop(make_cpp_config(), torch.device("cuda:1"))
+            self.assertEqual(torch.cuda.current_device(), 0)
+            loop.submit_request([1], 1)
+
+            def forward(*args):
+                self.assertEqual(torch.cuda.current_device(), 1)
+                self.assertEqual(args[0].device, torch.device("cuda:1"))
+                return cpp_forward()(*args)
+
+            loop.step(forward)
+            self.assertEqual(torch.cuda.current_device(), 0)
+            self.assertEqual(dict(loop.pop_completed()), {0: [2]})
 
 
 if __name__ == "__main__":

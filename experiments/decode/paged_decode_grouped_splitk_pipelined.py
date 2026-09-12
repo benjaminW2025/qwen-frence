@@ -11,6 +11,8 @@ overlap and SM utilization must be verified on the target GPU.
 
 from __future__ import annotations
 
+from functools import partial
+
 import torch
 import triton
 import triton.language as tl
@@ -275,6 +277,7 @@ def grouped_splitk_attention(
     num_warps: int = 4,
     num_stages: int = 2,
     diagnostics: dict | None = None,
+    launches: dict | None = None,
 ) -> torch.Tensor:
     """Configurable decode attention with isolated optimizations.
 
@@ -292,6 +295,8 @@ def grouped_splitk_attention(
         num_warps: Warps per program
         num_stages: Loop pipeline stages when pipelined=True
         diagnostics: Optional destination for compiled kernels; use outside timing
+        launches: Optional preallocated partial/reduce/full callables for profiling;
+            closures retain all tensors. Do not invoke them concurrently.
 
     Returns:
         Output tensor [batch, query_heads, head_dim]
@@ -365,7 +370,7 @@ def grouped_splitk_attention(
     block_h = triton.next_power_of_2(heads_per_program)
     grid_partial = (batch_size, kv_heads, head_tiles * split_k)
 
-    partial_kernel = _grouped_splitk_kernel[grid_partial](
+    partial_launch = partial(_grouped_splitk_kernel[grid_partial],
         q, k_pool, v_pool, block_table, seq_lens,
         partial_out, partial_max, partial_sum,
         q.stride(0), q.stride(1), q.stride(2),
@@ -386,9 +391,15 @@ def grouped_splitk_attention(
         num_warps=num_warps,
         num_stages=1,
     )
+    partial_kernel = partial_launch()
     if diagnostics is not None:
         diagnostics.clear()
         diagnostics["partial"] = partial_kernel
+
+    if launches is not None:
+        launches.clear()
+        launches["partial"] = partial_launch
+        launches["full"] = partial_launch
 
     # For K=1, can skip reduce kernel
     if split_k == 1:
@@ -398,7 +409,7 @@ def grouped_splitk_attention(
     output = torch.empty_like(q)
     grid_reduce = (batch_size, query_heads)
 
-    reduce_kernel = _splitk_reduce_kernel[grid_reduce](
+    reduce_launch = partial(_splitk_reduce_kernel[grid_reduce],
         partial_out, partial_max, partial_sum, output,
         partial_out.stride(0), partial_out.stride(1), partial_out.stride(2), partial_out.stride(3),
         partial_max.stride(0), partial_max.stride(1), partial_max.stride(2),
@@ -408,8 +419,17 @@ def grouped_splitk_attention(
         num_warps=4,
         num_stages=1,
     )
+    reduce_kernel = reduce_launch()
     if diagnostics is not None:
         diagnostics["reduce"] = reduce_kernel
+    if launches is not None:
+        launches["reduce"] = reduce_launch
+
+        def full_launch():
+            partial_launch()
+            reduce_launch()
+
+        launches["full"] = full_launch
 
     return output
 
