@@ -119,6 +119,22 @@ class PolicyTests(unittest.TestCase):
             (root / 'trials' / 'unfinished.json.tmp').write_text('{')
             self.assertEqual(load_records(root), [])
 
+    def test_complete_checkpoint_requires_all_paired_observations(self):
+        from benchmark_decode_stage_policy import planned_observations, validate_checkpoint
+        case = make_plan('smoke')[0]
+        manifest = {'fingerprint': 'test', 'cache_modes': ['warm', 'evict'], 'samples': 3}
+        records = [{'case_id': case['id'], 'trial': 0,
+                    'action': list(a) if a != 'production' else a, 'role': role, 'cache': cache,
+                    'samples_ms': [1.] * 3, 'median_ms': 1.}
+                   for a, role, cache in planned_observations(case, manifest['cache_modes'])]
+        payload = {'status': 'complete', 'fingerprint': 'test', 'case_id': case['id'], 'trial': 0,
+                   'records': records}
+        validate_checkpoint(payload, manifest, case, 0)
+        with self.assertRaisesRegex(ValueError, 'incomplete'):
+            validate_checkpoint({**payload, 'records': records[:-1]}, manifest, case, 0)
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            validate_checkpoint({**payload, 'records': records + records[:1]}, manifest, case, 0)
+
     def test_synthetic_end_to_end_analysis_and_small_trial_gate(self):
         # Smoke is a protocol exercise, never enough evidence for integration.
         plan = make_plan('smoke')
@@ -131,7 +147,7 @@ class PolicyTests(unittest.TestCase):
             for case in plan:
                 for k, stages in case['actions']:
                     time = 10 / min(k, 4) / (1 + .1 * (stages - 1))
-                    for role in ('full', 'partial'):
+                    for role in (('full', 'partial') if k == 1 else ('full', 'partial', 'reduce')):
                         records.append({'case_id': case['id'], 'action': [k, stages], 'trial': 0,
                                         'cache': 'warm', 'role': role, 'median_ms': time, 'samples_ms': [time] * 3})
                 records.append({'case_id': case['id'], 'action': 'production', 'trial': 0,
@@ -146,6 +162,20 @@ class PolicyTests(unittest.TestCase):
             effects = json.loads((root / 'stage-effects.json').read_text())
             self.assertTrue(effects)
             self.assertTrue(all(r['ci95'] is None for r in effects))
+            # A missing production denominator invalidates any previous report.
+            atomic_json(root / 'policy-report.json', {'status': 'microbenchmark_candidate'})
+            records = [r for r in records if not (r['case_id'].startswith('test-') and r['action'] == 'production')]
+            atomic_json(root / 'trials' / 'synthetic.json', {'status': 'complete', 'fingerprint': manifest['fingerprint'], 'records': records})
+            with patch('builtins.print'):
+                analyze(Namespace(output_dir=root, fit_cache='warm'))
+            self.assertEqual(json.loads((root / 'policy-report.json').read_text())['status'], 'incomplete_data')
+            # An invalid role fails closed instead of retaining a passing policy.
+            records[0]['role'] = 'invalid'
+            atomic_json(root / 'trials' / 'synthetic.json', {'status': 'complete', 'fingerprint': manifest['fingerprint'], 'records': records})
+            with self.assertRaisesRegex(ValueError, 'unplanned action/role'):
+                analyze(Namespace(output_dir=root, fit_cache='warm'))
+            self.assertNotEqual(json.loads((root / 'policy-report.json').read_text())['status'], 'microbenchmark_candidate')
+
 
 
 if __name__ == '__main__':

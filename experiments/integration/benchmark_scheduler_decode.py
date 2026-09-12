@@ -15,13 +15,13 @@ ROOT = HERE.parents[1]
 for path in (HERE, ROOT / "baseline", ROOT / "engine/model_runner", ROOT / "engine/kvcache",
              ROOT / "engine/cpp/build", ROOT / "experiments/decode"):
     sys.path.insert(0, str(path))
-from design import VARIANTS, load_policy, make_plan, make_requests, stable_hash, summarize, variant_order
+from design import VARIANTS, load_policy, make_plan, make_requests, stable_hash, summarize, validate_checkpoint, variant_order
 
 
 def atomic_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
 
 
@@ -93,6 +93,7 @@ def execute(torch, loop, adapter, requests):
     pending = sorted(requests, key=lambda r: (r["arrival"], r["id"]))
     cursor, iteration = 0, 0
     mapping, outputs, steps = {}, {}, []
+    iteration_limit = sum(len(r["prompt"]) + r["output"] for r in requests) + max(r["arrival"] for r in requests) + 1
     adapter.decisions.clear()
     torch.cuda.synchronize()
     start = time.perf_counter()
@@ -115,11 +116,13 @@ def execute(torch, loop, adapter, requests):
         for request_id, tokens in loop.pop_completed():
             outputs[mapping[request_id]] = tokens
         iteration += 1
-        if iteration > sum(len(r["prompt"]) + r["output"] for r in requests) + max(r["arrival"] for r in requests) + 1:
+        if iteration > iteration_limit:
             raise RuntimeError("iteration limit exceeded")
     torch.cuda.synchronize()
     wall_ms = (time.perf_counter() - start) * 1000
-    return {"wall_ms": wall_ms, "output_tokens_per_s": sum(map(len, outputs.values())) * 1000 / wall_ms,
+    decode_batches = [call[1] for step in steps for call in step["calls"] if call[0]]
+    return {"decode_batch_histogram": {str(b): decode_batches.count(b) for b in sorted(set(decode_batches))},
+            "max_actual_decode_batch": max(decode_batches, default=0), "wall_ms": wall_ms, "output_tokens_per_s": sum(map(len, outputs.values())) * 1000 / wall_ms,
             "steps": steps, "decisions": dict(adapter.decisions), "outputs": outputs,
             **{f"{kind}_wall_ms": sum(step["wall_ms"] for step in steps if step["kind"] == kind)
                for kind in ("decode", "prefill", "mixed")}}
@@ -206,7 +209,8 @@ def run(args):
     manifest_path = args.output_dir / "manifest.json"
     if manifest_path.exists() and json.loads(manifest_path.read_text())["fingerprint"] != identity:
         raise ValueError("resume identity changed; use a new output directory")
-    atomic_json(manifest_path, {**spec, "fingerprint": identity})
+    manifest = {**spec, "fingerprint": identity}
+    atomic_json(manifest_path, manifest)
     from transformers import AutoModelForCausalLM
     hf = AutoModelForCausalLM.from_pretrained(args.model, revision=revision, dtype=torch.float16, attn_implementation="sdpa")
     model = QwenWeightLoader(cfg).convert(hf, args.device, torch.float16)
@@ -214,19 +218,26 @@ def run(args):
     independent_check(torch, model, args.device)
     names = list(VARIANTS) if policy else list(VARIANTS)[:2]
     for case in selected:
+        pending_trials = []
+        for trial in range(args.trials):
+            checkpoint = args.output_dir / "trials" / f"{case['id']}-t{trial}.json"
+            if checkpoint.exists():
+                validate_checkpoint(json.loads(checkpoint.read_text()), manifest, case["id"], trial)
+            else:
+                pending_trials.append(trial)
+        if not pending_trials:
+            continue
+        # Release unused allocator reservations before the physical-free-memory
+        # check. This is outside timing and does not evict live model weights.
+        torch.cuda.empty_cache()
         config = make_config(cpp, case)
         blocks = config.max_batch_size * ((config.max_context_length + 15) // 16)
         pool_bytes = blocks * 16 * 2 * 128 * 2 * cfg.n_layers * 2
         if pool_bytes > torch.cuda.mem_get_info()[0] * .70:
             raise RuntimeError(f"{case['id']}: KV pool needs {pool_bytes / 2**30:.2f} GiB; insufficient workspace headroom")
         pool = allocate_pool(cfg, blocks, args.device)
-        for trial in range(args.trials):
+        for trial in pending_trials:
             checkpoint = args.output_dir / "trials" / f"{case['id']}-t{trial}.json"
-            if checkpoint.exists():
-                old = json.loads(checkpoint.read_text())
-                if old.get("fingerprint") != identity or old.get("status") != "complete":
-                    raise ValueError("invalid trial checkpoint")
-                continue
             from benchmark_decode_stage_policy import telemetry
             telemetry_before = telemetry()
             trial_started = time.perf_counter()
@@ -243,12 +254,15 @@ def run(args):
                 runners[name] = (loop, adapter)
                 for tensor in pool.k_pool + pool.v_pool:
                     tensor.fill_(float("nan"))
+                del tensor
                 checker = TraceCheck(torch, reference)
                 adapter.observer = checker
                 validation = execute(torch, loop, adapter, requests)
                 checker.finish()
                 adapter.observer = None
                 signature = [(r["kind"], r["calls"], r["completed"]) for r in validation["steps"]]
+                if case["kind"] == "saturated" and validation["max_actual_decode_batch"] != case["max_running"]:
+                    raise AssertionError("saturation case never reached its declared decode batch")
                 if reference is None:
                     reference, expected, expected_steps = checker.rows, validation["outputs"], signature
                 elif validation["outputs"] != expected or signature != expected_steps:
@@ -286,12 +300,13 @@ def run(args):
 
 def analyze(args):
     manifest = json.loads((args.output_dir / "manifest.json").read_text())
+    # Invalidate an older successful report before inspecting new/corrupt data.
+    atomic_json(args.output_dir / "report.json", {"status": "validating", "production_ready": False,
+                                                "fingerprint": manifest["fingerprint"]})
     records = []
     for path in sorted((args.output_dir / "trials").glob("*.json")):
         trial = json.loads(path.read_text())
-        if trial.get("status") != "complete" or trial.get("fingerprint") != manifest["fingerprint"]:
-            raise ValueError(f"invalid checkpoint {path}")
-        records.extend(trial["records"])
+        records.extend(validate_checkpoint(trial, manifest))
     names = list(VARIANTS) if manifest["phase"] == "combined" else list(VARIANTS)[:2]
     planned = {c["id"] for c in manifest["plan"]}
     observed = {r["case_id"] for r in records}

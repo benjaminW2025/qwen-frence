@@ -131,8 +131,8 @@ larger than the prior sweep: plan output reports timed replay count. An exact
 `--case-id` from the plan selects one case for a targeted rerun/profile.
 
 Each completed case/trial is written atomically under `trials/`. Rerun the same
-command to resume; completed checkpoints are skipped. An interrupted trial is
-repeated in full so paired comparisons are not spliced across sessions. Changing
+command to resume; completed checkpoints are validated for all planned observations before being skipped. An interrupted trial is
+repeated in full so paired comparisons are not spliced across sessions. Both candidate and production kernel sources are fingerprinted. Changing
 source code, GPU identity, software/driver versions, seed, trial/sample count,
 cache protocol, or preset requires a **new output directory**. Suite/case selectors
 can change to populate the same design in stages. Do not run two writers against

@@ -55,10 +55,15 @@ study's fixed scope; this experiment does not refit head grouping.
 
 ## Workloads and timing
 
-Full preset: ten cases. Eight uniform cohorts use B=1,8,32,128 and prompt
+Full preset: twelve cases. Eight uniform cohorts use B=1,8,32,128 and prompt
 length=512,8192, with 64 output tokens per request. Ragged and staggered cases use
 32 requests, maximum prompt length6145, 16 active slots, and 64–66 output tokens.
-Their queued requests exercise completion and physical-page reuse. The prefill
+Their queued requests exercise completion and physical-page reuse. Two additional
+saturation cases use 32/128 requests at prompt length8192 and 192/576 output
+tokens respectively, keeping early requests alive until the full decode batch
+forms. Ordinary long-context cohorts with only 64 outputs may reach only 16
+concurrent decode requests; recorded batch histograms distinguish cohort size
+from actual decode concurrency. The prefill
 budget is 2048 tokens per iteration, so uniform cohorts can also contain mixed
 iterations while requests are admitted.
 
@@ -74,7 +79,7 @@ within-trial medians and bootstraps whole paired trials. Confidence intervals ar
 pointwise/exploratory, not adjusted for selecting among many workloads. A run with
 fewer than three trials reports no interval. Per-step wall times, phase/work
 counts, actual dispatch counts, raw full-workload times, and output tokens/s are
-saved, along with per-trial GPU telemetry. Full defaults comprise 300 timed scheduler workloads or 600 combined
+saved, along with per-trial GPU telemetry. Full defaults comprise 360 timed scheduler workloads or 720 combined
 workloads, **plus** preflight and warmup. Use `plan` and a smoke run to budget GPU
 time rather than assuming a short completion time.
 
@@ -151,7 +156,8 @@ python3 experiments/integration/benchmark_scheduler_decode.py analyze \
 ```
 
 `--case-id` runs one planned case for debugging or targeted completion. Trials are
-atomic/resumable; rerunning skips completed trials. Use a new directory after
+atomic/resumable; rerunning validates all paired measurements and correctness
+checks before skipping completed trials. Use a new directory after
 changing source, compiled extension, GPU identity, software, model revision,
 policy, or protocol. Do not run concurrent writers in the same directory. The
 model Hub revision is resolved and pinned for loading, and recorded in the
