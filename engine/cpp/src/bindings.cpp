@@ -34,7 +34,8 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
         .def_readwrite("max_context_length", &SchedulerConfig::max_context_length)
         .def_readwrite("block_size", &SchedulerConfig::block_size)
         .def_readwrite("num_kv_heads", &SchedulerConfig::num_kv_heads)
-        .def_readwrite("head_dim", &SchedulerConfig::head_dim);
+        .def_readwrite("head_dim", &SchedulerConfig::head_dim)
+        .def_readwrite("eos_token_id", &SchedulerConfig::eos_token_id);
 
     // IterationLoop
     py::class_<IterationLoop>(m, "IterationLoop")
