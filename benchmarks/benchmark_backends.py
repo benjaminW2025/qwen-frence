@@ -80,12 +80,10 @@ def _matched_kv_cache_bytes(
     """Return the physical K/V tensor bytes used by the local paged-cache pool."""
     from transformers import AutoConfig
 
-    config = AutoConfig.from_pretrained(model_id)
-    num_layers = int(config.num_hidden_layers)
-    num_kv_heads = int(config.num_key_value_heads)
-    head_dim = int(getattr(
-        config, "head_dim", config.hidden_size // config.num_attention_heads
-    ))
+    config = AutoConfig.from_pretrained(model_id).to_dict()
+    num_layers = int(config["num_hidden_layers"])
+    num_kv_heads = int(config["num_key_value_heads"])
+    head_dim = int(config.get("head_dim") or config["hidden_size"] // config["num_attention_heads"])
     element_size = {"float16": 2, "bfloat16": 2}[dtype]
     return (
         num_layers

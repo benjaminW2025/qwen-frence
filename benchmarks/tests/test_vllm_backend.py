@@ -43,10 +43,8 @@ class VLLMBackendContractTests(TestCase):
         fake_transformers = ModuleType("transformers")
         fake_transformers.AutoConfig = SimpleNamespace(
             from_pretrained=lambda _model: SimpleNamespace(
-                num_hidden_layers=2,
-                num_key_value_heads=2,
-                hidden_size=16,
-                num_attention_heads=4,
+                to_dict=lambda: dict(num_hidden_layers=2, num_key_value_heads=2,
+                                     hidden_size=16, num_attention_heads=4, head_dim=None),
             )
         )
         workload = Workload(

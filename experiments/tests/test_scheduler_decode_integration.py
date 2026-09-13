@@ -23,6 +23,14 @@ except ImportError:
 
 
 class DesignTests(unittest.TestCase):
+    def test_model_revision_survives_config_serialization(self):
+        from benchmark_scheduler_decode import resolved_model_revision
+        config = SimpleNamespace(_commit_hash="immutable-revision", to_dict=lambda: {})
+        self.assertNotIn("_commit_hash", config.to_dict())
+        self.assertEqual(resolved_model_revision(config), "immutable-revision")
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            resolved_model_revision(SimpleNamespace())
+
     def test_deterministic_workloads_and_paired_orders(self):
         for preset in ("smoke", "full"):
             plan = make_plan(preset)

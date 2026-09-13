@@ -185,16 +185,16 @@ def run_checks(args: argparse.Namespace) -> list[CheckResult]:
             f"confirm access to the exact model {args.model}",
         )
         if config is not None:
-            architecture = set(getattr(config, "architectures", ()) or ())
+            architecture = set(config.get("architectures") or ())
             valid = (
-                getattr(config, "model_type", None) == "qwen2"
+                config.get("model_type") == "qwen2"
                 and "Qwen2ForCausalLM" in architecture
             )
             results.append(CheckResult(
                 "model-identity",
                 valid,
                 (
-                    f"requested={args.model}; model_type={getattr(config, 'model_type', None)}; "
+                    f"requested={args.model}; model_type={config.get('model_type')}; "
                     f"architectures={sorted(architecture)}"
                 ),
                 f"use --model {DEFAULT_MODEL} for the matched scorecard",
@@ -242,7 +242,7 @@ def run_checks(args: argparse.Namespace) -> list[CheckResult]:
 
 
 def _load_model_config(transformers, model: str):
-    config = transformers.AutoConfig.from_pretrained(model)
+    config = transformers.AutoConfig.from_pretrained(model).to_dict()
     return config, f"loaded {model}"
 
 
