@@ -60,6 +60,6 @@ class QwenWeightLoader:
                         attn_implementation="sdpa", strict=True):
         """Convenience: download the HF model and convert it to our Model."""
         hf_model = AutoModelForCausalLM.from_pretrained(
-            model_id, dtype=dtype, attn_implementation=attn_implementation
+            model_id, torch_dtype=dtype, attn_implementation=attn_implementation
         )
         return self.convert(hf_model, device, dtype, strict=strict)

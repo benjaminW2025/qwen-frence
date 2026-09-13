@@ -160,6 +160,14 @@ def independent_check(torch, model, device):
     torch.cuda.synchronize()
 
 
+def resolved_model_revision(config):
+    # PretrainedConfig.to_dict() deliberately removes this private field.
+    revision = getattr(config, "_commit_hash", None)
+    if not revision:
+        raise ValueError("use a Hub model with an immutable resolved revision")
+    return revision
+
+
 def run(args):
     import torch
     import triton
@@ -194,16 +202,15 @@ def run(args):
     # Resolve immutable model identity before accepting or creating checkpoints.
     from transformers import AutoConfig
     hf_config = AutoConfig.from_pretrained(args.model, revision=args.revision)
+    hf_dict = hf_config.to_dict()
     for hf_name, our_name in (("vocab_size", "vocab"), ("hidden_size", "d_model"),
                               ("intermediate_size", "d_ff"), ("num_hidden_layers", "n_layers"),
                               ("num_attention_heads", "n_heads"), ("num_key_value_heads", "n_kv_heads"),
                               ("rope_theta", "rope_theta"), ("rms_norm_eps", "rms_norm_eps"),
                               ("tie_word_embeddings", "tie_embeddings")):
-        if getattr(hf_config, hf_name, None) != getattr(cfg, our_name):
+        if hf_dict.get(hf_name) != getattr(cfg, our_name):
             raise ValueError(f"model is outside the fixed Qwen2.5-1.5B scope: {hf_name}")
-    revision = getattr(hf_config, "_commit_hash", None)
-    if not revision:
-        raise ValueError("use a Hub model with an immutable resolved revision")
+    revision = resolved_model_revision(hf_config)
     spec["model_revision"] = revision
     identity = stable_hash(spec)
     manifest_path = args.output_dir / "manifest.json"
@@ -212,7 +219,7 @@ def run(args):
     manifest = {**spec, "fingerprint": identity}
     atomic_json(manifest_path, manifest)
     from transformers import AutoModelForCausalLM
-    hf = AutoModelForCausalLM.from_pretrained(args.model, revision=revision, dtype=torch.float16, attn_implementation="sdpa")
+    hf = AutoModelForCausalLM.from_pretrained(args.model, revision=revision, torch_dtype=torch.float16, attn_implementation="sdpa")
     model = QwenWeightLoader(cfg).convert(hf, args.device, torch.float16)
     del hf
     independent_check(torch, model, args.device)

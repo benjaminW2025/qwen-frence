@@ -66,7 +66,7 @@ def main():
 
     # HF reference. Force SDPA so its attention path matches ours (both flash/SDPA).
     hf_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, dtype=DTYPE, attn_implementation="sdpa"
+        MODEL_ID, torch_dtype=DTYPE, attn_implementation="sdpa"
     ).to(DEVICE).eval()
 
     cfg = Qwen2Config()
