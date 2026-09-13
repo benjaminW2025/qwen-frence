@@ -39,3 +39,23 @@ Read the named NVTX ranges as follows:
 This is a projection experiment, not an end-to-end vLLM comparison.  Use it to
 choose which fusion candidate merits wiring into the model, then measure the
 result in the scheduler/decode integration benchmark.
+
+## Real decode ablation
+
+`benchmark_packed_projection_decode.py` compares the separate layout, QKV-only
+packing, and QKV plus gate/up packing through the full eager 28-layer decode
+forward. It checks logits and greedy tokens, then measures paired CUDA-event
+latency with warm and L2-evicted KV cache. The scheduler, model loading, weight
+packing, and cache staging are outside the timed interval.
+
+```bash
+python experiments/model/benchmark_packed_projection_decode.py \
+  --preset smoke --output-dir experiments/results/packed-projection-decode-smoke
+python experiments/model/benchmark_packed_projection_decode.py \
+  --preset full --output-dir experiments/results/packed-projection-decode-v1
+```
+
+Each completed batch/context cell is saved under `trials/` before the next cell
+starts. Repeating the same command resumes those validated cells. The aggregate
+`decode-ablation-results.json` is written after all cells finish. Use a new
+output directory if the workload or source changes.
