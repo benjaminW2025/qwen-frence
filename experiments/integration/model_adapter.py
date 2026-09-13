@@ -43,9 +43,10 @@ class ModelAdapter:
         for i, layer in enumerate(model.layers):
             residual = x
             h = apply_rms_norm(x, layer.input_norm, cfg)
-            q = layer.q_proj(h).view(tokens, heads, dim).transpose(0, 1).unsqueeze(0)
-            k = layer.k_proj(h).view(tokens, kvheads, dim).transpose(0, 1).unsqueeze(0)
-            v = layer.v_proj(h).view(tokens, kvheads, dim).transpose(0, 1).unsqueeze(0)
+            q, k, v = layer.project_qkv(h)
+            q = q.view(tokens, heads, dim).transpose(0, 1).unsqueeze(0)
+            k = k.view(tokens, kvheads, dim).transpose(0, 1).unsqueeze(0)
+            v = v.view(tokens, kvheads, dim).transpose(0, 1).unsqueeze(0)
             q = apply_rope(q, cos, sin, cfg, positions[None, :])
             k = apply_rope(k, cos, sin, cfg, positions[None, :])
             pool.k_pool[i].view(-1, kvheads, dim).index_copy_(0, slots, k[0].transpose(0, 1).contiguous())
@@ -69,7 +70,8 @@ class ModelAdapter:
             x = residual + layer.o_proj(attention)
             residual = x
             h = apply_rms_norm(x, layer.post_attn_norm, cfg)
-            x = residual + layer.down_proj(apply_swiglu(layer.gate_proj(h), layer.up_proj(h), cfg))
+            gate, up = layer.project_gate_up(h)
+            x = residual + layer.down_proj(apply_swiglu(gate, up, cfg))
         x = apply_rms_norm(x, model.norm, cfg)
         if not decode:
             x = x.index_select(0, cu[1:].to(torch.long) - 1)

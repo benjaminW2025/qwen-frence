@@ -114,9 +114,10 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
     for i, layer in enumerate(model.layers):
         residual = x
         h = apply_rms_norm(x, layer.input_norm, cfg)
-        q = layer.q_proj(h).view(B, S, cfg.n_heads, d_head).transpose(1, 2)   # (B, n_heads, 1, d)
-        k = layer.k_proj(h).view(B, S, n_kv, d_head).transpose(1, 2)          # (B, n_kv,    1, d)
-        v = layer.v_proj(h).view(B, S, n_kv, d_head).transpose(1, 2)
+        q, k, v = layer.project_qkv(h)
+        q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)   # (B, n_heads, 1, d)
+        k = k.view(B, S, n_kv, d_head).transpose(1, 2)          # (B, n_kv,    1, d)
+        v = v.view(B, S, n_kv, d_head).transpose(1, 2)
         # Native decode is (B, H, 1, D). The packed RoPE/KV fusion wins when its
         # inputs are already (1, H, T, D), as in mixed/resumed prefill, but adapting
         # decode required three materializing layout copies per layer. At short
@@ -139,10 +140,11 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
 
         residual = x
         h = apply_rms_norm(x, layer.post_attn_norm, cfg)
+        gate, up = layer.project_gate_up(h)
         h = layer.down_proj(
             apply_swiglu(
-                layer.gate_proj(h),
-                layer.up_proj(h),
+                gate,
+                up,
                 cfg,
                 enable_regime_fusions=enable_regime_fusions,
             )

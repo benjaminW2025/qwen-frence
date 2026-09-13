@@ -54,6 +54,9 @@ class QwenWeightLoader:
         """Build our Model and load weights from an already-instantiated HF model."""
         model = Model(self.cfg).to(device, dtype).eval()
         model.load_state_dict(self.remap_state_dict(hf_model.state_dict()), strict=strict)
+        # HF checkpoints store separate projections. Packing after load avoids
+        # keeping duplicate resident weights and activates the measured GEMMs.
+        model.pack_projections_()
         return model
 
     def load_pretrained(self, model_id, device="cuda", dtype=torch.float16,

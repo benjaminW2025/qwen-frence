@@ -27,6 +27,8 @@ class Qwen2Config:
     attention_bias: bool = True  # Qwen2.5 puts a bias on q/k/v (but not o_proj)
     tie_embeddings: bool = True  # 1.5B ties lm_head to the embedding matrix
     use_custom_kernels: bool = False  # opt-in Triton RMSNorm + Qwen RoPE
+    pack_qkv: bool = True  # materialize one QKV weight at model-load time
+    pack_gate_up: bool = True  # materialize one SwiGLU input weight at model-load time
 
     def __post_init__(self):
         assert self.n_heads * self.d_head == self.d_model, \
@@ -110,16 +112,64 @@ class DecoderLayer(nn.Module):
         self.q_proj = nn.Linear(cfg.d_model, cfg.n_heads * cfg.d_head, bias=cfg.attention_bias)
         self.k_proj = nn.Linear(cfg.d_model, cfg.n_kv_heads * cfg.d_head, bias=cfg.attention_bias)
         self.v_proj = nn.Linear(cfg.d_model, cfg.n_kv_heads * cfg.d_head, bias=cfg.attention_bias)
+        self.qkv_proj = None
         self.o_proj = nn.Linear(cfg.n_heads * cfg.d_head, cfg.d_model, bias=False)
 
         # SwiGLU MLP.
         self.gate_proj = nn.Linear(cfg.d_model, cfg.d_ff, bias=False)
         self.up_proj = nn.Linear(cfg.d_model, cfg.d_ff, bias=False)
+        self.gate_up_proj = None
         self.down_proj = nn.Linear(cfg.d_ff, cfg.d_model, bias=False)
 
         # Pre-norm: normalize before attention, and before the MLP.
         self.input_norm = nn.RMSNorm(cfg.d_model, eps=cfg.rms_norm_eps)
         self.post_attn_norm = nn.RMSNorm(cfg.d_model, eps=cfg.rms_norm_eps)
+
+    @staticmethod
+    def _packed_linear(parts, *, bias):
+        """Concatenate compatible linear projections without retaining duplicates."""
+        first = parts[0]
+        packed = nn.Linear(
+            first.in_features,
+            sum(part.out_features for part in parts),
+            bias=bias,
+            device=first.weight.device,
+            dtype=first.weight.dtype,
+        )
+        packed.weight = nn.Parameter(torch.cat([part.weight for part in parts], dim=0))
+        if bias:
+            packed.bias = nn.Parameter(torch.cat([part.bias for part in parts], dim=0))
+        packed.train(first.training)
+        return packed
+
+    def pack_projections_(self):
+        """Replace separate input projections after checkpoint loading."""
+        if self.cfg.pack_qkv and self.qkv_proj is None:
+            self.qkv_proj = self._packed_linear(
+                (self.q_proj, self.k_proj, self.v_proj), bias=self.cfg.attention_bias
+            )
+            del self.q_proj, self.k_proj, self.v_proj
+        if self.cfg.pack_gate_up and self.gate_up_proj is None:
+            self.gate_up_proj = self._packed_linear(
+                (self.gate_proj, self.up_proj), bias=False
+            )
+            del self.gate_proj, self.up_proj
+        return self
+
+    def project_qkv(self, x):
+        if self.qkv_proj is None:
+            return self.q_proj(x), self.k_proj(x), self.v_proj(x)
+        return self.qkv_proj(x).split(
+            (self.cfg.n_heads * self.cfg.d_head,
+             self.cfg.n_kv_heads * self.cfg.d_head,
+             self.cfg.n_kv_heads * self.cfg.d_head),
+            dim=-1,
+        )
+
+    def project_gate_up(self, x):
+        if self.gate_up_proj is None:
+            return self.gate_proj(x), self.up_proj(x)
+        return self.gate_up_proj(x).split((self.cfg.d_ff, self.cfg.d_ff), dim=-1)
 
     def forward(self, x, cos, sin, positions, cache: KVCache, layer, start, attn_mask=None):
         # NEED TO DO:
@@ -136,9 +186,10 @@ class DecoderLayer(nn.Module):
         h = apply_rms_norm(x, self.input_norm, cfg)
 
         # Project to q/k/v and split into heads. GQA: q gets n_heads, k/v get fewer (n_kv_heads).
-        q = self.q_proj(h).view(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)
-        k = self.k_proj(h).view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
-        v = self.v_proj(h).view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
+        q, k, v = self.project_qkv(h)
+        q = q.view(B, S, cfg.n_heads, cfg.d_head).transpose(1, 2)
+        k = k.view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
+        v = v.view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
 
         # Inject position information into q and k by rotating them (RoPE).
         q = apply_rope(q, cos, sin, cfg, positions)
@@ -173,7 +224,8 @@ class DecoderLayer(nn.Module):
         # --- MLP sub-layer (SwiGLU: the gate branch acts as a learned per-feature filter) ---
         residual = x
         h = apply_rms_norm(x, self.post_attn_norm, cfg)
-        h = self.down_proj(apply_swiglu(self.gate_proj(h), self.up_proj(h), cfg))
+        gate, up = self.project_gate_up(h)
+        h = self.down_proj(apply_swiglu(gate, up, cfg))
         x = residual + h
 
         return x
@@ -191,6 +243,12 @@ class Model(nn.Module):
         # Qwen2.5-1.5B ties the output projection to the input embedding matrix.
         if cfg.tie_embeddings:
             self.lm_head.weight = self.embed.weight
+
+    def pack_projections_(self):
+        """Pack all decoder input projections after checkpoint loading."""
+        for layer in self.layers:
+            layer.pack_projections_()
+        return self
 
     def forward(self, input_ids, cache: KVCache):
         # input_ids: (batch, seq_len) token ids.
