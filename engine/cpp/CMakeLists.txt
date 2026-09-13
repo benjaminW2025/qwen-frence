@@ -9,6 +9,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(Torch REQUIRED)
 
+# Match the ABI of the Torch installation selected by CMAKE_PREFIX_PATH.
+separate_arguments(TORCH_COMPILE_FLAGS NATIVE_COMMAND "${TORCH_CXX_FLAGS}")
+
 # pybind11
 find_package(pybind11 CONFIG REQUIRED)
 
@@ -21,6 +24,8 @@ set(SOURCES
 
 # Build the Python extension
 pybind11_add_module(inference_engine_cpp ${SOURCES})
+
+target_compile_options(inference_engine_cpp PRIVATE ${TORCH_COMPILE_FLAGS})
 
 target_include_directories(inference_engine_cpp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
