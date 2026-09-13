@@ -191,6 +191,16 @@ def report_payload(configuration, fingerprint, system, records):
     }
 
 
+def select_device(torch, requested):
+    """Keep the current GPU for bare `cuda`; switch only for `cuda:N`."""
+    device = torch.device(requested)
+    if device.type != "cuda":
+        raise ValueError("--device must select a CUDA device")
+    if device.index is not None:
+        torch.cuda.set_device(device.index)
+    return device
+
+
 def main():
     args = parser().parse_args()
     modes = validate(args)
@@ -199,7 +209,7 @@ def main():
     from run_benchmarks import system_metadata
     if not torch.cuda.is_available():
         raise RuntimeError("requires CUDA")
-    torch.cuda.set_device(args.device)
+    select_device(torch, args.device)
     torch.backends.cuda.matmul.allow_tf32 = False
     batches = args.batches or ((1, 8) if args.preset == "smoke" else (1, 2, 4, 8, 16, 32, 64, 96, 128, 256))
     contexts = args.contexts or ((512, 2048) if args.preset == "smoke" else (512, 2048, 8192, 16384))

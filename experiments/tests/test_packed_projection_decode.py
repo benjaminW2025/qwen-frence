@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -24,6 +25,13 @@ class Tests(unittest.TestCase):
     def test_int_list_rejects_duplicates(self):
         with self.assertRaises(argparse.ArgumentTypeError):
             MODULE.int_list("1,1")
+
+    def test_bare_cuda_keeps_current_device_and_indexed_cuda_selects_it(self):
+        with patch.object(torch.cuda, "set_device") as set_device:
+            self.assertEqual(str(MODULE.select_device(torch, "cuda")), "cuda")
+            set_device.assert_not_called()
+            self.assertEqual(str(MODULE.select_device(torch, "cuda:0")), "cuda:0")
+            set_device.assert_called_once_with(0)
 
     def test_report_serializes_output_path_and_resumes_complete_case(self):
         with tempfile.TemporaryDirectory() as directory:
