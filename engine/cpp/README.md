@@ -100,7 +100,13 @@ change and multiple buffer sets; no throughput improvement is assumed here.
 
 ## Build and test
 
-The setuptools path uses PyTorch's extension tooling without requiring Ninja:
+The setuptools path uses PyTorch's extension tooling without requiring Ninja.
+It always recompiles objects, explicitly matches the installed Torch C++ ABI on
+Linux, and the Makefile verifies that the resulting module imports before running
+tests. This avoids reusing binaries from an older Torch wheel. Use
+`make cpp-scheduler-test PYTHON=python` to select the same interpreter used for
+installing requirements:
+
 
 ```bash
 make cpp-scheduler-build

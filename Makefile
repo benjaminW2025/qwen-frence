@@ -37,7 +37,8 @@ unit:
 	$(PYTHON) -m unittest discover -s experiments/tests -p 'test_*.py'
 
 cpp-scheduler-build:
-	cd engine/cpp && $(PYTHON) setup.py build_ext --build-lib build
+	cd engine/cpp && $(PYTHON) setup.py build_ext --build-lib build --force
+	$(PYTHON) -c 'import torch, sys; sys.path.insert(0, "engine/cpp/build"); import inference_engine_cpp; print("C++ scheduler import passed:", inference_engine_cpp.__file__)'
 
 cpp-scheduler-test: cpp-scheduler-build
 	$(PYTHON) -m unittest discover -s engine/cpp/tests -p 'test_*.py'
