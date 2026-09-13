@@ -1,0 +1,317 @@
+{
+  "status": "needs_more_work",
+  "production_ready": false,
+  "fingerprint": "d98e15fbc8511422a0e72153ec01a0fe6a7565563cbb4d5982e3770169c2b1d6",
+  "fit_cache": "warm",
+  "scope": "H=1 FP16 page16 head128 four warps; GPU/software fixed by manifest",
+  "gate": "full preset and at least 5 trials; validation and every held-out cache/suite p95 regret <=1.10; held-out max regret <=1.20; per-shape policy/production speedup CI lower bound >=0.95",
+  "boundary_hits": [
+    {
+      "case_id": "train-b1-l512-uniform",
+      "best_measured_action": [
+        16,
+        2
+      ]
+    },
+    {
+      "case_id": "ragged-b2-l257-ramp",
+      "best_measured_action": [
+        8,
+        4
+      ]
+    },
+    {
+      "case_id": "ragged-b2-l257-skew",
+      "best_measured_action": [
+        6,
+        4
+      ]
+    }
+  ],
+  "policy": {
+    "selected": {
+      "depth": 0,
+      "tree": {
+        "action": [
+          8,
+          2
+        ]
+      },
+      "validation": {
+        "geomean_regret": 1.0,
+        "p95_regret": 1.0,
+        "max_regret": 1.0,
+        "rows": [
+          {
+            "case_id": "validation-b4-l256-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0
+          }
+        ]
+      }
+    },
+    "candidates": [
+      {
+        "depth": 0,
+        "tree": {
+          "action": [
+            8,
+            2
+          ]
+        },
+        "validation": {
+          "geomean_regret": 1.0,
+          "p95_regret": 1.0,
+          "max_regret": 1.0,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "depth": 1,
+        "tree": {
+          "action": [
+            8,
+            2
+          ]
+        },
+        "validation": {
+          "geomean_regret": 1.0,
+          "p95_regret": 1.0,
+          "max_regret": 1.0,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "depth": 2,
+        "tree": {
+          "action": [
+            8,
+            2
+          ]
+        },
+        "validation": {
+          "geomean_regret": 1.0,
+          "p95_regret": 1.0,
+          "max_regret": 1.0,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0
+            }
+          ]
+        }
+      }
+    ],
+    "fixed_baseline": {
+      "action": [
+        8,
+        2
+      ]
+    }
+  },
+  "heldout": {
+    "test:warm": {
+      "policy": {
+        "geomean_regret": 1.0168302998543501,
+        "p95_regret": 1.0168302998543501,
+        "max_regret": 1.0168302998543501,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0168302998543501
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.0168302998543501,
+        "p95_regret": 1.0168302998543501,
+        "max_regret": 1.0168302998543501,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0168302998543501
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 1.0350630940824364,
+        "p95_regret": 1.0350630940824364,
+        "max_regret": 1.0350630940824364,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              1
+            ],
+            "regret": 1.0350630940824364
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 2.1276296412342734,
+        "p95_regret": 2.1276296412342734,
+        "max_regret": 2.1276296412342734,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.1276296412342734
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "test-b2-l257-uniform",
+          "ratio": 2.1655356719647814,
+          "ci95": null,
+          "trials": 2
+        }
+      ]
+    },
+    "ragged:warm": {
+      "policy": {
+        "geomean_regret": 1.011209711345205,
+        "p95_regret": 1.0181564413851278,
+        "max_regret": 1.0181564413851278,
+        "rows": [
+          {
+            "case_id": "ragged-b2-l257-ramp",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0043103778116402
+          },
+          {
+            "case_id": "ragged-b2-l257-skew",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0181564413851278
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.011209711345205,
+        "p95_regret": 1.0181564413851278,
+        "max_regret": 1.0181564413851278,
+        "rows": [
+          {
+            "case_id": "ragged-b2-l257-ramp",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0043103778116402
+          },
+          {
+            "case_id": "ragged-b2-l257-skew",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0181564413851278
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 1.0364192637694138,
+        "p95_regret": 1.0544693241553833,
+        "max_regret": 1.0544693241553833,
+        "rows": [
+          {
+            "case_id": "ragged-b2-l257-ramp",
+            "action": [
+              8,
+              1
+            ],
+            "regret": 1.0186781784028913
+          },
+          {
+            "case_id": "ragged-b2-l257-skew",
+            "action": [
+              8,
+              1
+            ],
+            "regret": 1.0544693241553833
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 2.1390206334459605,
+        "p95_regret": 2.1652299786024116,
+        "max_regret": 2.1652299786024116,
+        "rows": [
+          {
+            "case_id": "ragged-b2-l257-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.1652299786024116
+          },
+          {
+            "case_id": "ragged-b2-l257-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.1131285431678917
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "ragged-b2-l257-ramp",
+          "ratio": 2.246068066283032,
+          "ci95": null,
+          "trials": 2
+        },
+        {
+          "case_id": "ragged-b2-l257-skew",
+          "ratio": 2.1563968549522397,
+          "ci95": null,
+          "trials": 2
+        }
+      ]
+    }
+  }
+}

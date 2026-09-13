@@ -1,0 +1,799 @@
+{
+  "status": "complete",
+  "fingerprint": "d98e15fbc8511422a0e72153ec01a0fe6a7565563cbb4d5982e3770169c2b1d6",
+  "case_id": "mechanism-b1-l512-uniform-k4",
+  "trial": 1,
+  "before": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 30, 1980 MHz, 2619 MHz, 117.99 W, 0 %"
+  },
+  "after": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 30, 1980 MHz, 2619 MHz, 117.96 W, 1 %"
+  },
+  "started_at": "2026-09-13T14:58:27.893448+00:00",
+  "wall_seconds": 0.3266399707645178,
+  "orders": [
+    [
+      [
+        [
+          4,
+          4
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "partial",
+        "warm"
+      ]
+    ],
+    [
+      [
+        [
+          4,
+          3
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "reduce",
+        "warm"
+      ]
+    ],
+    [
+      [
+        [
+          4,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          4,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          4,
+          1
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          4,
+          4
+        ],
+        "full",
+        "warm"
+      ]
+    ]
+  ],
+  "records": [
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        1
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.013919999822974205,
+        0.01369599997997284,
+        0.013728000223636627
+      ],
+      "median_ms": 0.013728000223636627,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 64,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        1
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.015552000142633915,
+        0.015519999898970127,
+        0.015584000386297703
+      ],
+      "median_ms": 0.015552000142633915,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 64,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        1
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.007872000336647034,
+        0.007679999805986881,
+        0.007840000092983246
+      ],
+      "median_ms": 0.007840000092983246,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 64,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        2
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.014495999552309513,
+        0.014495999552309513,
+        0.014271999709308147
+      ],
+      "median_ms": 0.014495999552309513,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        2
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.0161920003592968,
+        0.0161920003592968,
+        0.016127999871969223
+      ],
+      "median_ms": 0.0161920003592968,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        2
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.00825599953532219,
+        0.007679999805986881,
+        0.007903999648988247
+      ],
+      "median_ms": 0.007903999648988247,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        3
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.013439999893307686,
+        0.013248000293970108,
+        0.013535999692976475
+      ],
+      "median_ms": 0.013439999893307686,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        3
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.015424000099301338,
+        0.015231999568641186,
+        0.015359999611973763
+      ],
+      "median_ms": 0.015359999611973763,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        3
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.00979200005531311,
+        0.0081599997356534,
+        0.007712000049650669
+      ],
+      "median_ms": 0.0081599997356534,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        4
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.013344000093638897,
+        0.013439999893307686,
+        0.013248000293970108
+      ],
+      "median_ms": 0.013344000093638897,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        4
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.015456000342965126,
+        0.015200000256299973,
+        0.015263999812304974
+      ],
+      "median_ms": 0.015263999812304974,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        4,
+        4
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.01244799979031086,
+        0.008031999692320824,
+        0.00774399982765317
+      ],
+      "median_ms": 0.008031999692320824,
+      "seed": 288084595,
+      "max_abs_error": 1.52587890625e-05,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 26,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 0.36363636363636365,
+      "active_programs": 48,
+      "kv_bytes": 524288
+    },
+    {
+      "case_id": "mechanism-b1-l512-uniform-k4",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": "production",
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.04233599826693535,
+        0.042527999728918076,
+        0.04230400174856186
+      ],
+      "median_ms": 0.04233599826693535,
+      "seed": 288084595,
+      "max_abs_error": 7.62939453125e-06
+    }
+  ]
+}

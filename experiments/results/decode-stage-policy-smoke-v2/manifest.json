@@ -1,0 +1,1646 @@
+{
+  "fingerprint": "d98e15fbc8511422a0e72153ec01a0fe6a7565563cbb4d5982e3770169c2b1d6",
+  "created_at": "2026-09-13T14:57:45.747202+00:00",
+  "schema_version": 1,
+  "preset": "smoke",
+  "trials": 2,
+  "samples": 3,
+  "seed": 20260911,
+  "cache_modes": [
+    "warm"
+  ],
+  "evict_mib": 256,
+  "hardware": {
+    "name": "NVIDIA H100 80GB HBM3",
+    "sms": 132,
+    "memory": 85017493504,
+    "capability": [
+      9,
+      0
+    ],
+    "uuid": "d6946a9d-f1cf-e5de-dbc1-2a5291c49d29",
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0",
+    "cuda": "12.8",
+    "python": "3.12.3",
+    "driver": "580.126.09"
+  },
+  "source_hashes": {
+    "benchmark_decode_stage_policy.py": "d667cf95d521d8ad3688ea6a12dd204460df1946ff0eb813686fe106821e75ee",
+    "decode_stage_policy.py": "cf652021b69815e9308df9d61699b5eda0d474ece4e83a56504b77540971697b",
+    "grouped_splitk_validation.py": "290b5cad7d6ba7e5139443aacdd7efc49947c5895ecb007486c5f8a010f61675",
+    "paged_decode_grouped_splitk_pipelined.py": "cd747f2b5dc19134a79c69aa7b70f896199f421ad77b8891165a25f26594fbc0",
+    "benchmark_grouped_splitk_pipelined.py": "9c1187c452c860e14bf60af7f33f19a59c9b9617db4515a9c138cb0ed27a3753",
+    "../../engine/kvcache/paged_decode_attention.py": "d67a05bdc284326c0e3ddb014aa249ab6c903b55d9459d8be831e44e2a597faf"
+  },
+  "plan": [
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 16,
+      "shape": "uniform",
+      "lengths": [
+        16
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b1-l16-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 1
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 32,
+      "shape": "uniform",
+      "lengths": [
+        32
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b1-l32-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 2
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b1-l128-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 32,
+      "shape": "uniform",
+      "lengths": [
+        32
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b1-l32-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 2
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 64,
+      "shape": "uniform",
+      "lengths": [
+        64
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b1-l64-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 4
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 256,
+      "shape": "uniform",
+      "lengths": [
+        256
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b1-l256-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 16
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 64,
+      "shape": "uniform",
+      "lengths": [
+        64
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b1-l64-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 4
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b1-l128-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 1,
+      "context": 512,
+      "shape": "uniform",
+      "lengths": [
+        512
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b1-l512-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 32
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 16,
+      "shape": "uniform",
+      "lengths": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b8-l16-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 1
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 32,
+      "shape": "uniform",
+      "lengths": [
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b8-l32-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 2
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "target_k": 1,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b8-l128-uniform-k1",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 32,
+      "shape": "uniform",
+      "lengths": [
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b8-l32-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 2
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 64,
+      "shape": "uniform",
+      "lengths": [
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b8-l64-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 4
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 256,
+      "shape": "uniform",
+      "lengths": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ],
+      "target_k": 2,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b8-l256-uniform-k2",
+      "actions": [
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 16
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 64,
+      "shape": "uniform",
+      "lengths": [
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64,
+        64
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 1,
+      "id": "mechanism-b8-l64-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 4
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 2,
+      "id": "mechanism-b8-l128-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "mechanism",
+      "batch": 8,
+      "context": 512,
+      "shape": "uniform",
+      "lengths": [
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512
+      ],
+      "target_k": 4,
+      "target_pages_per_program": 8,
+      "id": "mechanism-b8-l512-uniform-k4",
+      "actions": [
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 32
+      }
+    },
+    {
+      "suite": "train",
+      "batch": 1,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "train-b1-l128-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "train",
+      "batch": 1,
+      "context": 512,
+      "shape": "uniform",
+      "lengths": [
+        512
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "train-b1-l512-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 1,
+        "max_pages": 32
+      }
+    },
+    {
+      "suite": "train",
+      "batch": 8,
+      "context": 128,
+      "shape": "uniform",
+      "lengths": [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "train-b8-l128-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 8
+      }
+    },
+    {
+      "suite": "train",
+      "batch": 8,
+      "context": 512,
+      "shape": "uniform",
+      "lengths": [
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512,
+        512
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "train-b8-l512-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 8,
+        "max_pages": 32
+      }
+    },
+    {
+      "suite": "validation",
+      "batch": 4,
+      "context": 256,
+      "shape": "uniform",
+      "lengths": [
+        256,
+        256,
+        256,
+        256
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "validation-b4-l256-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 4,
+        "max_pages": 16
+      }
+    },
+    {
+      "suite": "test",
+      "batch": 2,
+      "context": 257,
+      "shape": "uniform",
+      "lengths": [
+        257,
+        257
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "test-b2-l257-uniform",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 2,
+        "max_pages": 17
+      }
+    },
+    {
+      "suite": "ragged",
+      "batch": 2,
+      "context": 257,
+      "shape": "ramp",
+      "lengths": [
+        128,
+        257
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "ragged-b2-l257-ramp",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 2,
+        "max_pages": 17
+      }
+    },
+    {
+      "suite": "ragged",
+      "batch": 2,
+      "context": 257,
+      "shape": "skew",
+      "lengths": [
+        257,
+        1
+      ],
+      "target_k": null,
+      "target_pages_per_program": null,
+      "id": "ragged-b2-l257-skew",
+      "actions": [
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          4
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          6,
+          1
+        ],
+        [
+          6,
+          2
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          2
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          16,
+          1
+        ],
+        [
+          16,
+          2
+        ],
+        [
+          16,
+          3
+        ],
+        [
+          16,
+          4
+        ]
+      ],
+      "features": {
+        "batch": 2,
+        "max_pages": 17
+      }
+    }
+  ],
+  "timing": "one attention invocation per CUDA graph replay; cache conditioning outside events"
+}

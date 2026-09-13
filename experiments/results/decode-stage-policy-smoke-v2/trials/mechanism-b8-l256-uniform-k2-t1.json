@@ -1,0 +1,799 @@
+{
+  "status": "complete",
+  "fingerprint": "d98e15fbc8511422a0e72153ec01a0fe6a7565563cbb4d5982e3770169c2b1d6",
+  "case_id": "mechanism-b8-l256-uniform-k2",
+  "trial": 1,
+  "before": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 30, 1980 MHz, 2619 MHz, 116.03 W, 0 %"
+  },
+  "after": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 30, 1980 MHz, 2619 MHz, 116.13 W, 0 %"
+  },
+  "started_at": "2026-09-13T14:58:17.465526+00:00",
+  "wall_seconds": 0.3328670486807823,
+  "orders": [
+    [
+      [
+        [
+          2,
+          4
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "full",
+        "warm"
+      ]
+    ],
+    [
+      [
+        [
+          2,
+          4
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "reduce",
+        "warm"
+      ]
+    ],
+    [
+      [
+        [
+          2,
+          4
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "partial",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          4
+        ],
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          3
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        [
+          2,
+          2
+        ],
+        "reduce",
+        "warm"
+      ],
+      [
+        "production",
+        "full",
+        "warm"
+      ],
+      [
+        [
+          2,
+          1
+        ],
+        "full",
+        "warm"
+      ]
+    ]
+  ],
+  "records": [
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        1
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.01772800087928772,
+        0.017952000722289085,
+        0.017791999503970146
+      ],
+      "median_ms": 0.017791999503970146,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 56,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        1
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.019231999292969704,
+        0.01913600042462349,
+        0.019328000023961067
+      ],
+      "median_ms": 0.019231999292969704,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 56,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        1
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.007935999892652035,
+        0.00774399982765317,
+        0.0074880002066493034
+      ],
+      "median_ms": 0.00774399982765317,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 56,
+          "spills": 0,
+          "shared_bytes": 2304
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        2
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.0163199994713068,
+        0.0163199994713068,
+        0.01635199971497059
+      ],
+      "median_ms": 0.0163199994713068,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        2
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.017983999103307724,
+        0.01817600056529045,
+        0.017983999103307724
+      ],
+      "median_ms": 0.017983999103307724,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        2
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.00825599953532219,
+        0.007679999805986881,
+        0.008063999935984612
+      ],
+      "median_ms": 0.008063999935984612,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 72,
+          "spills": 0,
+          "shared_bytes": 8448
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        3
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.016127999871969223,
+        0.016095999628305435,
+        0.015936000272631645
+      ],
+      "median_ms": 0.016095999628305435,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        3
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.01759999990463257,
+        0.017472000792622566,
+        0.017472000792622566
+      ],
+      "median_ms": 0.017472000792622566,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        3
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.007840000092983246,
+        0.007712000049650669,
+        0.0077760000713169575
+      ],
+      "median_ms": 0.0077760000713169575,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 80,
+          "spills": 0,
+          "shared_bytes": 16640
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        4
+      ],
+      "role": "partial",
+      "cache": "warm",
+      "samples_ms": [
+        0.016448000445961952,
+        0.016543999314308167,
+        0.01648000068962574
+      ],
+      "median_ms": 0.01648000068962574,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 91,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        4
+      ],
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.018015999346971512,
+        0.017983999103307724,
+        0.017983999103307724
+      ],
+      "median_ms": 0.017983999103307724,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 91,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": [
+        2,
+        4
+      ],
+      "role": "reduce",
+      "cache": "warm",
+      "samples_ms": [
+        0.01190400030463934,
+        0.00774399982765317,
+        0.007615999784320593
+      ],
+      "median_ms": 0.00774399982765317,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125,
+      "resources": {
+        "partial": {
+          "registers_per_thread": 91,
+          "spills": 0,
+          "shared_bytes": 24832
+        },
+        "reduce": {
+          "registers_per_thread": 21,
+          "spills": 0,
+          "shared_bytes": 0
+        }
+      },
+      "pages_per_program_min": 8,
+      "pages_per_program_max": 8,
+      "pages_per_program_mean": 8,
+      "empty_program_fraction": 0.0,
+      "launched_programs_per_sm": 1.4545454545454546,
+      "active_programs": 192,
+      "kv_bytes": 2097152
+    },
+    {
+      "case_id": "mechanism-b8-l256-uniform-k2",
+      "suite": "mechanism",
+      "trial": 1,
+      "action": "production",
+      "role": "full",
+      "cache": "warm",
+      "samples_ms": [
+        0.024000000208616257,
+        0.02409599907696247,
+        0.02393599972128868
+      ],
+      "median_ms": 0.024000000208616257,
+      "seed": 168759368,
+      "max_abs_error": 0.0001220703125
+    }
+  ]
+}

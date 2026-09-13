@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "phase": "scheduler",
+  "preset": "smoke",
+  "plan": [
+    {
+      "id": "uniform-b2-l257",
+      "kind": "uniform",
+      "lengths": [
+        257,
+        257
+      ],
+      "arrivals": [
+        0,
+        0
+      ],
+      "outputs": [
+        4,
+        4
+      ],
+      "max_running": 2,
+      "prefill_budget": 128
+    },
+    {
+      "id": "uniform-b4-l513",
+      "kind": "uniform",
+      "lengths": [
+        513,
+        513,
+        513,
+        513
+      ],
+      "arrivals": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "outputs": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "max_running": 4,
+      "prefill_budget": 128
+    },
+    {
+      "id": "ragged-b4-l769",
+      "kind": "ragged",
+      "lengths": [
+        769,
+        384,
+        256,
+        192
+      ],
+      "arrivals": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "outputs": [
+        4,
+        5,
+        6,
+        4
+      ],
+      "max_running": 2,
+      "prefill_budget": 128
+    },
+    {
+      "id": "staggered-b4-l769",
+      "kind": "staggered",
+      "lengths": [
+        769,
+        384,
+        256,
+        192
+      ],
+      "arrivals": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "outputs": [
+        4,
+        5,
+        6,
+        4
+      ],
+      "max_running": 2,
+      "prefill_budget": 128
+    }
+  ],
+  "trials": 5,
+  "samples": 3,
+  "warmups": 1,
+  "seed": 20260912,
+  "hardware": {
+    "name": "NVIDIA H100 80GB HBM3",
+    "sms": 132,
+    "capability": [
+      9,
+      0
+    ],
+    "memory": 85017493504,
+    "uuid": "dc542855-fb67-1ba3-7e4f-6c58c52a6c26",
+    "torch": "2.6.0+cu124",
+    "triton": "3.2.0",
+    "cuda": "12.4",
+    "driver": "580.126.09",
+    "python": "3.12.3"
+  },
+  "model": "Qwen/Qwen2.5-1.5B",
+  "model_config": {
+    "vocab": 151936,
+    "d_model": 1536,
+    "d_ff": 8960,
+    "n_layers": 28,
+    "n_heads": 12,
+    "n_kv_heads": 2,
+    "d_head": 128,
+    "max_seq_len": 32768,
+    "rms_norm_eps": 1e-06,
+    "rope_theta": 1000000.0,
+    "attention_bias": true,
+    "tie_embeddings": true,
+    "use_custom_kernels": true
+  },
+  "dtype": "float16",
+  "sources": {
+    "baseline/baseline_engine.py": "edfbabb78ef4707e692ccdc2a8edcc37e9ee194e4a3e9e5c0c053c43da370c34",
+    "baseline/kernel_dispatch.py": "4b78b0f41a656980103cb2de409a091a0472c30db06f2cd29a794a6758bcff82",
+    "baseline/kv_cache.py": "741f63c62a53cff3a857963977c6a0b9c1f55eac0a31ca4319b3dd1f8c24f6f8",
+    "baseline/naive_forward.py": "6ee56566c361e04855b31c0b4ea846f93da27e1880a8c80eb7803fd189850704",
+    "baseline/weight_loader.py": "8ea86bee8d25ead18f0c6cef2763250ebbfd6aec7506c6fce92c31ceae8b6f75",
+    "custom_kernels/__init__.py": "34ce75a97615733f7545d27ec19775c93d41d78b7209e3564176b53a11081602",
+    "custom_kernels/fused_rms.py": "01f92fee4dc0ff5b04212a87f89905a95e579c44b0d308cfe41d4b434fd6ca7a",
+    "custom_kernels/packed_paged_prefill_attention.py": "429a0813d9fd75526f595ac031ebd9508a895613eb838a9ccb123f61360731f8",
+    "custom_kernels/packed_prefill_attention.py": "9886f2eb307460e64ec9c2d5906943c063f09deb6191608cb301030039d74a21",
+    "custom_kernels/paged_decode_candidate.py": "753d195c34452d26dba1687e0e0e449f778bd2de77675e2a324741124c016079",
+    "custom_kernels/paged_decode_splitk.py": "c6579f1d9dc5f575e12b8ec5af623d466057248a753cd808c8735f0f3f0e6f56",
+    "custom_kernels/rope.py": "169e236a41c68bd042d62fa5cb29195de73d87705e4fb30c678c9bfdedc2df62",
+    "custom_kernels/rope_kv_write.py": "4999712764f90f1c1673bb75246684e1e6665798d11ea50195dc244886719dfc",
+    "custom_kernels/swiglu.py": "2d865f4be6fc9571fe3919ee9cfba8788e00925c379daaf3b9e846d629a2f073",
+    "engine/cpp/include/iteration_loop.hpp": "5689f50ab161bcaf583fd9273aeca8c61840f80ec2edc3cb09280e475045bd07",
+    "engine/cpp/src/batch_builder.cpp": "ac7cc3fd1777c9b2f5e46f2d640c3b916ec61e1fd1e06b3adf424886d0c5cfaf",
+    "engine/cpp/src/bindings.cpp": "81b67bd599878a1f330acc8c2a7ae8938ccfaea78d5515d485edfeeffc386be9",
+    "engine/cpp/src/iteration_loop.cpp": "5485e020568d0a816db7aabd5fdc3ac2c997d9e687e4ec3cbb1666d5919463ba",
+    "engine/kvcache/__init__.py": "414891d772d0d112ddf0d886d44d9c7867f6b37e59a27447129252dcc7158bf6",
+    "engine/kvcache/packed_prefill_attention.py": "d7833c1be6118fe6bdc1ac93ac9f05031a8a30874ff010e61abb2a0170b315e7",
+    "engine/kvcache/paged_decode_attention.py": "e0ca2336470f77ce51ffe512738d6e99ecc038021c5df6a1e52d8923e5b5419a",
+    "engine/kvcache/paged_engine.py": "83222aefa41ab33ae7a2d9f86f25b41515db7a27804a89bd1164d26f22522708",
+    "engine/kvcache/paged_forward.py": "e381651e0770066291223ada45f4ba109d0a51621257ddf6f2516bd24ccd0cd0",
+    "engine/kvcache/paged_kv_cache.py": "1641b543b3388c3905d7e4cc54988c145c9d531a5ceb2ba80b2463858f2e7faf",
+    "engine/kvcache/paged_prefill_attention.py": "58f5002211c4d5e4076eceb32bfc58683f382b64b0bc462432e855c3364a3d62",
+    "engine/model_runner/__init__.py": "edcef20a06a71ae16c37038c3e3fc8b75c39f17a7acc975aa85fa6f14ce122e9",
+    "engine/model_runner/mixed_batch.py": "2c1857a7e2f50ade27e7112c5cb58be48795d8d0b378f20e4360acc689819dab",
+    "engine/model_runner/ragged_prefill.py": "6abbc5a2dd21366da160906c3e9f27b6f894612e5421a8dd21377abcdcabae6b",
+    "experiments/decode/benchmark_decode_joint_sweep.py": "1fd33c0d78aecf3cca3fe4df3b2c205dd931fe3178ddadc0ec9626e21a9176ea",
+    "experiments/decode/benchmark_decode_kernel_causality.py": "fc3594d488a82fd4c25d44200f4dd8da292789f071cf5ab1ca2615f3ced297b2",
+    "experiments/decode/benchmark_decode_stage_policy.py": "a6aefc2de22e6ea1f142a77bc47bbd14ece3b072bdc3996df3a42d6a7990c240",
+    "experiments/decode/benchmark_grouped_attention.py": "b1d48098c2e4a6689589b5a68b6b7ea15ac121dc34030fdb2f0cac0453a51482",
+    "experiments/decode/benchmark_grouped_gqa_decode.py": "fa4366bed8a0f28e140cd4b725173b82ba7503e2c36f193cb57f4bf5daaa42e8",
+    "experiments/decode/benchmark_grouped_splitk_pipelined.py": "7d80c84b2ee4f7b048e48a5d1a2ce254ed5f18e6c574a347aedece6683141727",
+    "experiments/decode/benchmark_splitk_decode.py": "9846db8d82c6d0fbe0734dc0abb83dc367a0c084f3804ca7104ec24e94494ac1",
+    "experiments/decode/decode_stage_policy.py": "b1046ebcdd17a51a8c4ba4019b5615eda388cec4db01a81f8e55522687e393e4",
+    "experiments/decode/grouped_splitk_validation.py": "a8f3bbc02d8ba6e69a95fc47de86a2539fc17ba420cae85c05794832ae12f4cb",
+    "experiments/decode/paged_decode_grouped_splitk_pipelined.py": "56df04c85933cebd3a38793f7d745ac568766be623664dec4eb331dcbb024279",
+    "experiments/integration/benchmark_scheduler_decode.py": "14d2cda24948be5505c83623ecb58af3f28c41bdd205eff2d6618a1be6c3b3d1",
+    "experiments/integration/design.py": "fed8e2c1968166d029f2714978e7c09bf927c03298a586a146c71cf53a8ca195",
+    "experiments/integration/model_adapter.py": "bab9089059e90b97343787b93be70b9e92ecd16c5d3e5857fbbc3d095ad5f25c",
+    "experiments/integration/python_control.py": "de21232a6106d773bbdeea1e3a3768ef7fa91298fd28dcfe97c50029909627c5"
+  },
+  "extension_sha256": "1a6ab756c908d8438363c47fd1aed3c0c30530f061f643c6f892c94b1e61fadc",
+  "policy": null,
+  "execution": "eager model; separate decode/prefill forwards; EOS disabled",
+  "control": "matched Python reference, not the production Python scheduler",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "fingerprint": "b7cbed63ddc1079371cfa486a7fe3cfb361bcfb1abf30ebf8ddad2b277a85720"
+}

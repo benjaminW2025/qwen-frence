@@ -1,0 +1,8877 @@
+{
+  "status": "complete",
+  "fingerprint": "90dfad0e19ab86c7a2b6afe271fd4b345b96c764bdf08aa01bcd6b7864c743bf",
+  "case_id": "uniform-b128-l512",
+  "trial": 2,
+  "checks": {
+    "python-production": {
+      "callbacks": 126,
+      "max_logit_error": 0.0,
+      "outputs_equal": true,
+      "metadata_equal": true,
+      "decisions": {
+        "production": 94
+      }
+    },
+    "cpp-production": {
+      "callbacks": 126,
+      "max_logit_error": 0.0,
+      "outputs_equal": true,
+      "metadata_equal": true,
+      "decisions": {
+        "production": 94
+      }
+    }
+  },
+  "order": [
+    "python-production",
+    "cpp-production",
+    "python-production",
+    "cpp-production",
+    "python-production",
+    "cpp-production"
+  ],
+  "records": [
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 0,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1504.7589745372534,
+      "output_tokens_per_s": 5444.061234138325,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 14.004260301589966,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.77856895327568,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.78748171031475,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.040795862674713,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.89928698539734,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.04591254889965,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.143900722265244,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.920537903904915,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.95266480743885,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.939108476042747,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.991849273443222,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.129699915647507,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.19472672045231,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.103784933686256,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.24386702477932,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.039682000875473,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.094831198453903,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.103354662656784,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.052605032920837,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.55030009150505,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.649083614349365,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.198083207011223,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.15364980697632,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.069594219326973,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.174006655812263,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.536127224564552,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.000229477882385,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.093447417020798,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.201348587870598,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.462791323661804,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.737715885043144,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.791345164179802,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.298500165343285,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.293010950088501,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.306461110711098,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.312199920415878,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.356866151094437,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.37504556775093,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.398168444633484,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.403285130858421,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.402079999446869,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.395955622196198,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.41162046790123,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.375880032777786,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.406708672642708,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.470394372940063,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.482041493058205,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.520940974354744,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.515580281615257,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.57462427020073,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.568049132823944,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.613043189048767,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.635892257094383,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.641161680221558,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.646779417991638,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.64658011496067,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.66963966190815,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.648144736886024,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.627992779016495,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.674679979681969,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.6809012144804,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.721316888928413,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.733347713947296,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.777874246239662,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.71001249551773,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.68974132835865,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.37301155924797,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.080011889338493,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.04151101410389,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.950165033340454,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.381858959794044,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.68931445479393,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.56293398141861,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.61742939054966,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.502083227038383,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.497856885194778,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.545365512371063,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.467221960425377,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.555228218436241,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.696033015847206,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.521672666072845,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.338535532355309,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.415460914373398,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.332195088267326,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.189898312091827,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.262403637170792,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.356761515140533,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.257609188556671,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.280948132276535,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.125188156962395,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.236872360110283,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.164774954319,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.319501161575317,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.153843089938164,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.077839717268944,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 734.978049993515,
+      "prefill_wall_ms": 14.004260301589966,
+      "mixed_wall_ms": 755.0803814083338
+    },
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 0,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1439.0089828521013,
+      "output_tokens_per_s": 5692.806714634636,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 12.988083064556122,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.78347499668598,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.820135578513145,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.793300449848175,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.70212396979332,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.72845059633255,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.739406675100327,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.78033457696438,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.849176079034805,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.84993790090084,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.772448137402534,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.76531420648098,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.764846682548523,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.91272021830082,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.756250575184822,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.798219695687294,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.853532806038857,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.77468517422676,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.641124203801155,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.700102999806404,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.843580693006516,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.76046574115753,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.92163111269474,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.712519392371178,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.71147258579731,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.166567087173462,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.65380898118019,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.755615577101707,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.797396570444107,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.990260437130928,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.33173544704914,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.363044649362564,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.818643659353256,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.82216964662075,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.814363300800323,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.84341125190258,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.874405667185783,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.886894702911377,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.905886232852936,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.923596262931824,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.938519775867462,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.900253593921661,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.94641925394535,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.948078870773315,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.953836306929588,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.988028883934021,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.996883898973465,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.021554633975029,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.033959850668907,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.064075097441673,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.068014591932297,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.110840529203415,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.14439794421196,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.145185843110085,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.163670733571053,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.196119874715805,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.167416512966156,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.192187830805779,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.201543897390366,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.230049818754196,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.197604402899742,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.239184230566025,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.242782860994339,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.28235848248005,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.26540096104145,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.213775888085365,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.824429035186768,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.615125462412834,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.60004548728466,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.500703170895576,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.938240215182304,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.14246791601181,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.183345526456833,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.169727727770805,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.178212076425552,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.203152894973755,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.240701958537102,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.268719866871834,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.237645357847214,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.185379534959793,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.082876309752464,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.28202474117279,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.308463126420975,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.18935814499855,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.122571140527725,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.110009461641312,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.133305564522743,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.186925530433655,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.015135630965233,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.066797956824303,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.026838630437851,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.10897383093834,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.899236261844635,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.98741015791893,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.04319079220295,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 710.5925288051367,
+      "prefill_wall_ms": 12.988083064556122,
+      "mixed_wall_ms": 713.793683797121
+    },
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 1,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1504.3052956461906,
+      "output_tokens_per_s": 5445.703092124686,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 13.930261135101318,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.74127507209778,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.747669532895088,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.01110902428627,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.823300376534462,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.98056536912918,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.028083309531212,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.833544924855232,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.45957623422146,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.964209482073784,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.84069375693798,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.967327550053596,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.943230509757996,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.109963327646255,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.115826934576035,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.118253961205482,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.092113599181175,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.044256657361984,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.986492305994034,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.432992562651634,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.124931544065475,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.178167805075645,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.128906428813934,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.230459704995155,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.03002418577671,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.525512009859085,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.9779149889946,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.10002627968788,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.20500309765339,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.505756959319115,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.73039010167122,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.778789073228836,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.308752164244652,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.298230081796646,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.325974181294441,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.34329491853714,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.390326708555222,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.383157387375832,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.386379763484001,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.399489060044289,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.396477162837982,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.418394908308983,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.426093220710754,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.438252568244934,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.413812801241875,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.439491227269173,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.497667223215103,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.510083615779877,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.549392879009247,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.525523081421852,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.56118156015873,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.573324143886566,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.606270611286163,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.617167085409164,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.63425126671791,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.637792155146599,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.608427554368973,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.633180245757103,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.736467644572258,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.684375047683716,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.717779725790024,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.71536760032177,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.762593105435371,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.823015451431274,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.72556371986866,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.711184099316597,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.443013489246368,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.092482298612595,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.032628059387207,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.948617175221443,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.336078867316246,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.754697024822235,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.70299744606018,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.65899059176445,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.748200118541718,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.700644925236702,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.628772899508476,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.471263900399208,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.510535910725594,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.51587425172329,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.408129543066025,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.46559028327465,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.425526648759842,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.7033159583807,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.30932366847992,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.3977732360363,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.29951311647892,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.178929194808006,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.321369394659996,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.163169354200363,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.227859020233154,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.11914573609829,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.09020023047924,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.137058794498444,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.99634712934494,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 735.9867822378874,
+      "prefill_wall_ms": 13.930261135101318,
+      "mixed_wall_ms": 753.7563666701317
+    },
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 1,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1438.655173406005,
+      "output_tokens_per_s": 5694.206750465091,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 12.98627257347107,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.703783586621284,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.68788404762745,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.621450945734978,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.761935368180275,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.649919614195824,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.621463984251022,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.756803780794144,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.82296121120453,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.83034846186638,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.68029935657978,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.77461625635624,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.734859958291054,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.83027209341526,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.78745174407959,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.76173233985901,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.821053862571716,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.808991372585297,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.69897237420082,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.73467555642128,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.74818904697895,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.815436124801636,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.787025198340416,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.72813208401203,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.75378257036209,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.14419113099575,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.603692650794983,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.728124797344208,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.80303665995598,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.118700996041298,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.319244548678398,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.33793991804123,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.825090274214745,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.799855157732964,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.824024841189384,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.81982271373272,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.864755302667618,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.885125190019608,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.89536228775978,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.932097375392914,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.90657913684845,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.926917359232903,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.934760957956314,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.947279796004295,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.031679973006248,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.99188083410263,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.002084404230118,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.00680062174797,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.00629211962223,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.063702568411827,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.084515765309334,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.094153091311455,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.146947905421257,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.151427567005157,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.194912880659103,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.194853276014328,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.216737493872643,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.207916006445885,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.209378182888031,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.1829304844141,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.250462546944618,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.249920517206192,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.246277183294296,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.255208566784859,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.264199554920197,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.222273275256157,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.851372197270393,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.659333482384682,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.583603918552399,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.529020965099335,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.93037985265255,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.135779157280922,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.166186839342117,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.311923921108246,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.187996551394463,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.188492015004158,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.287553071975708,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.074863210320473,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.218881070613861,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.215792804956436,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.161159560084343,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.2011077105999,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.11369377374649,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.218605399131775,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.245904326438904,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.053135454654694,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.06280817091465,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.056478902697563,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.087596252560616,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.454678907990456,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.012412443757057,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.991563856601715,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.09833998978138,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.164391249418259,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.954249486327171,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 711.053529754281,
+      "prefill_wall_ms": 12.98627257347107,
+      "mixed_wall_ms": 712.9769716411829
+    },
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 2,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1506.1071459203959,
+      "output_tokens_per_s": 5439.188056566715,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 14.00158554315567,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.788783699274063,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.76190386712551,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.83509650826454,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.877905681729317,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.990964516997337,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.95167015492916,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.873882368206978,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.8177590072155,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.944148793816566,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.036262184381485,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.995503783226013,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.970769718289375,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.21749383211136,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.176020175218582,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.102598428726196,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.07168410718441,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.157335981726646,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.018188938498497,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.332553148269653,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.208923801779747,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.22133833169937,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.223336949944496,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.03148263692856,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.13695491850376,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.497099220752716,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.972012266516685,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.13009123504162,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.223935022950172,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.53154155611992,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.71096085011959,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 25.76168067753315,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.296900153160095,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.288745492696762,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.325339019298553,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.3504139482975,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.326452881097794,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.393198907375336,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.355552986264229,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.350179255008698,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.377670034766197,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.412980198860168,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.411320582032204,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.449102476239204,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.43722252547741,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.440172955393791,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.48936541378498,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.522375211119652,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.525398284196854,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.538252398371696,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.585952877998352,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.626226991415024,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.640336528420448,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.628167867660522,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.666048482060432,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.644538655877113,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.673655524849892,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.647485360503197,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.669235467910767,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.671368196606636,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.701151892542839,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.71439902484417,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.7076655626297,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.795902788639069,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.698477134108543,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.717081233859062,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.331239879131317,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.11046427488327,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.022651731967926,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.95397786796093,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.368712410330772,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.654624551534653,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.59742271900177,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.700153186917305,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.784860700368881,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.768413543701172,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.541396215558052,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.608671233057976,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.515457019209862,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.56358776986599,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.573623701930046,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.415881872177124,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.378576815128326,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.361291468143463,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.363582521677017,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.258451104164124,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.399239137768745,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.196574032306671,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.265398770570755,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.120941326022148,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.27662493288517,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.18737256526947,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.364039033651352,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.445695370435715,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.220605880022049,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 737.4278679490089,
+      "prefill_wall_ms": 14.00158554315567,
+      "mixed_wall_ms": 753.569882363081
+    },
+    {
+      "case_id": "uniform-b128-l512",
+      "trial": 2,
+      "sample": 2,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "4": 2,
+        "8": 2,
+        "12": 2,
+        "16": 2,
+        "20": 2,
+        "24": 2,
+        "28": 2,
+        "32": 2,
+        "36": 2,
+        "40": 2,
+        "44": 2,
+        "48": 2,
+        "52": 2,
+        "56": 2,
+        "60": 2,
+        "64": 2,
+        "68": 2,
+        "72": 2,
+        "76": 2,
+        "80": 2,
+        "84": 2,
+        "88": 2,
+        "92": 2,
+        "96": 2,
+        "100": 2,
+        "104": 2,
+        "108": 2,
+        "112": 2,
+        "116": 2,
+        "120": 2,
+        "124": 2,
+        "128": 32
+      },
+      "max_actual_decode_batch": 128,
+      "wall_ms": 1444.5758201181889,
+      "output_tokens_per_s": 5670.868836313324,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 12.99472525715828,
+          "calls": [
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.757679224014282,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.013247177004814,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.90588617324829,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.935403510928154,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.89292961359024,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.001737892627716,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.01778830587864,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.942345589399338,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.93488010764122,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.004010319709778,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.932428866624832,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.931069135665894,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.094002157449722,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.9426808655262,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.864416241645813,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.846441715955734,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.810032591223717,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.907700389623642,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.81235158443451,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.830892354249954,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.00393581390381,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.9822788387537,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.78239668905735,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 22.96370267868042,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.129818961024284,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.611880838871002,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.755323141813278,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 23.838041350245476,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.038897827267647,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.35038797557354,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 24.341393262147903,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ],
+            [
+              false,
+              2048,
+              4,
+              512
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.85784861445427,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.837836354970932,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.854026466608047,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.864829808473587,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.900117620825768,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.936672031879425,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.012187391519547,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.919159442186356,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.926092207431793,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.98306493461132,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.971939355134964,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.996420100331306,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.00668141245842,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.985236778855324,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.014027684926987,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.024644762277603,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.083293870091438,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.081220746040344,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.064119800925255,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.142539024353027,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.130377814173698,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.151392176747322,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.220310047268867,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.167368084192276,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.194905430078506,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.243542820215225,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.198913842439651,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.215441092848778,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.255223467946053,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.25472055375576,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.27266900241375,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.296667322516441,
+          "calls": [
+            [
+              true,
+              128,
+              128,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.23926804959774,
+          "calls": [
+            [
+              true,
+              124,
+              124,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 12.23008707165718,
+          "calls": [
+            [
+              true,
+              120,
+              120,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.836020275950432,
+          "calls": [
+            [
+              true,
+              116,
+              116,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.717671528458595,
+          "calls": [
+            [
+              true,
+              112,
+              112,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.577608063817024,
+          "calls": [
+            [
+              true,
+              108,
+              108,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 11.537682265043259,
+          "calls": [
+            [
+              true,
+              104,
+              104,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.942487046122551,
+          "calls": [
+            [
+              true,
+              100,
+              100,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.23934967815876,
+          "calls": [
+            [
+              true,
+              96,
+              96,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.327324271202087,
+          "calls": [
+            [
+              true,
+              92,
+              92,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.319722816348076,
+          "calls": [
+            [
+              true,
+              88,
+              88,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.164299979805946,
+          "calls": [
+            [
+              true,
+              84,
+              84,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.219857096672058,
+          "calls": [
+            [
+              true,
+              80,
+              80,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.2433692663908,
+          "calls": [
+            [
+              true,
+              76,
+              76,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.120527818799019,
+          "calls": [
+            [
+              true,
+              72,
+              72,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.227305814623833,
+          "calls": [
+            [
+              true,
+              68,
+              68,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.076295584440231,
+          "calls": [
+            [
+              true,
+              64,
+              64,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.132340714335442,
+          "calls": [
+            [
+              true,
+              60,
+              60,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.11534035205841,
+          "calls": [
+            [
+              true,
+              56,
+              56,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.18400490283966,
+          "calls": [
+            [
+              true,
+              52,
+              52,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.114053264260292,
+          "calls": [
+            [
+              true,
+              48,
+              48,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.171689093112946,
+          "calls": [
+            [
+              true,
+              44,
+              44,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.129990056157112,
+          "calls": [
+            [
+              true,
+              40,
+              40,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.104220360517502,
+          "calls": [
+            [
+              true,
+              36,
+              36,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.098489001393318,
+          "calls": [
+            [
+              true,
+              32,
+              32,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.047238320112228,
+          "calls": [
+            [
+              true,
+              28,
+              28,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.283764451742172,
+          "calls": [
+            [
+              true,
+              24,
+              24,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.15026867389679,
+          "calls": [
+            [
+              true,
+              20,
+              20,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.084554553031921,
+          "calls": [
+            [
+              true,
+              16,
+              16,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.028533637523651,
+          "calls": [
+            [
+              true,
+              12,
+              12,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 10.018721222877502,
+          "calls": [
+            [
+              true,
+              8,
+              8,
+              1
+            ]
+          ],
+          "completed": 4
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.971201419830322,
+          "calls": [
+            [
+              true,
+              4,
+              4,
+              1
+            ]
+          ],
+          "completed": 4
+        }
+      ],
+      "decisions": {
+        "production": 94
+      },
+      "decode_wall_ms": 711.7167767137289,
+      "prefill_wall_ms": 12.99472525715828,
+      "mixed_wall_ms": 718.1759811937809
+    }
+  ],
+  "requests_sha256": "8e22d0a435b4827e63f6f62333089967ec782a3063986c0ec6c7272b0080242b",
+  "peak_allocated_bytes": 5452000256,
+  "telemetry_before": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 40, 1980 MHz, 2619 MHz, 348.18 W, 78 %"
+  },
+  "telemetry_after": {
+    "nvidia_smi": "GPU-d6946a9d-f1cf-e5de-dbc1-2a5291c49d29, 41, 1980 MHz, 2619 MHz, 395.48 W, 83 %"
+  },
+  "trial_wall_seconds": 17.576495250687003
+}

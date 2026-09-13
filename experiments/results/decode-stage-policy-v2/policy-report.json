@@ -1,0 +1,3855 @@
+{
+  "status": "needs_more_work",
+  "production_ready": false,
+  "fingerprint": "7080f4ea1f0fd7cc07d857d4e46f29c2f2c7a4162929e01229bc150eff45e483",
+  "fit_cache": "warm",
+  "scope": "H=1 FP16 page16 head128 four warps; GPU/software fixed by manifest",
+  "gate": "full preset and at least 5 trials; validation and every held-out cache/suite p95 regret <=1.10; held-out max regret <=1.20; per-shape policy/production speedup CI lower bound >=0.95",
+  "boundary_hits": [
+    {
+      "case_id": "train-b1-l2048-uniform",
+      "best_measured_action": [
+        16,
+        4
+      ]
+    },
+    {
+      "case_id": "train-b8-l2048-uniform",
+      "best_measured_action": [
+        16,
+        4
+      ]
+    },
+    {
+      "case_id": "train-b8-l8192-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "train-b128-l16384-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "validation-b4-l4096-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "validation-b4-l12288-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "validation-b16-l4096-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "validation-b16-l12288-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "test-b2-l257-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "test-b2-l1537-uniform",
+      "best_measured_action": [
+        16,
+        4
+      ]
+    },
+    {
+      "case_id": "test-b2-l6145-uniform",
+      "best_measured_action": [
+        16,
+        4
+      ]
+    },
+    {
+      "case_id": "test-b12-l6145-uniform",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    },
+    {
+      "case_id": "ragged-b256-l16383-ramp",
+      "best_measured_action": [
+        11,
+        4
+      ]
+    }
+  ],
+  "policy": {
+    "selected": {
+      "depth": 1,
+      "tree": {
+        "feature": "max_pages",
+        "threshold": 80.0,
+        "left": {
+          "action": [
+            8,
+            2
+          ]
+        },
+        "right": {
+          "action": [
+            22,
+            3
+          ]
+        }
+      },
+      "validation": {
+        "geomean_regret": 1.025066741681038,
+        "p95_regret": 1.11862396539855,
+        "max_regret": 1.11862396539855,
+        "rows": [
+          {
+            "case_id": "validation-b4-l256-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "validation-b4-l1024-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0492845825215262
+          },
+          {
+            "case_id": "validation-b4-l4096-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.11862396539855
+          },
+          {
+            "case_id": "validation-b4-l12288-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.005817900900105
+          },
+          {
+            "case_id": "validation-b16-l256-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0232945905323347
+          },
+          {
+            "case_id": "validation-b16-l1024-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "validation-b16-l4096-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0282660373025159
+          },
+          {
+            "case_id": "validation-b16-l12288-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.003775229228224
+          },
+          {
+            "case_id": "validation-b64-l256-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0203562412572795
+          },
+          {
+            "case_id": "validation-b64-l1024-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0067301941604734
+          },
+          {
+            "case_id": "validation-b64-l4096-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0423441012491148
+          },
+          {
+            "case_id": "validation-b64-l12288-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.008115444187152
+          }
+        ]
+      }
+    },
+    "candidates": [
+      {
+        "depth": 0,
+        "tree": {
+          "action": [
+            11,
+            3
+          ]
+        },
+        "validation": {
+          "geomean_regret": 1.0414254225860073,
+          "p95_regret": 1.1564885583806184,
+          "max_regret": 1.1564885583806184,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0856353699985328
+            },
+            {
+              "case_id": "validation-b4-l1024-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0238473726691257
+            },
+            {
+              "case_id": "validation-b4-l4096-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0112692238909646
+            },
+            {
+              "case_id": "validation-b4-l12288-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0114119842819251
+            },
+            {
+              "case_id": "validation-b16-l256-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.1480865901457042
+            },
+            {
+              "case_id": "validation-b16-l1024-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0080147857505926
+            },
+            {
+              "case_id": "validation-b16-l4096-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0014495490282538
+            },
+            {
+              "case_id": "validation-b16-l12288-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0028154211469331
+            },
+            {
+              "case_id": "validation-b64-l256-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.1564885583806184
+            },
+            {
+              "case_id": "validation-b64-l1024-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0499158606028263
+            },
+            {
+              "case_id": "validation-b64-l4096-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.01446378767072
+            },
+            {
+              "case_id": "validation-b64-l12288-uniform",
+              "action": [
+                11,
+                3
+              ],
+              "regret": 1.0
+            }
+          ]
+        }
+      },
+      {
+        "depth": 1,
+        "tree": {
+          "feature": "max_pages",
+          "threshold": 80.0,
+          "left": {
+            "action": [
+              8,
+              2
+            ]
+          },
+          "right": {
+            "action": [
+              22,
+              3
+            ]
+          }
+        },
+        "validation": {
+          "geomean_regret": 1.025066741681038,
+          "p95_regret": 1.11862396539855,
+          "max_regret": 1.11862396539855,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0
+            },
+            {
+              "case_id": "validation-b4-l1024-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0492845825215262
+            },
+            {
+              "case_id": "validation-b4-l4096-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.11862396539855
+            },
+            {
+              "case_id": "validation-b4-l12288-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.005817900900105
+            },
+            {
+              "case_id": "validation-b16-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0232945905323347
+            },
+            {
+              "case_id": "validation-b16-l1024-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0
+            },
+            {
+              "case_id": "validation-b16-l4096-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.0282660373025159
+            },
+            {
+              "case_id": "validation-b16-l12288-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.003775229228224
+            },
+            {
+              "case_id": "validation-b64-l256-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0203562412572795
+            },
+            {
+              "case_id": "validation-b64-l1024-uniform",
+              "action": [
+                8,
+                2
+              ],
+              "regret": 1.0067301941604734
+            },
+            {
+              "case_id": "validation-b64-l4096-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.0423441012491148
+            },
+            {
+              "case_id": "validation-b64-l12288-uniform",
+              "action": [
+                22,
+                3
+              ],
+              "regret": 1.008115444187152
+            }
+          ]
+        }
+      },
+      {
+        "depth": 2,
+        "tree": {
+          "feature": "max_pages",
+          "threshold": 80.0,
+          "left": {
+            "feature": "max_pages",
+            "threshold": 20.0,
+            "left": {
+              "action": [
+                4,
+                2
+              ]
+            },
+            "right": {
+              "action": [
+                11,
+                2
+              ]
+            }
+          },
+          "right": {
+            "feature": "max_pages",
+            "threshold": 320.0,
+            "left": {
+              "action": [
+                16,
+                4
+              ]
+            },
+            "right": {
+              "action": [
+                32,
+                3
+              ]
+            }
+          }
+        },
+        "validation": {
+          "geomean_regret": 1.022128655796904,
+          "p95_regret": 1.1132597295836022,
+          "max_regret": 1.1132597295836022,
+          "rows": [
+            {
+              "case_id": "validation-b4-l256-uniform",
+              "action": [
+                4,
+                2
+              ],
+              "regret": 1.1132597295836022
+            },
+            {
+              "case_id": "validation-b4-l1024-uniform",
+              "action": [
+                11,
+                2
+              ],
+              "regret": 1.0
+            },
+            {
+              "case_id": "validation-b4-l4096-uniform",
+              "action": [
+                16,
+                4
+              ],
+              "regret": 1.010083044308941
+            },
+            {
+              "case_id": "validation-b4-l12288-uniform",
+              "action": [
+                32,
+                3
+              ],
+              "regret": 1.0308794194582032
+            },
+            {
+              "case_id": "validation-b16-l256-uniform",
+              "action": [
+                4,
+                2
+              ],
+              "regret": 1.0
+            },
+            {
+              "case_id": "validation-b16-l1024-uniform",
+              "action": [
+                11,
+                2
+              ],
+              "regret": 1.0036991650107507
+            },
+            {
+              "case_id": "validation-b16-l4096-uniform",
+              "action": [
+                16,
+                4
+              ],
+              "regret": 1.0222866897480771
+            },
+            {
+              "case_id": "validation-b16-l12288-uniform",
+              "action": [
+                32,
+                3
+              ],
+              "regret": 1.0161888503744658
+            },
+            {
+              "case_id": "validation-b64-l256-uniform",
+              "action": [
+                4,
+                2
+              ],
+              "regret": 1.0095419834608779
+            },
+            {
+              "case_id": "validation-b64-l1024-uniform",
+              "action": [
+                11,
+                2
+              ],
+              "regret": 1.0145821889127518
+            },
+            {
+              "case_id": "validation-b64-l4096-uniform",
+              "action": [
+                16,
+                4
+              ],
+              "regret": 1.0324688306546237
+            },
+            {
+              "case_id": "validation-b64-l12288-uniform",
+              "action": [
+                32,
+                3
+              ],
+              "regret": 1.017339850108333
+            }
+          ]
+        }
+      }
+    ],
+    "fixed_baseline": {
+      "action": [
+        11,
+        3
+      ]
+    }
+  },
+  "heldout": {
+    "test:warm": {
+      "policy": {
+        "geomean_regret": 1.0437015444575855,
+        "p95_regret": 1.1377550256077404,
+        "max_regret": 1.1605959963344592,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.06414000724626
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1605959963344592
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0102110263456827
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0512820130127165
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1377550256077404
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0222795690776254
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.012888561502063
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.097678288429838
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0313068267418717
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0062893950189675
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0347752014236833
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0915262932945735
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0210747163034952
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0070952494607983
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0437435142787512
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0773133756158937
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0196501970984362
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.003584716976238
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.0554768775621386,
+        "p95_regret": 1.2009411259832916,
+        "max_regret": 1.2073207510252677,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0058309483182144
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0430463962278351
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1123212898025092
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.2073207510252677
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.117216044972985
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0306122132472582
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0029059849878743
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0083692666856254
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1379833089205378
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.028524110057929
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0124606673045358
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.001610039639627
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1679389245139957
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0317978303289723
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0025450703753294
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.2009411259832916
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0174987471295454
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0012046479916727
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.022954598001329
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 1.4972262601957917,
+        "p95_regret": 1.8251542811471975,
+        "max_regret": 1.8279012034053757,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              1
+            ],
+            "regret": 1.09620996844398
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.291390730391463
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.2668481657335742
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.3180558906688629
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.2838826938717463
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.5589568685863096
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.6638681882378201
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.7287597986094643
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.459438925822877
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7388060197109874
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8279012034053757
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8251542811471975
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.375742147668144
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.546407652916666
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5820329441986543
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5947815494966282
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4370860997019945
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.50200035187
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.538442936376848
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5603590949643964
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 2.308947649020067,
+        "p95_regret": 9.248468017168921,
+        "max_regret": 13.405720958889816,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2186588649166468
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.870860907686794
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 9.248468017168921
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 13.405720958889816
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8150181941575076
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.74829932331946
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.0356796978148504
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.221087901923678
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.459438925822877
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7388060197109874
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8279012034053757
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8251542811471975
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.375742147668144
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.546407652916666
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5820329441986543
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5947815494966282
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4370860997019945
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.50200035187
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.538442936376848
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5603590949643964
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "test-b2-l257-uniform",
+          "ratio": 2.1584501177901023,
+          "ci95": [
+            2.150902451439986,
+            2.1676803832442757
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l1537-uniform",
+          "ratio": 5.307385687552617,
+          "ci95": [
+            5.27069272496085,
+            5.352132165154713
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l6145-uniform",
+          "ratio": 9.586876415448588,
+          "ci95": [
+            9.565647963579016,
+            9.610873309586065
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l16383-uniform",
+          "ratio": 16.15124475510155,
+          "ci95": [
+            16.02587415960701,
+            16.271651450473737
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l257-uniform",
+          "ratio": 1.8789502096310784,
+          "ci95": [
+            1.8710449367739392,
+            1.8868888827223422
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l1537-uniform",
+          "ratio": 2.673881925377345,
+          "ci95": [
+            2.6659168672716156,
+            2.6812445198155435
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l6145-uniform",
+          "ratio": 3.297228358244221,
+          "ci95": [
+            3.2933288833916095,
+            3.3011598676206275
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l16383-uniform",
+          "ratio": 3.4998791319587186,
+          "ci95": [
+            3.4983203302282617,
+            3.501793743628862
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l257-uniform",
+          "ratio": 1.5573782064604744,
+          "ci95": [
+            1.553995892631892,
+            1.5607678819860147
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l1537-uniform",
+          "ratio": 1.6657686892907095,
+          "ci95": [
+            1.664872073177058,
+            1.6671213550345403
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l6145-uniform",
+          "ratio": 1.9054928948324448,
+          "ci95": [
+            1.90478040206911,
+            1.9062056541073087
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l16383-uniform",
+          "ratio": 1.963865381389405,
+          "ci95": [
+            1.9625602965555633,
+            1.9652576586293056
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l257-uniform",
+          "ratio": 1.4815243282223538,
+          "ci95": [
+            1.4783223804895087,
+            1.484503341094438
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l1537-uniform",
+          "ratio": 1.5854688362246159,
+          "ci95": [
+            1.5846649950151073,
+            1.5863154008695943
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l6145-uniform",
+          "ratio": 1.7391011415339606,
+          "ci95": [
+            1.738735447913687,
+            1.7395035397872145
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l16383-uniform",
+          "ratio": 1.782162974971048,
+          "ci95": [
+            1.7772953690044522,
+            1.7870439121983106
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l257-uniform",
+          "ratio": 1.536721998851569,
+          "ci95": [
+            1.5355417158436435,
+            1.5380244242759602
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l1537-uniform",
+          "ratio": 1.5641588733456286,
+          "ci95": [
+            1.5638669179175597,
+            1.5645587343640126
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l6145-uniform",
+          "ratio": 1.6940205836223503,
+          "ci95": [
+            1.6938334167803024,
+            1.694207771146141
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l16383-uniform",
+          "ratio": 1.7197870011056788,
+          "ci95": [
+            1.6964052318825367,
+            1.7362427951623265
+          ],
+          "trials": 5
+        }
+      ]
+    },
+    "ragged:warm": {
+      "policy": {
+        "geomean_regret": 1.0612332977293812,
+        "p95_regret": 1.2669160186218071,
+        "max_regret": 1.2669160186218071,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0729086899166733
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1240310487267091
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0098458653226279
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0311432719052316
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.026826466926088
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1066856508096743
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1577212677518285
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0124602829727551
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0428697879189983
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0041027634977364
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0187526485876697
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.151439347994923
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.2669160186218071
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0236096216975639
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0682990442778848
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.003201671659455
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0206944938375215
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.092338303597614,
+        "p95_regret": 1.6044520975755312,
+        "max_regret": 1.6044520975755312,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.02225632187451
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1749723561958154
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.075324041138081
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.4323629997037788
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1565441910863807
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.6044520975755312
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0278805257534538
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0475517102692449
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.014047596644489
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0265173797373817
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0266061891252047
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.050087701279987
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0531914583614295
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0893120731833985
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.000065235554106
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0223205452972808
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0004840230777765
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0071696068981217
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 2.736337081780844,
+        "p95_regret": 6.55519941210227,
+        "max_regret": 6.55519941210227,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.8610898099964397
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 3.0332224573018127
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 2.211053994500209
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 4.340753215076102
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 2.44780127417259
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 5.069064054474574
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.062304420602763
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.772127761753316
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2850793180087408
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.967000749599424
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.407360079588957
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 6.55519941210227
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.6539424377363057
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.0396690854524095
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7118097308486726
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.252117434775987
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7248657494729835
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.31622986432728
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 3.3515233570446576,
+        "p95_regret": 9.401255619874382,
+        "max_regret": 9.401255619874382,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.416730480666614
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.355481724148289
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.096845244555299
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 8.018835360434979
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.578168508192796
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 9.401255619874382
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.062304420602763
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.772127761753316
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2850793180087408
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.967000749599424
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.407360079588957
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 6.55519941210227
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.6539424377363057
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.0396690854524095
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7118097308486726
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.252117434775987
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7248657494729835
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.31622986432728
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "ragged-b12-l1537-ramp",
+          "ratio": 3.519914461519147,
+          "ci95": [
+            3.502614682924683,
+            3.5344679705547
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l1537-skew",
+          "ratio": 5.285358270121164,
+          "ci95": [
+            5.255186599362783,
+            5.325029132536232
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l6145-ramp",
+          "ratio": 4.876771170624484,
+          "ci95": [
+            4.846014178936271,
+            4.905102889363872
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l6145-skew",
+          "ratio": 8.804181893787703,
+          "ci95": [
+            8.760379348459669,
+            8.839806977256162
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l16383-ramp",
+          "ratio": 5.292573846682618,
+          "ci95": [
+            5.241567820781525,
+            5.337506023096866
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l16383-skew",
+          "ratio": 10.235395146452566,
+          "ci95": [
+            10.221441631977074,
+            10.250992080087505
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l1537-ramp",
+          "ratio": 2.072205297349215,
+          "ci95": [
+            2.0435902270606645,
+            2.101173537273044
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l1537-skew",
+          "ratio": 4.456191273267999,
+          "ci95": [
+            4.435289920831237,
+            4.477191123557548
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l6145-ramp",
+          "ratio": 2.470064853468834,
+          "ci95": [
+            2.456815089570543,
+            2.4948634262538136
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l6145-skew",
+          "ratio": 6.081595896544272,
+          "ci95": [
+            6.068118699547058,
+            6.095103026185836
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l16383-ramp",
+          "ratio": 2.6661439990871383,
+          "ci95": [
+            2.65801853255405,
+            2.672062983619299
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l16383-skew",
+          "ratio": 6.90300301020296,
+          "ci95": [
+            6.8982946363419035,
+            6.907714597725593
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l1537-ramp",
+          "ratio": 1.5903983332150544,
+          "ci95": [
+            1.5801776887933408,
+            1.6028019852225055
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l1537-skew",
+          "ratio": 1.7757230356014124,
+          "ci95": [
+            1.773863380320298,
+            1.7775846404789855
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l6145-ramp",
+          "ratio": 1.8723857529096632,
+          "ci95": [
+            1.8653214471832371,
+            1.8794768124245431
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l6145-skew",
+          "ratio": 2.363595295835897,
+          "ci95": [
+            2.3612436697092414,
+            2.3652789279171818
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l16383-ramp",
+          "ratio": 1.972745815192956,
+          "ci95": [
+            1.965685655285506,
+            1.9800614749143937
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l16383-skew",
+          "ratio": 2.5475744927926933,
+          "ci95": [
+            2.546949950353302,
+            2.548199188377324
+          ],
+          "trials": 5
+        }
+      ]
+    },
+    "test:evict": {
+      "policy": {
+        "geomean_regret": 1.0445170176029779,
+        "p95_regret": 1.0998406352777248,
+        "max_regret": 1.125,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0827067378502089
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.125
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0052150875467483
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0951585415317961
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0998406352777248
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0216936945511943
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0428572212593012
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0955991822106486
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.030995341490296
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0061010667485213
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0283019120190466
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0905666956751618
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0209923004352737
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0051761165772788
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              8,
+              2
+            ],
+            "regret": 1.0433506542179343
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.076978024101241
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0195398172358323
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0148617372326922
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.0518115583854828,
+        "p95_regret": 1.2017271289125804,
+        "max_regret": 1.2062576844015913,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.005012496411257
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0208333188969094
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1082138065229006
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.2062576844015913
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1285475818944835
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0010621429680293
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0035352243985258
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0085447765769113
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1342857437459193
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0278556331777113
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0127523228835567
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0014079576927102
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1579163853375902
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0311590461700655
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0025431135069154
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.005412927014179
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.2017271289125804
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0174344577317553
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0012708758378415
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0052566703660986
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 1.482975412902248,
+        "p95_regret": 1.8263372111772231,
+        "max_regret": 1.826371948592467,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              8,
+              1
+            ],
+            "regret": 1.095238088291245
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.23363100084609
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.2503259477147992
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              22,
+              1
+            ],
+            "regret": 1.3092346067255523
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.2637729135566707
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.4954859232980688
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.6594889878179029
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.7265015991466188
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4171428885037205
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7288610916307379
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8263372111772231
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.826371948592467
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.350287122784265
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5412600933140255
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5810244390207904
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.590738758451653
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4283247533161276
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4994318209649748
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5366966410466918
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5697354848074454
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 2.325517464123577,
+        "p95_regret": 10.883963524211957,
+        "max_regret": 13.362090417505243,
+        "rows": [
+          {
+            "case_id": "test-b2-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.3583959369595004
+          },
+          {
+            "case_id": "test-b2-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 6.505952772798174
+          },
+          {
+            "case_id": "test-b2-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 10.883963524211957
+          },
+          {
+            "case_id": "test-b2-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 13.362090417505243
+          },
+          {
+            "case_id": "test-b12-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7212020279975924
+          },
+          {
+            "case_id": "test-b12-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.6001062019319257
+          },
+          {
+            "case_id": "test-b12-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.023300499087422
+          },
+          {
+            "case_id": "test-b12-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.207354754006827
+          },
+          {
+            "case_id": "test-b48-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4171428885037205
+          },
+          {
+            "case_id": "test-b48-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7288610916307379
+          },
+          {
+            "case_id": "test-b48-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.8263372111772231
+          },
+          {
+            "case_id": "test-b48-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.826371948592467
+          },
+          {
+            "case_id": "test-b96-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.350287122784265
+          },
+          {
+            "case_id": "test-b96-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5412600933140255
+          },
+          {
+            "case_id": "test-b96-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5810244390207904
+          },
+          {
+            "case_id": "test-b96-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.590738758451653
+          },
+          {
+            "case_id": "test-b256-l257-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4283247533161276
+          },
+          {
+            "case_id": "test-b256-l1537-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.4994318209649748
+          },
+          {
+            "case_id": "test-b256-l6145-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5366966410466918
+          },
+          {
+            "case_id": "test-b256-l16383-uniform",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.5697354848074454
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "test-b2-l257-uniform",
+          "ratio": 2.5544972403042396,
+          "ci95": [
+            2.523756811178923,
+            2.578959897616067
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l1537-uniform",
+          "ratio": 6.998821633038442,
+          "ci95": [
+            6.956846225469406,
+            7.0311939398689125
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l6145-uniform",
+          "ratio": 13.13180021937765,
+          "ci95": [
+            13.081031039319084,
+            13.170959881610306
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b2-l16383-uniform",
+          "ratio": 16.519424583414793,
+          "ci95": [
+            16.252915432919277,
+            16.79121450855377
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l257-uniform",
+          "ratio": 1.7492769083202782,
+          "ci95": [
+            1.7347850789352226,
+            1.7637603053569697
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l1537-uniform",
+          "ratio": 2.639368496431723,
+          "ci95": [
+            2.6354503917587504,
+            2.644600528966516
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l6145-uniform",
+          "ratio": 3.302834141111927,
+          "ci95": [
+            3.2820114036131205,
+            3.323788988571249
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b12-l16383-uniform",
+          "ratio": 3.497980420623824,
+          "ci95": [
+            3.492721317786378,
+            3.507081672412462
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l257-uniform",
+          "ratio": 1.4577882376518705,
+          "ci95": [
+            1.4548449851545007,
+            1.4608431838979454
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l1537-uniform",
+          "ratio": 1.6606923716670992,
+          "ci95": [
+            1.659442243139101,
+            1.6618335062144016
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l6145-uniform",
+          "ratio": 1.903654197080989,
+          "ci95": [
+            1.902778093416868,
+            1.9050954121488117
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b48-l16383-uniform",
+          "ratio": 1.9637256920150705,
+          "ci95": [
+            1.962932819530152,
+            1.9646581035562276
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l257-uniform",
+          "ratio": 1.4522047161772382,
+          "ci95": [
+            1.4480677773231125,
+            1.4563534737206205
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l1537-uniform",
+          "ratio": 1.581704155949311,
+          "ci95": [
+            1.5804786818344065,
+            1.5828623612233776
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l6145-uniform",
+          "ratio": 1.7381194039466588,
+          "ci95": [
+            1.7378312910301077,
+            1.7384782734465285
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b96-l16383-uniform",
+          "ratio": 1.7765094617028077,
+          "ci95": [
+            1.769376993871277,
+            1.7839064865995815
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l257-uniform",
+          "ratio": 1.5268227368569902,
+          "ci95": [
+            1.5256428137095344,
+            1.5281919015774859
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l1537-uniform",
+          "ratio": 1.5625751109836186,
+          "ci95": [
+            1.5622243257603938,
+            1.5628877124160805
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l6145-uniform",
+          "ratio": 1.6945482753158845,
+          "ci95": [
+            1.6926726056740833,
+            1.697560144313168
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "test-b256-l16383-uniform",
+          "ratio": 1.7317340594546338,
+          "ci95": [
+            1.720788739816333,
+            1.742748998343231
+          ],
+          "trials": 5
+        }
+      ]
+    },
+    "ragged:evict": {
+      "policy": {
+        "geomean_regret": 1.060467815039293,
+        "p95_regret": 1.260380258770801,
+        "max_regret": 1.260380258770801,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0605397900957816
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1198303126356237
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0020876985026996
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0340768462286822
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0279361373245928
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.103914393857782
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.1574330754316478
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0130055767095199
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0450397409075418
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0037849264026037
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.019049422389613
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.150945770037331
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.260380258770801
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0231861349518798
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0717655768041485
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.01244670531392
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              22,
+              3
+            ],
+            "regret": 1.0206012044751092
+          }
+        ]
+      },
+      "fixed_train_best": {
+        "geomean_regret": 1.09211275634426,
+        "p95_regret": 1.6058532083770536,
+        "max_regret": 1.6058532083770536,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0262582365328443
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1749735210702161
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0790051584963034
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.4141961748308236
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.1653241798802783
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.6058532083770536
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0264714211369963
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0461680815840309
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0162569339589616
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0263467371222106
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0253467214024188
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0485003036260419
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0535613685134013
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.084505442268692
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.000260520414853
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0235923953534471
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              11,
+              3
+            ],
+            "regret": 1.0069945180610604
+          }
+        ]
+      },
+      "auto_k_stage1": {
+        "geomean_regret": 2.7255438722059617,
+        "p95_regret": 6.559204262096352,
+        "max_regret": 6.559204262096352,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 1.807439881801508
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 2.957582171098792
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 2.209217391501823
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 4.254279441676995
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 2.4582816733339
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              4,
+              1
+            ],
+            "regret": 5.067084693982571
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.0495634868050723
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.697599318234026
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2897701339243377
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.977921870343558
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.4158782221975663
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 6.559204262096352
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.6553468056024703
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.025205337388801
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7035463288397252
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2554038737743545
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7674941634602441
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.315273253204109
+          }
+        ]
+      },
+      "k1_stage1": {
+        "geomean_regret": 3.3282084103434655,
+        "p95_regret": 9.404598683953774,
+        "max_regret": 9.404598683953774,
+        "rows": [
+          {
+            "case_id": "ragged-b12-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 3.218818354731336
+          },
+          {
+            "case_id": "ragged-b12-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.181335994795754
+          },
+          {
+            "case_id": "ragged-b12-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.08875883831072
+          },
+          {
+            "case_id": "ragged-b12-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 7.83883103660574
+          },
+          {
+            "case_id": "ragged-b12-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.536968043057031
+          },
+          {
+            "case_id": "ragged-b12-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 9.404598683953774
+          },
+          {
+            "case_id": "ragged-b48-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.0495634868050723
+          },
+          {
+            "case_id": "ragged-b48-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 4.697599318234026
+          },
+          {
+            "case_id": "ragged-b48-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2897701339243377
+          },
+          {
+            "case_id": "ragged-b48-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 5.977921870343558
+          },
+          {
+            "case_id": "ragged-b48-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.4158782221975663
+          },
+          {
+            "case_id": "ragged-b48-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 6.559204262096352
+          },
+          {
+            "case_id": "ragged-b256-l1537-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.6553468056024703
+          },
+          {
+            "case_id": "ragged-b256-l1537-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.025205337388801
+          },
+          {
+            "case_id": "ragged-b256-l6145-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7035463288397252
+          },
+          {
+            "case_id": "ragged-b256-l6145-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.2554038737743545
+          },
+          {
+            "case_id": "ragged-b256-l16383-ramp",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 1.7674941634602441
+          },
+          {
+            "case_id": "ragged-b256-l16383-skew",
+            "action": [
+              1,
+              1
+            ],
+            "regret": 2.315273253204109
+          }
+        ]
+      },
+      "policy_vs_production": [
+        {
+          "case_id": "ragged-b12-l1537-ramp",
+          "ratio": 3.6562761799461034,
+          "ci95": [
+            3.6389686790622897,
+            3.6777774410682547
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l1537-skew",
+          "ratio": 5.136279160568682,
+          "ci95": [
+            5.112108509179615,
+            5.161242344726986
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l6145-ramp",
+          "ratio": 4.940889344390826,
+          "ci95": [
+            4.912284690244061,
+            4.965227102666222
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l6145-skew",
+          "ratio": 8.696396633471124,
+          "ci95": [
+            8.67057384524319,
+            8.71735238194806
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l16383-ramp",
+          "ratio": 5.306539360210753,
+          "ci95": [
+            5.293604578293006,
+            5.317389723573329
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b12-l16383-skew",
+          "ratio": 10.21453411950163,
+          "ci95": [
+            10.19752556937533,
+            10.232211936904138
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l1537-ramp",
+          "ratio": 2.035279038213983,
+          "ci95": [
+            2.0181697438605775,
+            2.0625523791920064
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l1537-skew",
+          "ratio": 4.384578810173178,
+          "ci95": [
+            4.361193399789208,
+            4.403303594785788
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l6145-ramp",
+          "ratio": 2.4711086522016843,
+          "ci95": [
+            2.458007070601881,
+            2.492374453305928
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l6145-skew",
+          "ratio": 6.063034931375049,
+          "ci95": [
+            6.054346042382233,
+            6.0717362902186816
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l16383-ramp",
+          "ratio": 2.660901879916404,
+          "ci95": [
+            2.656440768962575,
+            2.6647349604771735
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b48-l16383-skew",
+          "ratio": 6.898272997463253,
+          "ci95": [
+            6.892207237726328,
+            6.9033080153184825
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l1537-ramp",
+          "ratio": 1.6084053389531994,
+          "ci95": [
+            1.5981858359353915,
+            1.6184003496451544
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l1537-skew",
+          "ratio": 1.7725936472240604,
+          "ci95": [
+            1.7709615183629657,
+            1.7741985828109328
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l6145-ramp",
+          "ratio": 1.8747786044665904,
+          "ci95": [
+            1.8721739763974263,
+            1.878442967874307
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l6145-skew",
+          "ratio": 2.360293438629309,
+          "ci95": [
+            2.3581015905743676,
+            2.3632061011461363
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l16383-ramp",
+          "ratio": 1.9541204517610158,
+          "ci95": [
+            1.93964569240456,
+            1.9677625427028844
+          ],
+          "trials": 5
+        },
+        {
+          "case_id": "ragged-b256-l16383-skew",
+          "ratio": 2.546176078575848,
+          "ci95": [
+            2.544857945042036,
+            2.5473497969468877
+          ],
+          "trials": 5
+        }
+      ]
+    }
+  }
+}

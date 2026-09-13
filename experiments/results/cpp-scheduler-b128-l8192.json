@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "ade36deef235cae42f1cb8b4f758a4916dc19984",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "configuration": {
+    "device": "cuda",
+    "num_requests": 128,
+    "prompt_length": 8192,
+    "output_length": 64,
+    "max_running": 128,
+    "max_prefill_tokens": 1048576,
+    "block_size": 16,
+    "vocab_size": 256,
+    "warmups": 3,
+    "repetitions": 20,
+    "output": "experiments/results/cpp-scheduler-b128-l8192.json"
+  },
+  "correctness": {
+    "outputs_equal": true,
+    "logit_events": 64,
+    "max_abs_logit_error": 0.0
+  },
+  "cpp": {
+    "median_ms": 99.71064799999999,
+    "raw_ms": [
+      98.992093,
+      100.226423,
+      99.845314,
+      99.866906,
+      100.095501,
+      100.307008,
+      99.296094,
+      100.079449,
+      98.305823,
+      97.170775,
+      99.004922,
+      101.983191,
+      98.6383,
+      100.397767,
+      97.948637,
+      99.575982,
+      100.499739,
+      104.285503,
+      96.845578,
+      99.096606
+    ]
+  },
+  "python": {
+    "median_ms": 247.9581135,
+    "raw_ms": [
+      243.042947,
+      249.377476,
+      244.161433,
+      248.18578,
+      246.764054,
+      249.371239,
+      246.02343,
+      247.730447,
+      243.654993,
+      251.242537,
+      247.184497,
+      257.302221,
+      247.576387,
+      251.673315,
+      246.648972,
+      276.241179,
+      259.453874,
+      249.797889,
+      245.317503,
+      251.496922
+    ]
+  },
+  "speedup_python_over_cpp": 2.486776673038972,
+  "scope": "synthetic scheduler/control-plane overhead; no transformer layers"
+}
