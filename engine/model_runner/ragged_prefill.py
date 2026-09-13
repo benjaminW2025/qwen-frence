@@ -165,20 +165,21 @@ def ragged_prefill(
             with region("prefill/input_rmsnorm"):
                 h = apply_rms_norm(x, layer.input_norm, cfg)
             with region("prefill/qkv_projection"):
+                q, k, v = layer.project_qkv(h)
                 q = (
-                    layer.q_proj(h)
+                    q
                     .view(total_tokens, cfg.n_heads, d_head)
                     .transpose(0, 1)
                     .unsqueeze(0)
                 )
                 k = (
-                    layer.k_proj(h)
+                    k
                     .view(total_tokens, n_kv, d_head)
                     .transpose(0, 1)
                     .unsqueeze(0)
                 )
                 v = (
-                    layer.v_proj(h)
+                    v
                     .view(total_tokens, n_kv, d_head)
                     .transpose(0, 1)
                     .unsqueeze(0)
@@ -266,10 +267,11 @@ def ragged_prefill(
             with region("prefill/post_attention_rmsnorm"):
                 h = apply_rms_norm(x, layer.post_attn_norm, cfg)
             with region("prefill/mlp"):
+                gate, up = layer.project_gate_up(h)
                 h = layer.down_proj(
                     apply_swiglu(
-                        layer.gate_proj(h),
-                        layer.up_proj(h),
+                        gate,
+                        up,
                         cfg,
                         enable_regime_fusions=enable_regime_fusions,
                     )

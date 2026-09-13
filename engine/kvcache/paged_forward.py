@@ -65,9 +65,10 @@ def paged_layer_forward(layer, x, cos, sin, positions, cache, layer_idx, starts,
     # --- attention pre-norm + qkv projection + head split (same as baseline) ---
     residual = x
     h = apply_rms_norm(x, layer.input_norm, cfg)
-    q = layer.q_proj(h).view(B, S, cfg.n_heads,    cfg.d_head).transpose(1, 2)   # (B, n_heads,    S, d)
-    k = layer.k_proj(h).view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)   # (B, n_kv_heads, S, d)
-    v = layer.v_proj(h).view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
+    q, k, v = layer.project_qkv(h)
+    q = q.view(B, S, cfg.n_heads,    cfg.d_head).transpose(1, 2)   # (B, n_heads,    S, d)
+    k = k.view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)   # (B, n_kv_heads, S, d)
+    v = v.view(B, S, cfg.n_kv_heads, cfg.d_head).transpose(1, 2)
 
     # RoPE on q and k (v is not rotated).
     q = apply_rope(q, cos, sin, cfg, positions)
@@ -110,7 +111,8 @@ def paged_layer_forward(layer, x, cos, sin, positions, cache, layer_idx, starts,
     # SwiGLU <- need to replace with Triton kernel
     residual = x
     h = apply_rms_norm(x, layer.post_attn_norm, cfg)
-    h = layer.down_proj(torch.nn.functional.silu(layer.gate_proj(h)) * layer.up_proj(h))
+    gate, up = layer.project_gate_up(h)
+    h = layer.down_proj(torch.nn.functional.silu(gate) * up)
     x = residual + h
     return x
 

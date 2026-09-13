@@ -189,7 +189,11 @@ def load_model(args, torch):
     from weight_loader import QwenWeightLoader
 
     dtype = getattr(torch, args.dtype)
-    model = QwenWeightLoader(Qwen2Config()).load_pretrained(args.model, args.device, dtype)
+    # Keep this benchmark in its reference layout so it can compare it with an
+    # ephemeral packed candidate. Production loading packs these weights.
+    model = QwenWeightLoader(Qwen2Config(pack_qkv=False, pack_gate_up=False)).load_pretrained(
+        args.model, args.device, dtype
+    )
     return model, dtype
 
 
