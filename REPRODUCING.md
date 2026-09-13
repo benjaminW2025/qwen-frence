@@ -13,6 +13,20 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
+The local pins use Torch 2.8.0/CUDA 12.8, Triton 3.4.0, and Transformers
+4.55.2. CUDA wheels are listed in the [official PyTorch installation matrix](https://pytorch.org/get-started/previous-versions/#v280).
+A host C++17 compiler and `make` are also required for the native scheduler.
+After installing or changing Torch, rebuild and check the extension:
+
+```bash
+python -m pip check
+make cpp-scheduler-test
+```
+
+Keep this environment fixed through the decode sweep and integration runs. If
+versions change, use new experiment output directories; resume checks deliberately
+reject mixing software environments.
+
 Confirm the control-plane tests without loading a model:
 
 ```bash
