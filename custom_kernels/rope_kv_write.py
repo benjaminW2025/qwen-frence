@@ -177,10 +177,12 @@ def _native_decode_rope_kv_kernel(
     N_KV_HEADS: tl.constexpr,
     HALF: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    ROTATE_Q: tl.constexpr,
 ):
     program = tl.program_id(0)
-    batch = program // N_Q_HEADS
-    head = program - batch * N_Q_HEADS
+    heads_per_batch = N_Q_HEADS if ROTATE_Q else N_KV_HEADS
+    batch = program // heads_per_batch
+    head = program - batch * heads_per_batch
     offsets = tl.arange(0, BLOCK_SIZE // 2)
     mask = offsets < HALF
     second = offsets + HALF
@@ -189,14 +191,15 @@ def _native_decode_rope_kv_kernel(
     angle = position * tl.exp(offsets.to(tl.float32) * (-log_theta / HALF))
     cosine, sine = tl.cos(angle), tl.sin(angle)
 
-    q_base = q_ptr + batch * stride_qb + head * stride_qh
-    q_first = tl.load(q_base + offsets * stride_qd, mask=mask)
-    q_second = tl.load(q_base + second * stride_qd, mask=mask)
-    out_base = q_out_ptr + batch * stride_ob + head * stride_oh
-    tl.store(out_base + offsets * stride_od,
-             q_first * cosine - q_second * sine, mask=mask)
-    tl.store(out_base + second * stride_od,
-             q_second * cosine + q_first * sine, mask=mask)
+    if ROTATE_Q:
+        q_base = q_ptr + batch * stride_qb + head * stride_qh
+        q_first = tl.load(q_base + offsets * stride_qd, mask=mask)
+        q_second = tl.load(q_base + second * stride_qd, mask=mask)
+        out_base = q_out_ptr + batch * stride_ob + head * stride_oh
+        tl.store(out_base + offsets * stride_od,
+                 q_first * cosine - q_second * sine, mask=mask)
+        tl.store(out_base + second * stride_od,
+                 q_second * cosine + q_first * sine, mask=mask)
 
     kv_mask = head < N_KV_HEADS
     k_base = k_ptr + batch * stride_kb + head * stride_kh
@@ -219,11 +222,12 @@ def _native_decode_rope_kv_kernel(
 
 def native_decode_rope_kv_write(
     q, k, v, positions, slot_mapping, k_pool, v_pool,
-    *, base=1_000_000.0, num_warps=4,
+    *, base=1_000_000.0, num_warps=4, rotate_q=True,
 ):
     """Rotate native-layout decode Q/K and place K/V without layout copies.
 
     Inputs are (B, H, 1, D), as produced by the model's decode projections.
+    With rotate_q=False, rotate Q separately and run only KV-head programs.
     This is an experimental kernel; production dispatch does not call it.
     """
     if (q.ndim != 4 or k.ndim != 4 or v.ndim != 4
@@ -252,10 +256,10 @@ def native_decode_rope_kv_write(
     if num_warps not in (1, 2, 4, 8):
         raise ValueError("num_warps must be 1, 2, 4, or 8")
 
-    out = torch.empty_like(q)
+    out = torch.empty_like(q) if rotate_q else q
     flat_k = k_pool.view(-1, k.shape[1], dim)
     flat_v = v_pool.view(-1, k.shape[1], dim)
-    _native_decode_rope_kv_kernel[(batch * q_heads,)](
+    _native_decode_rope_kv_kernel[(batch * (q_heads if rotate_q else k.shape[1]),)](
         q, k, v, positions, slot_mapping, out, flat_k, flat_v,
         q.stride(0), q.stride(1), q.stride(3),
         k.stride(0), k.stride(1), k.stride(3),
@@ -266,6 +270,7 @@ def native_decode_rope_kv_write(
         math.log(base),
         N_Q_HEADS=q_heads, N_KV_HEADS=k.shape[1],
         HALF=dim // 2, BLOCK_SIZE=triton.next_power_of_2(dim),
+        ROTATE_Q=rotate_q,
         num_warps=num_warps,
     )
     return out

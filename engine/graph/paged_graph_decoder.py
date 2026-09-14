@@ -122,9 +122,13 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
         v = v.view(B, S, n_kv, d_head).transpose(1, 2)
         if enable_native_decode_rope_kv:
             from kernel_dispatch import native_decode_rope_kv_write
-            q = native_decode_rope_kv_write(
+            # The fused Q rotation changed one FP16 value at layer zero in the
+            # B=8, L=512 model check; that difference amplified across layers.
+            # Keep the exact production Q path while fusing K RoPE and KV writes.
+            q = apply_rope(q, cos, sin, cfg, rope_positions)
+            native_decode_rope_kv_write(
                 q, k, v, positions, slot_mapping, cache.k_pool[i], cache.v_pool[i],
-                base=cfg.rope_theta,
+                base=cfg.rope_theta, rotate_q=False,
             )
         else:
             # Adapting native decode to the packed-layout fusion materialized
