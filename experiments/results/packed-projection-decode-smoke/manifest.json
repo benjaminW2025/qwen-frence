@@ -1,0 +1,56 @@
+{
+  "fingerprint": "93d18b0d3be4ef2029b8b793c6bd55b23a93945e99b1b951c17750bf26e208bc",
+  "configuration": {
+    "preset": "smoke",
+    "batches": [
+      1,
+      8
+    ],
+    "contexts": [
+      512,
+      2048
+    ],
+    "cache_modes": [
+      "warm",
+      "evict"
+    ],
+    "evict_mib": 256,
+    "warmups": 3,
+    "trials": 3,
+    "samples": 7,
+    "seed": 20260913,
+    "model": "Qwen/Qwen2.5-1.5B",
+    "device": "cuda",
+    "output_dir": "experiments/results/packed-projection-decode-smoke",
+    "sources_sha256": {
+      "experiments/model/benchmark_packed_projection_decode.py": "d5277e7941e2e3c149f4b6fdf5bf3f3df51c175adeef22c5e4ac4eba557fd28e",
+      "baseline/naive_forward.py": "3589ab032fb0cc3dbad895b4c236571a80a57b6f745b07d90536de8caf0c2abf",
+      "baseline/weight_loader.py": "7bcb37b47c276887c50c92b74616b55c215749246de303ec45062adde5def4dd",
+      "engine/graph/paged_graph_decoder.py": "a0c0c4b26a06d26927e28b6cdac3b1a251d5c49d01e87e6f53a62ac70efec680",
+      "engine/kvcache/paged_decode_attention.py": "e0ca2336470f77ce51ffe512738d6e99ecc038021c5df6a1e52d8923e5b5419a",
+      "baseline/kernel_dispatch.py": "4b78b0f41a656980103cb2de409a091a0472c30db06f2cd29a794a6758bcff82"
+    }
+  },
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "fba849e7eb144e2a32919b8cb9f6eaf0792bad3d",
+      "dirty": false
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "created_at": "2026-09-13T23:58:50.074228+00:00"
+}
