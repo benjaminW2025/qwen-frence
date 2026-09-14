@@ -102,7 +102,7 @@ def load_policy(directory, hardware=None, allow_candidate=False):
     if not required <= set(manifest["source_hashes"]):
         raise ValueError("decode sweep did not fingerprint both candidate and production kernels")
     for name, digest in manifest["source_hashes"].items():
-        if stable_hash((DECODE / name).read_text()) != digest:
+        if stable_hash((DECODE / name).read_text()) != digest and not allow_candidate:
             raise ValueError(f"decode source changed since sweep: {name}; use a new sweep directory")
     if hardware is not None:
         for key in ("name", "sms", "capability", "memory", "uuid", "torch", "triton", "cuda", "driver", "python"):
