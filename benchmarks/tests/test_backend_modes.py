@@ -49,7 +49,8 @@ class BackendModeTests(unittest.TestCase):
         ).read_text()
         self.assertNotIn("packed_q =", source)
         self.assertNotIn("apply_packed_rope_kv_write", source)
-        self.assertIn("adapting\n        # decode required three materializing", source)
+        self.assertIn("k_flat.index_copy_(0, slot_mapping", source)
+        self.assertIn("v_flat.index_copy_(0, slot_mapping", source)
 
     def test_adaptive_decode_is_resolved_once_and_only_for_long_contexts(self):
         root = Path(__file__).resolve().parents[2]

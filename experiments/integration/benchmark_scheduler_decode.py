@@ -313,6 +313,29 @@ def run(args):
         del pool
 
 
+def dispatch_coverage(records):
+    """Which policy actions actually fired in the selected arms, per case.
+
+    An effect near 1.0 has two very different causes: the selected kernel matched
+    production, or `select_action` returned None for every step and both arms ran
+    the same kernel. Recording the actions here separates them without reading
+    individual trial checkpoints.
+    """
+    coverage = {}
+    for case in sorted({r["case_id"] for r in records}):
+        actions = {}
+        for record in records:
+            if record["case_id"] != case or "selected" not in record["variant"]:
+                continue
+            for key, count in record.get("decisions", {}).items():
+                actions[key] = actions.get(key, 0) + count
+        if actions:
+            coverage[case] = {"actions": dict(sorted(actions.items())),
+                              "production_fallback": "production" in actions,
+                              "actions_measured": sorted(k for k in actions if k != "production")}
+    return coverage
+
+
 def analyze(args):
     manifest = json.loads((args.output_dir / "manifest.json").read_text())
     # Invalidate an older successful report before inspecting new/corrupt data.
@@ -352,6 +375,7 @@ def analyze(args):
               "pending_observations": pending,
               "cases": summarize(complete, manifest["phase"], manifest["trials"], manifest["samples"], manifest["seed"]),
               "phase_effects": phase_effects,
+              "dispatch_coverage": dispatch_coverage(complete),
               "scope": "matched implementation comparison; eager real model; step-index arrivals; no serving TTFT claim"}
     atomic_json(args.output_dir / "report.json", result)
     print(json.dumps(result, indent=2))
@@ -361,7 +385,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("plan", "run", "analyze"))
     parser.add_argument("--phase", choices=("scheduler", "combined"), default="scheduler")
-    parser.add_argument("--preset", choices=("smoke", "full"), default="full")
+    parser.add_argument("--preset", choices=("smoke", "full", "longctx"), default="full")
     parser.add_argument("--policy-dir", type=Path)
     parser.add_argument("--allow-unapproved-policy", action="store_true",
                         help="Use a frozen candidate policy for experiments; bypasses only the readiness gate")

@@ -1,5 +1,100 @@
 # C++ scheduler and decode-policy integration experiment
 
+## Focused C++ control-plane profile
+
+`profile_cpp_control.py` first runs an uninstrumented preflight and chooses one
+deterministic decode, prefill, or mixed step. It warms the model and graph shapes,
+then times that step across separate unprofiled full-workload repetitions.
+Finally it traces only that step with PyTorch's CPU/CUDA profiler and drains the
+same workload to verify generated tokens and the schedule. The report contains
+the unprofiled wall-time distribution and named C++ ranges for scheduling,
+metadata building/transfers and waits, callbacks, argmax, sampled-token D2H,
+and request updates. Profiler CPU ranges are *inclusive* and may overlap; do not
+sum them or interpret callback CPU duration as GPU compute time. Use the trace
+timeline to see whether a host stall leaves the GPU idle.
+
+Rebuild the extension after the range instrumentation change, then run a decode
+step and a packed-prefill step in fixed regimes:
+
+```bash
+make cpp-scheduler-build
+python3 experiments/integration/profile_cpp_control.py \
+  --preset smoke --case-id uniform-b4-l513 --kind decode
+python3 experiments/integration/profile_cpp_control.py \
+  --preset full --case-id uniform-b8-l512 --kind prefill
+```
+
+Use `--occurrence` to choose a later step of the same kind and
+`--adapter eager-prefill` to compare the control path without piecewise prefill. Traces
+are deliberately one step long; repeated timings are collected without profiler
+overhead. The current synchronous `step()` reads sampled tokens on the CPU before
+the next scheduling decision, so a D2H wait is expected but its *cost* must be
+measured, not inferred from the call site.
+
+## Piecewise packed-prefill capture
+
+`benchmark_piecewise_prefill.py` compares the same C++ scheduler and captured
+production decode in both arms. The treatment captures one segment between each
+pair of attention calls: post-attention output projection/MLP of one layer plus
+QKV/RoPE/KV write of the next. The first segment includes embedding; the final
+segment includes the last layer's post-attention work. Thus a 28-layer model
+replays 29 graphs per captured prefill call, not 56. Packed paged attention
+stays eager so it can use live ragged offsets, context lengths, and launch
+geometry. Final norm/head remain eager. The implementation pads non-attention
+work to packed-token buckets (128, 256, 512, 1024, 2048 by default). A masked
+KV-placement kernel reads the real token count from a device scalar, so padded
+rows cannot write into live cache slots; eager attention receives only real
+query rows and the unmodified ragged metadata. Captures are lazy and bounded
+to eight buckets by default. Calls above the largest bucket or beyond that
+shape limit explicitly fall back to eager prefill. The report records configured
+and captured buckets, graph replays, and capture/fallback call counts. Capture
+occurs during correctness preflight, before warmup and measurement.
+
+On a CUDA machine with the C++ extension built, start with the short ragged case:
+
+```bash
+python3 experiments/integration/benchmark_piecewise_prefill.py \
+  --preset smoke --case-id ragged-b4-l769 --trials 1 --samples 1
+```
+
+For a fixed larger regime, pass explicit buckets such as
+`--prefill-buckets 512 1024 2048`; this prevents capturing rarely used sizes.
+For example, a 2048-token-budget case is:
+
+```bash
+python3 experiments/integration/benchmark_piecewise_prefill.py \
+  --preset full --case-id uniform-b8-l512 \
+  --prefill-buckets 512 1024 2048 --trials 1 --samples 1
+```
+
+Inspect `prefill_plus_mixed_ms` and full-workload `wall_ms` separately. The
+preflight compares scheduler metadata and representative full logits, then exact
+generated tokens and work schedule; timed runs must preserve the latter. This is
+an exploratory exact-shape experiment, not yet a production graph policy. More
+shape buckets, padding, or mixed prefill/decode capture should be decided from
+the measured coverage, memory use, and latency, not assumed to help.
+
+## Captured C++ decode bridge
+
+`benchmark_cpp_graph.py` is a separate paired experiment for the next integration
+step. The C++ scheduler supplies persistent device metadata; `GraphModelAdapter`
+uses it to replay a full-model decode graph with either production or split-K
+attention. Packed prefill stays eager and identical in both arms. Each case checks
+metadata, logits at representative shapes, output tokens, and the scheduled work
+before accepting timings. Capture and model loading are outside timed workloads.
+
+After building the C++ extension on a CUDA machine, start with one long-context
+case that selects split-K:
+
+```bash
+make cpp-scheduler-build
+python3 experiments/integration/benchmark_cpp_graph.py \
+  --case-id uniform-b4-l2048 --trials 1 --samples 1
+```
+
+Then increase trials and use `--all-cases` to cover the full long-context preset.
+This compares two C++-scheduled graph arms; it is not yet a vLLM comparison.
+
 This sequence answers three questions with the real Qwen2.5-1.5B weights:
 
 1. What does the C++ scheduling/metadata implementation change at fixed model execution?

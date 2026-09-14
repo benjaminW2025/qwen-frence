@@ -67,6 +67,13 @@ def paged_decode_attention_candidate(*args, **kwargs):
     )
 
 
+def grouped_splitk_decode_attention(*args, **kwargs):
+    """Run grouped split-K paged decode with an explicit, capture-safe configuration."""
+    return _load("paged_decode_grouped_splitk").grouped_splitk_decode_attention(
+        *args, **kwargs
+    )
+
+
 def swiglu(*args, **kwargs):
     """Fuse the SiLU activation and gated elementwise product."""
     return _load("swiglu").swiglu(*args, **kwargs)
@@ -75,6 +82,11 @@ def swiglu(*args, **kwargs):
 def rope_kv_write(*args, **kwargs):
     """Fuse packed Q/K RoPE with paged K/V placement."""
     return _load("rope_kv_write").rope_kv_write(*args, **kwargs)
+
+
+def masked_kv_write(*args, **kwargs):
+    """Write only live packed rows from a padded prefill graph."""
+    return _load("masked_kv_write").masked_kv_write(*args, **kwargs)
 
 
 def native_decode_rope_kv_write(*args, **kwargs):

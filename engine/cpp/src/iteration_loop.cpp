@@ -11,6 +11,7 @@
  */
 
 #include "iteration_loop.hpp"
+#include <ATen/record_function.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/core/Event.h>
 #include <c10/core/StreamGuard.h>
@@ -239,6 +240,7 @@ int64_t IterationLoop::submit_request(
 // =============================================================================
 
 IterationPlan IterationLoop::schedule() {
+    RECORD_FUNCTION("cpp/schedule", {});
     IterationPlan plan;
 
     // ==========================================================================
@@ -351,6 +353,7 @@ IterationPlan IterationLoop::schedule() {
 // =============================================================================
 
 void IterationLoop::build_decode_batch(const IterationPlan& plan) {
+    RECORD_FUNCTION("cpp/build_decode_batch", {});
     // CPU writes are synchronous. Finish all writes before copying this phase.
     if (!plan.decode_requests.empty()) {
         int64_t n = plan.decode_requests.size();
@@ -417,6 +420,7 @@ void IterationLoop::build_decode_batch(const IterationPlan& plan) {
 }
 
 void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
+    RECORD_FUNCTION("cpp/build_prefill_batch", {});
     // Build prefill after decode has been enqueued, so these CPU writes can
     // overlap with decode kernels on mixed iterations.
     if (!plan.prefill_requests.empty()) {
@@ -511,6 +515,7 @@ void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
 }
 
 void IterationLoop::copy_batch(bool decode, bool prefill) {
+    RECORD_FUNCTION("cpp/copy_batch_enqueue", {});
     auto& dst = device_metadata();
     const auto& src = host_metadata_;
     dst.num_decode_tokens = src.num_decode_tokens;
@@ -552,6 +557,7 @@ void IterationLoop::copy_batch(bool decode, bool prefill) {
 // =============================================================================
 
 torch::Tensor IterationLoop::sample(torch::Tensor logits) {
+    RECORD_FUNCTION("cpp/sample_argmax", {});
     // ==========================================================================
     // Greedy sampling
     //
@@ -584,6 +590,7 @@ void IterationLoop::update_requests(
     const IterationPlan& plan,
     torch::Tensor next_tokens
 ) {
+    RECORD_FUNCTION("cpp/update_requests", {});
     // ==========================================================================
     // Update request state after sampling
     //
@@ -601,7 +608,11 @@ void IterationLoop::update_requests(
     //       or copy to CPU first for batch access
     // ==========================================================================
 
-    auto cpu_tokens = next_tokens.to(torch::kCPU);
+    torch::Tensor cpu_tokens;
+    {
+        RECORD_FUNCTION("cpp/sample_device_to_host", {});
+        cpu_tokens = next_tokens.to(torch::kCPU);
+    }
     auto tokens_acc = cpu_tokens.accessor<int64_t, 1>();
 
     int64_t token_idx = 0;
@@ -688,6 +699,7 @@ int64_t IterationLoop::step(
         int64_t, bool
     )>& forward_fn
 ) {
+    RECORD_FUNCTION("cpp/step", {});
     // Schedule
     IterationPlan plan = schedule();
     if (plan.empty()) {
@@ -701,11 +713,17 @@ int64_t IterationLoop::step(
         compute_stream = c10::impl::VirtualGuardImpl(device_.type()).getStream(device_);
         compute_guard.reset_stream(*compute_stream);
         // DMA must finish reading the host staging buffer before CPU reuse.
-        metadata_transfer_->copied.synchronize();
+        {
+            RECORD_FUNCTION("cpp/wait_h2d_source_reuse", {});
+            metadata_transfer_->copied.synchronize();
+        }
     }
     host_metadata_.reset();
     if (metadata_transfer_ && metadata_transfer_->consumed_valid[1 - active_batch_metadata_]) {
-        metadata_transfer_->consumed[1 - active_batch_metadata_].synchronize();
+        {
+            RECORD_FUNCTION("cpp/wait_device_metadata_reuse", {});
+            metadata_transfer_->consumed[1 - active_batch_metadata_].synchronize();
+        }
     }
     active_batch_metadata_ = 1 - active_batch_metadata_;
     device_metadata().reset();
@@ -713,6 +731,7 @@ int64_t IterationLoop::step(
 
     try {
         auto transfer_phase = [&](bool decode) {
+            RECORD_FUNCTION(decode ? "cpp/transfer_decode" : "cpp/transfer_prefill", {});
             if (!metadata_transfer_) {
                 copy_batch(decode, !decode);
                 return;
@@ -742,20 +761,24 @@ int64_t IterationLoop::step(
             transfer_phase(/*decode=*/true);
             auto& metadata = device_metadata();
             int64_t n = metadata.num_decode_tokens;
-            auto decode_logits = forward_fn(
-                metadata.decode_input_ids.slice(0, 0, n),
-                metadata.decode_positions.slice(0, 0, n),
-                metadata.decode_slot_mapping.slice(0, 0, n),
-                // Decode has no packed-query boundaries. This zero-length view is a
-                // real device tensor, which is cleaner to pass through pybind than
-                // an undefined torch::Tensor().
-                metadata.decode_seq_lens.slice(0, 0, 0),
-                metadata.decode_seq_lens.slice(0, 0, n),
-                metadata.decode_block_table.slice(0, 0, n)
-                    .slice(1, 0, metadata.num_decode_blocks),
-                /*max_query_length=*/1,
-                /*is_decode=*/true
-            );
+            torch::Tensor decode_logits;
+            {
+                RECORD_FUNCTION("cpp/callback_decode", {});
+                decode_logits = forward_fn(
+                    metadata.decode_input_ids.slice(0, 0, n),
+                    metadata.decode_positions.slice(0, 0, n),
+                    metadata.decode_slot_mapping.slice(0, 0, n),
+                    // Decode has no packed-query boundaries. This zero-length view is a
+                    // real device tensor, which is cleaner to pass through pybind than
+                    // an undefined torch::Tensor().
+                    metadata.decode_seq_lens.slice(0, 0, 0),
+                    metadata.decode_seq_lens.slice(0, 0, n),
+                    metadata.decode_block_table.slice(0, 0, n)
+                        .slice(1, 0, metadata.num_decode_blocks),
+                    /*max_query_length=*/1,
+                    /*is_decode=*/true
+                );
+            }
             validate_logits(decode_logits, n, "decode");
             logits = decode_logits;
             // Decode and prefill share the active metadata buffer within a
@@ -778,17 +801,21 @@ int64_t IterationLoop::step(
             int64_t num_tokens = metadata.num_prefill_tokens;
             int64_t num_seqs = metadata.num_prefill_seqs;
 
-            auto prefill_logits = forward_fn(
-                metadata.prefill_input_ids.slice(0, 0, num_tokens),
-                metadata.prefill_positions.slice(0, 0, num_tokens),
-                metadata.prefill_slot_mapping.slice(0, 0, num_tokens),
-                metadata.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
-                metadata.prefill_context_lens.slice(0, 0, num_seqs),
-                metadata.prefill_block_table.slice(0, 0, num_seqs)
-                    .slice(1, 0, metadata.num_prefill_blocks),
-                metadata.max_prefill_chunk_length,
-                /*is_decode=*/false
-            );
+            torch::Tensor prefill_logits;
+            {
+                RECORD_FUNCTION("cpp/callback_prefill", {});
+                prefill_logits = forward_fn(
+                    metadata.prefill_input_ids.slice(0, 0, num_tokens),
+                    metadata.prefill_positions.slice(0, 0, num_tokens),
+                    metadata.prefill_slot_mapping.slice(0, 0, num_tokens),
+                    metadata.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
+                    metadata.prefill_context_lens.slice(0, 0, num_seqs),
+                    metadata.prefill_block_table.slice(0, 0, num_seqs)
+                        .slice(1, 0, metadata.num_prefill_blocks),
+                    metadata.max_prefill_chunk_length,
+                    /*is_decode=*/false
+                );
+            }
             validate_logits(prefill_logits, num_seqs, "prefill");
 
             if (logits.defined()) {

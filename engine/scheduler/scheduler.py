@@ -58,11 +58,17 @@ class Scheduler:
         if prefill_tile_policy not in ("static", "adaptive"):
             raise ValueError("prefill_tile_policy must be 'static' or 'adaptive'")
         self.prefill_tile_policy = prefill_tile_policy
-        if decode_attention_policy not in ("production", "adaptive"):
+        from paged_decode_attention import DECODE_ATTENTION_POLICIES
+        if decode_attention_policy not in DECODE_ATTENTION_POLICIES:
             raise ValueError(
-                "decode_attention_policy must be 'production' or 'adaptive'"
+                f"decode_attention_policy must be one of {DECODE_ATTENTION_POLICIES}"
             )
-        if use_graph and decode_attention_policy != "production":
+        # The adaptive candidate selects per step from live metadata, which a graph
+        # cannot re-decide on replay. Split-K resolves one action from the host's
+        # context bound before capture and takes an explicit configuration, so it
+        # records cleanly; capture is also the only place its per-call launch and
+        # partial-buffer cost is amortized instead of paid every step.
+        if use_graph and decode_attention_policy == "adaptive":
             raise ValueError(
                 "adaptive decode attention is not yet supported by CUDA graphs"
             )
@@ -113,8 +119,9 @@ class Scheduler:
         if use_graph:
             from bucketed_graph_decoder import BucketedGraphDecoder
             mb = graph_max_blocks or num_blocks         # a seq can own at most the whole pool
-            self.graph_decoder = BucketedGraphDecoder(model, self.cache, max_running, mb,
-                                                      device, dtype)
+            self.graph_decoder = BucketedGraphDecoder(
+                model, self.cache, max_running, mb, device, dtype,
+                decode_attention_policy=decode_attention_policy)
 
     def _prefill_region(self, name):
         """Emit matching PyTorch-profiler and NVTX ranges only when requested."""

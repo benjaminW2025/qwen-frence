@@ -18,17 +18,55 @@ DEVICE = torch.device("cuda")
 MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH = 1024
 
 
+# Grouped split-K shortens the online-softmax critical path by a factor of K, but
+# costs one extra kernel launch plus partial buffers per invocation. The saving
+# scales with page count and the cost does not, so there is a break-even: on the
+# eager path it sits near 1200 tokens at low batch. Above this floor the split-K
+# policy is allowed to run; below it the production kernel wins outright. Under
+# CUDA graph capture the launch cost is paid once at capture rather than per step,
+# which moves the break-even down -- `splitk` is the policy that may be captured.
+MIN_SPLITK_DECODE_CONTEXT_LENGTH = 1024
+
+DECODE_ATTENTION_POLICIES = ("production", "adaptive", "splitk")
+
+# Frozen action from the decode stage study: pages <= 80 selects K=8/stages=2,
+# above it K=22/stages=3, at heads_per_program=1 and four warps. Encoded here as a
+# table rather than imported from experiments/ so the engine has no dependency on
+# an experiment directory; refit it there and update this table deliberately.
+SPLITK_PAGE_THRESHOLD = 80
+SPLITK_ACTIONS = {"short": {"split_k": 8, "num_stages": 2},
+                  "long": {"split_k": 22, "num_stages": 3}}
+
+
 def resolve_decode_attention_policy(policy, max_context_length):
     """Resolve the host policy once, before entering the transformer layer loop."""
     if policy == "production":
         return "production"
-    if policy != "adaptive":
-        raise ValueError("decode attention policy must be 'production' or 'adaptive'")
+    if policy not in DECODE_ATTENTION_POLICIES:
+        raise ValueError(f"decode attention policy must be one of {DECODE_ATTENTION_POLICIES}")
     if max_context_length is None:
-        raise ValueError("adaptive decode attention requires a host context length")
+        raise ValueError(f"{policy} decode attention requires a host context length")
+    if policy == "splitk":
+        if max_context_length < MIN_SPLITK_DECODE_CONTEXT_LENGTH:
+            return "production"
+        return "splitk"
     if max_context_length < MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH:
         return "production"
     return "adaptive"
+
+
+def select_splitk_config(max_context_length, page_size=16):
+    """Freeze one split-K action for a whole graph or layer loop.
+
+    Takes the host's *maximum* context, so a captured graph commits to the action
+    its longest possible step requires. `select_action` in the study reads the
+    live context, which a graph cannot re-decide on replay.
+    """
+    if max_context_length is None or max_context_length < 1:
+        raise ValueError("split-K configuration requires a positive host context length")
+    pages = -(-max_context_length // page_size)
+    action = SPLITK_ACTIONS["short" if pages <= SPLITK_PAGE_THRESHOLD else "long"]
+    return {**action, "heads_per_program": 1, "num_warps": 4}
 
 
 @triton.jit
@@ -162,6 +200,7 @@ def paged_decode_attention_dispatch(
     policy="production",
     max_context_length=None,
     scale=None,
+    splitk_partials=None,
 ):
     """Dispatch without reading device metadata or changing the production default."""
     if policy == "production":
@@ -172,6 +211,15 @@ def paged_decode_attention_dispatch(
     if policy == "production":
         return paged_decode_attention(
             q, k_pool, v_pool, block_table, seq_lens, scale=scale
+        )
+    if policy == "splitk":
+        from kernel_dispatch import grouped_splitk_decode_attention
+        # Resolved from the host's max context, never from `seq_lens`, so no
+        # device read enters the layer loop and the call can be captured.
+        config = select_splitk_config(max_context_length, page_size=k_pool.shape[1])
+        return grouped_splitk_decode_attention(
+            q, k_pool, v_pool, block_table, seq_lens,
+            scale=scale, partials=splitk_partials, **config,
         )
     from kernel_dispatch import (
         paged_decode_attention_candidate,
