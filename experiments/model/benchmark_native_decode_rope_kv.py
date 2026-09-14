@@ -71,7 +71,7 @@ def main():
         raise RuntimeError("requires CUDA")
     select_device(torch, args.device)
     torch.backends.cuda.matmul.allow_tf32 = False
-    cases = ([(1, 512), (8, 2048)] if args.preset == "smoke"
+    cases = ([(1, 512), (8, 512), (8, 2048)] if args.preset == "smoke"
              else [(batch, context) for batch in (1, 8, 32, 64, 128)
                    for context in (512, 8192)])
     sources = (
