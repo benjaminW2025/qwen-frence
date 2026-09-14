@@ -18,11 +18,21 @@ step and a packed-prefill step in fixed regimes:
 
 ```bash
 make cpp-scheduler-build
+python3 experiments/integration/profile_cpp_control.py --check-setup
 python3 experiments/integration/profile_cpp_control.py \
   --preset smoke --case-id uniform-b4-l513 --kind decode
 python3 experiments/integration/profile_cpp_control.py \
   --preset full --case-id uniform-b8-l512 --kind prefill
 ```
+
+`--check-setup` verifies CUDA, Triton, and the current C++ extension without
+loading weights or capturing graphs. It does not prove that model files are
+cached or that the CUDA correctness gates pass; run a one-sample smoke case
+before reserving a long benchmark window. These synthetic-token experiments
+load model weights directly and do not download an unused tokenizer. If an older
+Hub environment sets `HF_HUB_ENABLE_HF_TRANSFER=1` without the optional
+`hf_transfer` package, setup warns and selects the standard download path before
+importing Hugging Face. The selected mode is recorded in output metadata.
 
 Use `--occurrence` to choose a later step of the same kind and
 `--adapter eager-prefill` to compare the control path without piecewise prefill. Traces

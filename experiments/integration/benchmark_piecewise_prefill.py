@@ -24,6 +24,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 from benchmark_scheduler_decode import TraceCheck, execute, independent_check, make_config
 from design import make_plan, make_requests
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
+from model_setup import check_startup, load_model_only
 
 
 def atomic_json(path, value):
@@ -143,6 +144,8 @@ def main():
     parser.add_argument("--prefill-buckets", type=int, nargs="+",
                         help="explicit packed-token buckets, e.g. 128 512 2048")
     parser.add_argument("--seed", type=int, default=20260914)
+    parser.add_argument("--check-setup", action="store_true",
+                        help="check dependencies before model loading or graph capture")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/piecewise-prefill")
     args = parser.parse_args()
@@ -153,19 +156,21 @@ def main():
                                  len(set(args.prefill_buckets)) != len(args.prefill_buckets)):
         parser.error("prefill buckets must be distinct positive sizes within the capture limit")
 
+    if args.check_setup:
+        print(json.dumps(check_startup(args.device), indent=2))
+        return
+
+    startup = check_startup(args.device)
     import torch
-    if not torch.cuda.is_available() or torch.device(args.device).type != "cuda":
-        raise RuntimeError("this experiment requires CUDA")
     import inference_engine_cpp as cpp
     from run_benchmarks import system_metadata
-    from run_phase_sweep import make_engine
     plan = make_plan(args.preset)
     selected = plan if args.all_cases else [c for c in plan if c["id"] == args.case_id]
     if not selected:
         raise ValueError("case ID is not in the selected preset")
 
-    engine, load_seconds = make_engine(args.model, "custom-kernels", args.device,
-                                       "float16", 16)
+    engine, load_seconds, hub_transfer = load_model_only(
+        args.model, args.device, "float16", hub_transfer=startup["hub_transfer"])
     independent_check(torch, engine.model, args.device)
     atomic_json(args.output_dir / "manifest.json", {
         "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
@@ -174,7 +179,8 @@ def main():
         "seed": args.seed, "max_capture_tokens": args.max_capture_tokens,
         "max_prefill_shapes": args.max_prefill_shapes,
         "prefill_buckets": args.prefill_buckets,
-        "model_load_seconds": load_seconds, "system": system_metadata(),
+        "model_load_seconds": load_seconds, "hub_transfer": hub_transfer,
+        "system": system_metadata(),
         "execution": "C++ scheduler; captured production decode in both arms; eager vs piecewise packed prefill",
     })
     rows = []
