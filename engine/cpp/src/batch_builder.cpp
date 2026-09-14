@@ -1,11 +1,12 @@
 /**
  * Batch building is implemented in iteration_loop.cpp:
- *   build_batch() writes into persistent CPU staging (pinned for CUDA).
- *   copy_batch() transfers active metadata slices on the copy stream.
+ *   build_decode_batch()/build_prefill_batch() write into persistent CPU staging.
+ *   copy_batch() transfers visible metadata slices on the copy stream.
  *   step() orders copies and consumers with events.
  *
- * Cross-iteration batch construction remains future work: step() currently
- * reads sampled tokens before returning to the scheduler.
+ * On mixed iterations, prefill construction runs after decode launch, overlapping
+ * CPU work with GPU decode. Cross-iteration construction remains future work:
+ * step() reads sampled tokens before returning to the scheduler.
  */
 
 #include "iteration_loop.hpp"

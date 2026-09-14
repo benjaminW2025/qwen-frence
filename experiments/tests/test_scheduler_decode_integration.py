@@ -176,6 +176,8 @@ class MatchedSchedulerTests(unittest.TestCase):
             config.block_size = 16
             config.eos_token_id = eos
             loops = [PythonControl(config, "cpu"), cpp.IterationLoop(config, torch.device("cpu"))]
+            config.overlap_prefill_build = False
+            loops.append(cpp.IterationLoop(config, torch.device("cpu")))
             def run(loop):
                 trace, outputs = [], {}
                 # Repeat on the same allocator, with both queued and later arrivals.
@@ -197,7 +199,9 @@ class MatchedSchedulerTests(unittest.TestCase):
                         step += 1
                         self.assertLess(step, 40)
                 return trace, outputs
-            self.assertEqual(run(loops[0]), run(loops[1]))
+            reference = run(loops[0])
+            for loop in loops[1:]:
+                self.assertEqual(reference, run(loop))
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA/Triton")

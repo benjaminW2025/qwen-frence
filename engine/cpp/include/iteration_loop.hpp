@@ -72,8 +72,10 @@ struct BatchMetadata {
 
     // Current batch sizes (updated each iteration)
     int64_t num_decode_tokens;
+    int64_t num_decode_blocks;
     int64_t num_prefill_tokens;
     int64_t num_prefill_seqs;
+    int64_t num_prefill_blocks;
     int64_t max_prefill_chunk_length;
 
     // Pre-allocate buffers
@@ -110,6 +112,7 @@ struct SchedulerConfig {
     int64_t block_size = 16;
     int64_t num_kv_heads = 2;
     int64_t head_dim = 128;
+    bool overlap_prefill_build = true;  // A/B switch for mixed-iteration CPU/GPU overlap
 };
 
 // The main C++ iteration loop
@@ -178,8 +181,9 @@ private:
 
     // Internal methods
     IterationPlan schedule();
-    void build_batch(const IterationPlan& plan);
-    void copy_batch();
+    void build_decode_batch(const IterationPlan& plan);
+    void build_prefill_batch(const IterationPlan& plan);
+    void copy_batch(bool decode, bool prefill);
     torch::Tensor sample(torch::Tensor logits);
     void update_requests(const IterationPlan& plan, torch::Tensor next_tokens);
 

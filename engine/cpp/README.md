@@ -26,7 +26,7 @@ submit_request() ──────────────────► pendi
                                            │
                                            ▼
                                     ┌────────────┐
-                                    │build_batch()│ ◄─── Write to pre-allocated buffers
+                                    │build metadata│ ◄─── Write to pre-allocated buffers
                                     └──────┬─────┘
                                            │
 forward_fn() ◄─────────────────────────────┤ (callback into PyTorch)
@@ -57,15 +57,17 @@ input_ids = torch.tensor(tokens, device='cuda')  # Allocation + H2D copy
 
 The C++ loop allocates device metadata and matching CPU staging tensors once.
 For CUDA, staging uses `TensorOptions().device(torch::kCPU).pinned_memory(true)`.
-`build_batch()` writes directly into that storage; no temporary pageable metadata
+The builders write directly into that storage; no temporary pageable metadata
 arrays are created each iteration. CPU execution uses ordinary reusable buffers.
 
 For each CUDA step:
 
 1. Wait for the previous H2D copy before rewriting its pinned source buffer.
-2. Build all metadata synchronously on the calling CPU thread.
+2. Build decode metadata, copy it, and enqueue decode forward. On mixed
+   iterations, build prefill metadata while decode executes on the GPU, then
+   copy it and enqueue prefill forward.
 3. On a persistent copy stream, wait for prior device-buffer consumers and copy
-   only active rows with `copy_(source, /*non_blocking=*/true)`.
+   only active rows and visible block-table columns with nonblocking `copy_`.
 4. Record a copy-complete event and make the caller's current compute stream wait
    for it before invoking `forward_fn`.
 5. Record completion of consumers before the next device-buffer reuse. Callback
@@ -80,8 +82,9 @@ it schedules and reads sampled tokens on the CPU.
 
 This implements pinned asynchronous **transfers**, while preserving the existing
 synchronous `step()` API. It still reads sampled tokens back before scheduling the
-next iteration. Consequently, it does **not** yet overlap next-batch construction
-with the current forward. One buffer set is sufficient under this API, and retains
+next iteration. It overlaps prefill construction with decode forward within a
+mixed iteration, but does **not** overlap next-batch construction with the current
+forward. One buffer set is sufficient under this API, and retains
 stable device addresses. Cross-iteration overlap requires a separate scheduling
 change and multiple buffer sets; no throughput improvement is assumed here.
 
@@ -95,8 +98,14 @@ change and multiple buffer sets; no throughput improvement is assumed here.
 - [x] EOS/output-limit completion and block reclamation
 - [x] Request, configuration, and callback-logit validation
 - [x] Reusable pinned CPU metadata, asynchronous H2D copies, and stream/event ordering
+- [x] Mixed-iteration CPU prefill construction overlapped with GPU decode forward
 - [ ] Integrate a real model/KV-pool `forward_fn`
 - [ ] Size the physical block pool from actual KV-cache memory
+
+Set `SchedulerConfig.overlap_prefill_build = False` for the matched baseline.
+`experiments/scheduler/benchmark_cpp_overlap.py` compares both orders with the
+same synthetic mixed workload. It checks output equality and reports only mixed
+iteration latency; full-model gains still need an H100 integration benchmark.
 
 ## Build and test
 
