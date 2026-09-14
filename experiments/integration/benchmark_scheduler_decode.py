@@ -193,7 +193,9 @@ def run(args):
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     hw = hardware(torch, triton)
-    policy = load_policy(args.policy_dir, hw) if args.phase == "combined" else None
+    policy = load_policy(
+        args.policy_dir, hw, allow_candidate=args.allow_unapproved_policy
+    ) if args.phase == "combined" else None
     plan = make_plan(args.preset)
     selected = [c for c in plan if args.case_id is None or c["id"] == args.case_id]
     if not selected:
@@ -361,6 +363,8 @@ def main():
     parser.add_argument("--phase", choices=("scheduler", "combined"), default="scheduler")
     parser.add_argument("--preset", choices=("smoke", "full"), default="full")
     parser.add_argument("--policy-dir", type=Path)
+    parser.add_argument("--allow-unapproved-policy", action="store_true",
+                        help="Use a frozen candidate policy for experiments; bypasses only the readiness gate")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "experiments/results/scheduler-decode")
     parser.add_argument("--case-id")
     parser.add_argument("--device", default="cuda:0")
