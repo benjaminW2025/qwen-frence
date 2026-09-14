@@ -1,0 +1,867 @@
+{
+  "status": "complete",
+  "fingerprint": "f639e1534140d5868df098b4095808255a7e7e5b6fe755dcea9c3ab7794648a0",
+  "case_id": "uniform-b2-l257",
+  "trial": 2,
+  "checks": {
+    "python-production": {
+      "callbacks": 10,
+      "max_logit_error": 0.0,
+      "outputs_equal": true,
+      "metadata_equal": true,
+      "decisions": {
+        "production": 5
+      }
+    },
+    "cpp-production": {
+      "callbacks": 10,
+      "max_logit_error": 0.0,
+      "outputs_equal": true,
+      "metadata_equal": true,
+      "decisions": {
+        "production": 5
+      }
+    }
+  },
+  "order": [
+    "python-production",
+    "cpp-production",
+    "python-production",
+    "cpp-production",
+    "python-production",
+    "cpp-production"
+  ],
+  "records": [
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 0,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 99.20362383127213,
+      "output_tokens_per_s": 80.64221538526243,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.647691786289215,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.537415742874146,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.539129376411438,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.599299877882004,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.37817595899105,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.827101603150368,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.311847388744354,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.301615878939629,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.44056487083435,
+      "prefill_wall_ms": 31.7242369055748,
+      "mixed_wall_ms": 38.977475836873055
+    },
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 0,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 98.34827855229378,
+      "output_tokens_per_s": 81.34356917845021,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.417716577649117,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.358165949583054,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.574331507086754,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.33927834033966,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.261552020907402,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.667016565799713,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.371867403388023,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.263010695576668,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.301894664764404,
+      "prefill_wall_ms": 31.350214034318924,
+      "mixed_wall_ms": 38.60083036124706
+    },
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 1,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 98.55232760310173,
+      "output_tokens_per_s": 81.17515024321168,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.603643953800201,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.333970189094543,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.33075712621212,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.562819972634315,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.344264641404152,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.69456322491169,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.264878928661346,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.3594491481781,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.318891301751137,
+      "prefill_wall_ms": 31.268371269106865,
+      "mixed_wall_ms": 38.90708461403847
+    },
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 1,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 97.66598790884018,
+      "output_tokens_per_s": 81.91183206447538,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.36309078335762,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.210011154413223,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.378703474998474,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.34780180454254,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.218970090150833,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.71338152885437,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.135598316788673,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.20862890779972,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.057608753442764,
+      "prefill_wall_ms": 30.951805412769318,
+      "mixed_wall_ms": 38.566771894693375
+    },
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 2,
+      "variant": "python-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 98.48438017070293,
+      "output_tokens_per_s": 81.23115550033013,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.579889640212059,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.412240400910378,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.441305115818977,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.41451244056225,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.280873239040375,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.777838364243507,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.302353486418724,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.21667367219925,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.29686552286148,
+      "prefill_wall_ms": 31.433435156941414,
+      "mixed_wall_ms": 38.69538567960262
+    },
+    {
+      "case_id": "uniform-b2-l257",
+      "trial": 2,
+      "sample": 2,
+      "variant": "cpp-production",
+      "decode_batch_histogram": {
+        "1": 4,
+        "2": 1
+      },
+      "max_actual_decode_batch": 2,
+      "wall_ms": 97.71831892430782,
+      "output_tokens_per_s": 81.86796588464405,
+      "steps": [
+        {
+          "kind": "prefill",
+          "wall_ms": 10.398313403129578,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.242020711302757,
+          "calls": [
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "prefill",
+          "wall_ms": 10.294128209352493,
+          "calls": [
+            [
+              false,
+              128,
+              2,
+              127
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.241081550717354,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              128,
+              1,
+              128
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "mixed",
+          "wall_ms": 19.390055909752846,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ],
+            [
+              false,
+              2,
+              1,
+              2
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.656254202127457,
+          "calls": [
+            [
+              true,
+              2,
+              2,
+              1
+            ]
+          ],
+          "completed": 1
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.157368913292885,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 0
+        },
+        {
+          "kind": "decode",
+          "wall_ms": 9.247858077287674,
+          "calls": [
+            [
+              true,
+              1,
+              1,
+              1
+            ]
+          ],
+          "completed": 1
+        }
+      ],
+      "decisions": {
+        "production": 5
+      },
+      "decode_wall_ms": 28.061481192708015,
+      "prefill_wall_ms": 30.934462323784828,
+      "mixed_wall_ms": 38.6311374604702
+    }
+  ],
+  "requests_sha256": "f6fa88845c2293799a5ae2db36fb9e1bb6104d029999f4d37e2da91543d34b17",
+  "peak_allocated_bytes": 3149423616,
+  "telemetry_before": {
+    "nvidia_smi": "GPU-9eee2e53-38e5-7dd5-18ed-c140751d5a60, 35, 1980 MHz, 2619 MHz, 176.27 W, 36 %"
+  },
+  "telemetry_after": {
+    "nvidia_smi": "GPU-9eee2e53-38e5-7dd5-18ed-c140751d5a60, 35, 1980 MHz, 2619 MHz, 180.99 W, 36 %"
+  },
+  "trial_wall_seconds": 1.427477851510048
+}
