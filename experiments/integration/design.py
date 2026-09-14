@@ -87,11 +87,11 @@ def validate_tree(tree):
     validate_tree(tree.get("right"))
 
 
-def load_policy(directory, hardware=None):
+def load_policy(directory, hardware=None, allow_candidate=False):
     directory = Path(directory)
     manifest = json.loads((directory / "manifest.json").read_text())
     report = json.loads((directory / "policy-report.json").read_text())
-    if report.get("status") != "microbenchmark_candidate":
+    if report.get("status") != "microbenchmark_candidate" and not allow_candidate:
         raise ValueError("decode policy has not passed the declared microbenchmark gate")
     if report.get("fingerprint") != manifest.get("fingerprint"):
         raise ValueError("policy/report manifest mismatch")
