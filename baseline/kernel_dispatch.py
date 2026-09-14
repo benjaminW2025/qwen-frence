@@ -75,3 +75,8 @@ def swiglu(*args, **kwargs):
 def rope_kv_write(*args, **kwargs):
     """Fuse packed Q/K RoPE with paged K/V placement."""
     return _load("rope_kv_write").rope_kv_write(*args, **kwargs)
+
+
+def native_decode_rope_kv_write(*args, **kwargs):
+    """Experimental native-layout decode RoPE and cache placement."""
+    return _load("rope_kv_write").native_decode_rope_kv_write(*args, **kwargs)
