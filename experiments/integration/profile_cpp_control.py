@@ -25,6 +25,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 from benchmark_scheduler_decode import execute, make_config
 from design import make_plan, make_requests
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
+from model_setup import check_startup, load_model_only
 
 
 def build_parser():
@@ -42,6 +43,8 @@ def build_parser():
     parser.add_argument("--repetitions", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--with-stack", action="store_true")
+    parser.add_argument("--check-setup", action="store_true",
+                        help="check runtime dependencies before loading weights or allocating model GPU memory")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/cpp-control-profile")
     return parser
@@ -138,22 +141,19 @@ def stage_summary(prof):
 def main():
     args = build_parser().parse_args()
     validate_args(args)
+    if args.check_setup:
+        print(json.dumps(check_startup(args.device), indent=2))
+        return
+    startup = check_startup(args.device)
     import torch
-    if not torch.cuda.is_available() or torch.device(args.device).type != "cuda":
-        raise RuntimeError("this experiment requires CUDA")
     import inference_engine_cpp as cpp
     from run_benchmarks import system_metadata
-    from run_phase_sweep import make_engine
 
-    extension = Path(cpp.__file__)
-    sources = list((ROOT / "engine/cpp/src").glob("*.cpp"))
-    if any(source.stat().st_mtime_ns > extension.stat().st_mtime_ns for source in sources):
-        raise RuntimeError("C++ extension is older than source; run make cpp-scheduler-build")
     case = next(case for case in make_plan(args.preset) if case["id"] == args.case_id)
     config = make_config(cpp, case)
     blocks = config.max_batch_size * ((config.max_context_length + 15) // 16)
-    engine, load_seconds = make_engine(args.model, "custom-kernels", args.device,
-                                       "float16", 16)
+    engine, load_seconds, hub_transfer = load_model_only(
+        args.model, args.device, "float16", hub_transfer=startup["hub_transfer"])
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter_cls = (PiecewiseGraphModelAdapter if args.adapter == "piecewise-prefill"
                    else GraphModelAdapter)
@@ -207,6 +207,7 @@ def main():
         "profiled_target_wall_ms": traced["target_wall_ms"],
         "cpu_ranges": stage_summary(prof),
         "system": system_metadata(), "model_load_seconds": load_seconds,
+        "hub_transfer": hub_transfer,
         "trace": str(trace_path), "operators": str(table_path),
     }
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")

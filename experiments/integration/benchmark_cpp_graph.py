@@ -25,6 +25,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 from benchmark_scheduler_decode import TraceCheck, execute, independent_check, make_config
 from design import make_plan, make_requests
 from model_adapter import GraphModelAdapter, allocate_pool
+from model_setup import check_startup, load_model_only
 
 ARMS = ("production", "splitk")
 
@@ -132,31 +133,36 @@ def main():
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--seed", type=int, default=20260914)
+    parser.add_argument("--check-setup", action="store_true",
+                        help="check dependencies before model loading or graph capture")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/cpp-graph-splitk")
     args = parser.parse_args()
     if min(args.trials, args.samples) < 1 or args.warmups < 0:
         parser.error("trials and samples must be positive; warmups cannot be negative")
 
+    if args.check_setup:
+        print(json.dumps(check_startup(args.device), indent=2))
+        return
+
+    startup = check_startup(args.device)
     import torch
-    if not torch.cuda.is_available() or torch.device(args.device).type != "cuda":
-        raise RuntimeError("this experiment requires CUDA")
     import inference_engine_cpp as cpp
     from run_benchmarks import system_metadata
-    from run_phase_sweep import make_engine
     plan = make_plan(args.preset)
     selected = plan if args.all_cases else [case for case in plan if case["id"] == args.case_id]
     if not selected:
         raise ValueError("case ID is not in the selected preset")
 
-    engine, load_seconds = make_engine(args.model, "custom-kernels", args.device,
-                                       "float16", 16)
+    engine, load_seconds, hub_transfer = load_model_only(
+        args.model, args.device, "float16", hub_transfer=startup["hub_transfer"])
     independent_check(torch, engine.model, args.device)
     manifest = {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
                 "model": args.model, "dtype": "float16", "block_size": 16,
                 "preset": args.preset, "cases": selected, "arms": list(ARMS),
                 "trials": args.trials, "samples": args.samples, "warmups": args.warmups,
                 "seed": args.seed, "model_load_seconds": load_seconds,
+                "hub_transfer": hub_transfer,
                 "system": system_metadata(),
                 "execution": "C++ scheduler; eager packed prefill; bucketed captured decode"}
     atomic_json(args.output_dir / "manifest.json", manifest)
