@@ -758,6 +758,13 @@ int64_t IterationLoop::step(
             );
             validate_logits(decode_logits, n, "decode");
             logits = decode_logits;
+            // Decode and prefill share the active metadata buffer within a
+            // mixed iteration. Publish decode consumption before the copy
+            // stream is allowed to overwrite it for prefill.
+            if (metadata_transfer_ && !plan.prefill_requests.empty()) {
+                metadata_transfer_->consumed[active_batch_metadata_].record(*compute_stream);
+                metadata_transfer_->consumed_valid[active_batch_metadata_] = true;
+            }
         }
 
         if (!plan.prefill_requests.empty()) {
