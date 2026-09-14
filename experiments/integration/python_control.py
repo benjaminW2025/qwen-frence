@@ -59,8 +59,12 @@ class PythonControl:
         size = self.config.block_size
         return request.blocks[position // size] * size + position % size
 
-    def _table(self, requests):
-        return [r.blocks + [0] * (self.max_blocks - len(r.blocks)) for r in requests]
+    def _table(self, requests, context_lengths):
+        visible = [(length + self.config.block_size - 1) // self.config.block_size
+                   for length in context_lengths]
+        width = max(visible)
+        return [request.blocks[:count] + [0] * (width - count)
+                for request, count in zip(requests, visible)]
 
     def _tensor(self, values, dtype=torch.int64):
         return torch.tensor(values, dtype=dtype, device=self.device)
@@ -97,7 +101,7 @@ class PythonControl:
                           self._tensor(positions),
                           self._tensor([self._slot(r, p) for r, p in zip(decode, positions)]),
                           self._tensor([], torch.int32), self._tensor([p + 1 for p in positions], torch.int32),
-                          self._tensor(self._table(decode), torch.int32), 1, True))
+                          self._tensor(self._table(decode, [p + 1 for p in positions]), torch.int32), 1, True))
         if prefill:
             ids, positions, slots, cu, context = [], [], [], [0], []
             for request, chunk in prefill:
@@ -109,9 +113,10 @@ class PythonControl:
                 context.append(request.computed + chunk)
             calls.append((self._tensor(ids), self._tensor(positions), self._tensor(slots),
                           self._tensor(cu, torch.int32), self._tensor(context, torch.int32),
-                          self._tensor(self._table([r for r, _ in prefill]), torch.int32),
+                          self._tensor(self._table([r for r, _ in prefill], context), torch.int32),
                           max(chunk for _, chunk in prefill), False))
-        # Build both phases before executing either, as in C++.
+        # The control builds both phases up front; C++ can overlap prefill
+        # construction with decode execution without changing these values.
         logits = [forward(*args) for args in calls]
         logits = torch.cat(logits, 0) if len(logits) == 2 else logits[0]
         tokens = logits.argmax(-1).cpu().tolist()

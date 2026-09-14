@@ -187,6 +187,28 @@ def run_python_workload(prompts, output_lengths, *, trace=None):
 
 @unittest.skipIf(cpp is None, f"build extension first: {IMPORT_ERROR}")
 class IterationLoopTests(unittest.TestCase):
+    def test_block_table_width_tracks_visible_context(self):
+        loop = cpp.IterationLoop(
+            make_cpp_config(max_prefill_tokens_per_iter=2), torch.device("cpu")
+        )
+        loop.submit_request([1, 2, 3, 4, 5], 5)
+        seen = []
+
+        def forward(ids, positions, slots, cu, context, blocks, max_query, is_decode):
+            del positions, slots, cu, context, max_query
+            seen.append((is_decode, blocks.shape[1], blocks.data_ptr()))
+            return torch.zeros((ids.numel() if is_decode else 1, 16))
+
+        while loop.num_pending() or loop.num_running():
+            loop.step(forward)
+
+        self.assertEqual(
+            [(decode, width) for decode, width, _ in seen],
+            [(False, 1), (False, 1), (False, 2),
+             (True, 2), (True, 2), (True, 2), (True, 3)],
+        )
+        self.assertEqual(len({ptr for _, _, ptr in seen}), 2)
+
     def test_chunked_prefill_metadata_and_logits(self):
         config = make_cpp_config(max_prefill_tokens_per_iter=2)
         loop = cpp.IterationLoop(config, torch.device("cpu"))

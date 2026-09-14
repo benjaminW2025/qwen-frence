@@ -105,8 +105,10 @@ BatchMetadata BatchMetadata::allocate(
 
 void BatchMetadata::reset() {
     num_decode_tokens = 0;
+    num_decode_blocks = 0;
     num_prefill_tokens = 0;
     num_prefill_seqs = 0;
+    num_prefill_blocks = 0;
     max_prefill_chunk_length = 0;
 }
 
@@ -346,15 +348,17 @@ IterationPlan IterationLoop::schedule() {
 // Batch building - THE KEY OPTIMIZATION
 // =============================================================================
 
-void IterationLoop::build_batch(const IterationPlan& plan) {
-    host_metadata_.reset();
-    max_decode_context_length_ = 0;
-
-    // CPU writes are synchronous. Finish all writes before copy_batch().
-    // Build decode batch
+void IterationLoop::build_decode_batch(const IterationPlan& plan) {
+    // CPU writes are synchronous. Finish all writes before copying this phase.
     if (!plan.decode_requests.empty()) {
         int64_t n = plan.decode_requests.size();
         host_metadata_.num_decode_tokens = n;
+        for (const Request* req : plan.decode_requests) {
+            host_metadata_.num_decode_blocks = std::max(
+                host_metadata_.num_decode_blocks,
+                (req->total_tokens() + config_.block_size - 1) / config_.block_size
+            );
+        }
 
         auto cpu_ids = host_metadata_.decode_input_ids.slice(0, 0, n);
         auto cpu_pos = host_metadata_.decode_positions.slice(0, 0, n);
@@ -393,23 +397,38 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
             slots_acc[i] = req->block_ids[block_idx] * config_.block_size + offset;
         }
 
-        auto cpu_block_table = host_metadata_.decode_block_table.slice(0, 0, n);
+        auto cpu_block_table = host_metadata_.decode_block_table
+            .slice(0, 0, n).slice(1, 0, host_metadata_.num_decode_blocks);
         cpu_block_table.zero_(); // Clear padding left by a previous, longer request.
         auto block_table_acc = cpu_block_table.accessor<int32_t, 2>(); // Get accessor
         // Now loop through requests
         for (int64_t i = 0; i < n; ++i) {
             Request* req = plan.decode_requests[i]; // Get the request at index i
-            for (size_t j = 0; j < req->block_ids.size(); ++j) { // Loop through block_ids
+            const int64_t visible_blocks =
+                (req->total_tokens() + config_.block_size - 1) / config_.block_size;
+            for (int64_t j = 0; j < visible_blocks; ++j) {
                 block_table_acc[i][j] =  static_cast<int32_t>(req->block_ids[j]); // Cast down to int32
             }
         }
 
     }
+}
 
-    // Build prefill batch (packed ragged format)
+void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
+    // Build prefill after decode has been enqueued, so these CPU writes can
+    // overlap with decode kernels on mixed iterations.
     if (!plan.prefill_requests.empty()) {
         int64_t total_tokens = 0;
         int64_t num_seqs = static_cast<int64_t>(plan.prefill_requests.size());
+        for (size_t i = 0; i < plan.prefill_requests.size(); ++i) {
+            const Request* req = plan.prefill_requests[i];
+            const int64_t visible_tokens =
+                req->num_prompt_tokens_computed + plan.prefill_chunk_sizes[i];
+            host_metadata_.num_prefill_blocks = std::max(
+                host_metadata_.num_prefill_blocks,
+                (visible_tokens + config_.block_size - 1) / config_.block_size
+            );
+        }
 
         for (size_t i = 0; i < plan.prefill_chunk_sizes.size(); ++i) {
             // First we should acc
@@ -424,7 +443,8 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
         // Unlike cu_seqlens (chunk boundaries), context_lens contains each
         // request's full visible length: previous prefix + this chunk.
         auto cpu_context_lens = host_metadata_.prefill_context_lens.slice(0, 0, num_seqs);
-        auto cpu_block_table = host_metadata_.prefill_block_table.slice(0, 0, num_seqs);
+        auto cpu_block_table = host_metadata_.prefill_block_table
+            .slice(0, 0, num_seqs).slice(1, 0, host_metadata_.num_prefill_blocks);
         cpu_block_table.zero_();
 
         host_metadata_.num_prefill_tokens = total_tokens;
@@ -471,7 +491,9 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
 
             }
             // Build block table
-            for (size_t j = 0; j < req->block_ids.size(); ++j) {
+            const int64_t visible_blocks =
+                (start + chunk_size + config_.block_size - 1) / config_.block_size;
+            for (int64_t j = 0; j < visible_blocks; ++j) {
                 block_table_acc[i][j] = static_cast<int32_t>(req->block_ids[j]); // Write i'th request's block ids into i'th row of block_table
             }
             // Update end point
@@ -486,26 +508,30 @@ void IterationLoop::build_batch(const IterationPlan& plan) {
     }
 }
 
-void IterationLoop::copy_batch() {
+void IterationLoop::copy_batch(bool decode, bool prefill) {
     auto& dst = batch_metadata_;
     const auto& src = host_metadata_;
     dst.num_decode_tokens = src.num_decode_tokens;
+    dst.num_decode_blocks = src.num_decode_blocks;
     dst.num_prefill_tokens = src.num_prefill_tokens;
     dst.num_prefill_seqs = src.num_prefill_seqs;
+    dst.num_prefill_blocks = src.num_prefill_blocks;
     dst.max_prefill_chunk_length = src.max_prefill_chunk_length;
 
     auto copy = [this](torch::Tensor to, const torch::Tensor& from, int64_t n) {
         to.slice(0, 0, n).copy_(from.slice(0, 0, n), /*non_blocking=*/device_.is_cuda());
     };
-    if (src.num_decode_tokens > 0) {
+    if (decode && src.num_decode_tokens > 0) {
         const auto n = src.num_decode_tokens;
         copy(dst.decode_input_ids, src.decode_input_ids, n);
         copy(dst.decode_positions, src.decode_positions, n);
         copy(dst.decode_slot_mapping, src.decode_slot_mapping, n);
         copy(dst.decode_seq_lens, src.decode_seq_lens, n);
-        copy(dst.decode_block_table, src.decode_block_table, n);
+        dst.decode_block_table.slice(0, 0, n).slice(1, 0, src.num_decode_blocks)
+            .copy_(src.decode_block_table.slice(0, 0, n).slice(1, 0, src.num_decode_blocks),
+                   /*non_blocking=*/device_.is_cuda());
     }
-    if (src.num_prefill_tokens > 0) {
+    if (prefill && src.num_prefill_tokens > 0) {
         const auto n = src.num_prefill_tokens;
         const auto seqs = src.num_prefill_seqs;
         copy(dst.prefill_input_ids, src.prefill_input_ids, n);
@@ -513,7 +539,9 @@ void IterationLoop::copy_batch() {
         copy(dst.prefill_slot_mapping, src.prefill_slot_mapping, n);
         copy(dst.prefill_cu_seqlens, src.prefill_cu_seqlens, seqs + 1);
         copy(dst.prefill_context_lens, src.prefill_context_lens, seqs);
-        copy(dst.prefill_block_table, src.prefill_block_table, seqs);
+        dst.prefill_block_table.slice(0, 0, seqs).slice(1, 0, src.num_prefill_blocks)
+            .copy_(src.prefill_block_table.slice(0, 0, seqs).slice(1, 0, src.num_prefill_blocks),
+                   /*non_blocking=*/device_.is_cuda());
     }
 }
 
@@ -673,27 +701,37 @@ int64_t IterationLoop::step(
         // DMA must finish reading the host staging buffer before CPU reuse.
         metadata_transfer_->copied.synchronize();
     }
-    build_batch(plan);
+    host_metadata_.reset();
+    batch_metadata_.reset();
+    max_decode_context_length_ = 0;
 
     try {
-        if (metadata_transfer_) {
+        auto transfer_phase = [&](bool decode) {
+            if (!metadata_transfer_) {
+                copy_batch(decode, !decode);
+                return;
+            }
             auto& transfer = *metadata_transfer_;
             {
                 c10::StreamGuard copy_guard(transfer.copy_stream);
-                // Covers previous consumers, including a different caller stream.
+                // The two phases use separate buffers. Both wait for consumers
+                // of the previous iteration before reusing device metadata.
                 transfer.consumed.block(transfer.copy_stream);
-                copy_batch();
+                copy_batch(decode, !decode);
                 transfer.copied.record(transfer.copy_stream);
             }
-            // GPU-side dependency only: the CPU can immediately enqueue forward.
             transfer.copied.block(*compute_stream);
-        } else {
-            copy_batch();
-        }
+        };
 
         torch::Tensor logits;
 
-        if (batch_metadata_.num_decode_tokens > 0) {
+        if (!config_.overlap_prefill_build && !plan.prefill_requests.empty()) {
+            build_prefill_batch(plan);
+        }
+
+        if (!plan.decode_requests.empty()) {
+            build_decode_batch(plan);
+            transfer_phase(/*decode=*/true);
             int64_t n = batch_metadata_.num_decode_tokens;
             auto decode_logits = forward_fn(
                 batch_metadata_.decode_input_ids.slice(0, 0, n),
@@ -704,7 +742,8 @@ int64_t IterationLoop::step(
                 // an undefined torch::Tensor().
                 batch_metadata_.decode_seq_lens.slice(0, 0, 0),
                 batch_metadata_.decode_seq_lens.slice(0, 0, n),
-                batch_metadata_.decode_block_table.slice(0, 0, n),
+                batch_metadata_.decode_block_table.slice(0, 0, n)
+                    .slice(1, 0, batch_metadata_.num_decode_blocks),
                 /*max_query_length=*/1,
                 /*is_decode=*/true
             );
@@ -712,7 +751,13 @@ int64_t IterationLoop::step(
             logits = decode_logits;
         }
 
-        if (batch_metadata_.num_prefill_tokens > 0) {
+        if (!plan.prefill_requests.empty()) {
+            // Decode has only been enqueued here. CPU prefill construction can
+            // run while the GPU executes those kernels on mixed iterations.
+            if (config_.overlap_prefill_build) {
+                build_prefill_batch(plan);
+            }
+            transfer_phase(/*decode=*/false);
             int64_t num_tokens = batch_metadata_.num_prefill_tokens;
             int64_t num_seqs = batch_metadata_.num_prefill_seqs;
 
@@ -722,7 +767,8 @@ int64_t IterationLoop::step(
                 batch_metadata_.prefill_slot_mapping.slice(0, 0, num_tokens),
                 batch_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
                 batch_metadata_.prefill_context_lens.slice(0, 0, num_seqs),
-                batch_metadata_.prefill_block_table.slice(0, 0, num_seqs),
+                batch_metadata_.prefill_block_table.slice(0, 0, num_seqs)
+                    .slice(1, 0, batch_metadata_.num_prefill_blocks),
                 batch_metadata_.max_prefill_chunk_length,
                 /*is_decode=*/false
             );
