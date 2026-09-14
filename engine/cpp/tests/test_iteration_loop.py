@@ -207,7 +207,12 @@ class IterationLoopTests(unittest.TestCase):
             [(False, 1), (False, 1), (False, 2),
              (True, 2), (True, 2), (True, 2), (True, 3)],
         )
-        self.assertEqual(len({ptr for _, _, ptr in seen}), 2)
+        # Decode and prefill use distinct metadata tensors, each backed by the
+        # two alternating device metadata buffers.
+        for decode in (False, True):
+            self.assertLessEqual(
+                len({ptr for is_decode, _, ptr in seen if is_decode == decode}), 2
+            )
 
     def test_chunked_prefill_metadata_and_logits(self):
         config = make_cpp_config(max_prefill_tokens_per_iter=2)
