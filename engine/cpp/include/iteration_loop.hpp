@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <functional>
+#include <array>
 
 namespace inference_engine {
 
@@ -161,7 +162,8 @@ public:
 private:
     SchedulerConfig config_;
     torch::Device device_;
-    BatchMetadata batch_metadata_;
+    std::array<BatchMetadata, 2> batch_metadata_;
+    int active_batch_metadata_ = 0;
     BatchMetadata host_metadata_;
     struct MetadataTransfer;
     std::unique_ptr<MetadataTransfer> metadata_transfer_;
@@ -184,6 +186,7 @@ private:
     void build_decode_batch(const IterationPlan& plan);
     void build_prefill_batch(const IterationPlan& plan);
     void copy_batch(bool decode, bool prefill);
+    BatchMetadata& device_metadata() { return batch_metadata_[active_batch_metadata_]; }
     torch::Tensor sample(torch::Tensor logits);
     void update_requests(const IterationPlan& plan, torch::Tensor next_tokens);
 

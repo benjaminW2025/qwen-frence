@@ -47,7 +47,9 @@ void validate_logits(
 struct IterationLoop::MetadataTransfer {
     c10::Stream copy_stream;
     c10::Event copied{c10::DeviceType::CUDA};
-    c10::Event consumed{c10::DeviceType::CUDA};
+    std::array<c10::Event, 2> consumed{
+        c10::Event(c10::DeviceType::CUDA), c10::Event(c10::DeviceType::CUDA)};
+    std::array<bool, 2> consumed_valid{false, false};
 
     explicit MetadataTransfer(torch::Device device)
         : copy_stream(c10::impl::VirtualGuardImpl(device.type())
@@ -58,7 +60,7 @@ struct IterationLoop::MetadataTransfer {
         // already waits for sampled tokens; this is principally a lifetime fence.
         try {
             copy_stream.synchronize();
-            consumed.synchronize();
+            for (auto& event : consumed) event.synchronize();
         } catch (...) {
             // Destructors must not throw during exception unwinding.
         }
@@ -148,13 +150,15 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
     int64_t max_blocks = (config_.max_context_length + config_.block_size - 1)
                          / config_.block_size;
 
-    batch_metadata_ = BatchMetadata::allocate(
-        config_.max_batch_size,
-        config_.max_prefill_tokens_per_iter,
-        config_.max_batch_size,  // max prefill seqs
-        max_blocks,
-        device_
-    );
+    for (auto& metadata : batch_metadata_) {
+        metadata = BatchMetadata::allocate(
+            config_.max_batch_size,
+            config_.max_prefill_tokens_per_iter,
+            config_.max_batch_size,  // max prefill seqs
+            max_blocks,
+            device_
+        );
+    }
 
     host_metadata_ = BatchMetadata::allocate(
         config_.max_batch_size,
@@ -167,8 +171,6 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
     if (device_.is_cuda()) {
         metadata_transfer_ = std::make_unique<MetadataTransfer>(device_);
         // GPU buffers may have been recycled from allocator work on this stream.
-        metadata_transfer_->consumed.record(
-            c10::impl::VirtualGuardImpl(device_.type()).getStream(device_));
     }
 
     // Initialize block allocator
@@ -509,7 +511,7 @@ void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
 }
 
 void IterationLoop::copy_batch(bool decode, bool prefill) {
-    auto& dst = batch_metadata_;
+    auto& dst = device_metadata();
     const auto& src = host_metadata_;
     dst.num_decode_tokens = src.num_decode_tokens;
     dst.num_decode_blocks = src.num_decode_blocks;
@@ -702,7 +704,11 @@ int64_t IterationLoop::step(
         metadata_transfer_->copied.synchronize();
     }
     host_metadata_.reset();
-    batch_metadata_.reset();
+    if (metadata_transfer_ && metadata_transfer_->consumed_valid[1 - active_batch_metadata_]) {
+        metadata_transfer_->consumed[1 - active_batch_metadata_].synchronize();
+    }
+    active_batch_metadata_ = 1 - active_batch_metadata_;
+    device_metadata().reset();
     max_decode_context_length_ = 0;
 
     try {
@@ -716,7 +722,9 @@ int64_t IterationLoop::step(
                 c10::StreamGuard copy_guard(transfer.copy_stream);
                 // The two phases use separate buffers. Both wait for consumers
                 // of the previous iteration before reusing device metadata.
-                transfer.consumed.block(transfer.copy_stream);
+                if (transfer.consumed_valid[active_batch_metadata_]) {
+                    transfer.consumed[active_batch_metadata_].block(transfer.copy_stream);
+                }
                 copy_batch(decode, !decode);
                 transfer.copied.record(transfer.copy_stream);
             }
@@ -732,18 +740,19 @@ int64_t IterationLoop::step(
         if (!plan.decode_requests.empty()) {
             build_decode_batch(plan);
             transfer_phase(/*decode=*/true);
-            int64_t n = batch_metadata_.num_decode_tokens;
+            auto& metadata = device_metadata();
+            int64_t n = metadata.num_decode_tokens;
             auto decode_logits = forward_fn(
-                batch_metadata_.decode_input_ids.slice(0, 0, n),
-                batch_metadata_.decode_positions.slice(0, 0, n),
-                batch_metadata_.decode_slot_mapping.slice(0, 0, n),
+                metadata.decode_input_ids.slice(0, 0, n),
+                metadata.decode_positions.slice(0, 0, n),
+                metadata.decode_slot_mapping.slice(0, 0, n),
                 // Decode has no packed-query boundaries. This zero-length view is a
                 // real device tensor, which is cleaner to pass through pybind than
                 // an undefined torch::Tensor().
-                batch_metadata_.decode_seq_lens.slice(0, 0, 0),
-                batch_metadata_.decode_seq_lens.slice(0, 0, n),
-                batch_metadata_.decode_block_table.slice(0, 0, n)
-                    .slice(1, 0, batch_metadata_.num_decode_blocks),
+                metadata.decode_seq_lens.slice(0, 0, 0),
+                metadata.decode_seq_lens.slice(0, 0, n),
+                metadata.decode_block_table.slice(0, 0, n)
+                    .slice(1, 0, metadata.num_decode_blocks),
                 /*max_query_length=*/1,
                 /*is_decode=*/true
             );
@@ -758,18 +767,19 @@ int64_t IterationLoop::step(
                 build_prefill_batch(plan);
             }
             transfer_phase(/*decode=*/false);
-            int64_t num_tokens = batch_metadata_.num_prefill_tokens;
-            int64_t num_seqs = batch_metadata_.num_prefill_seqs;
+            auto& metadata = device_metadata();
+            int64_t num_tokens = metadata.num_prefill_tokens;
+            int64_t num_seqs = metadata.num_prefill_seqs;
 
             auto prefill_logits = forward_fn(
-                batch_metadata_.prefill_input_ids.slice(0, 0, num_tokens),
-                batch_metadata_.prefill_positions.slice(0, 0, num_tokens),
-                batch_metadata_.prefill_slot_mapping.slice(0, 0, num_tokens),
-                batch_metadata_.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
-                batch_metadata_.prefill_context_lens.slice(0, 0, num_seqs),
-                batch_metadata_.prefill_block_table.slice(0, 0, num_seqs)
-                    .slice(1, 0, batch_metadata_.num_prefill_blocks),
-                batch_metadata_.max_prefill_chunk_length,
+                metadata.prefill_input_ids.slice(0, 0, num_tokens),
+                metadata.prefill_positions.slice(0, 0, num_tokens),
+                metadata.prefill_slot_mapping.slice(0, 0, num_tokens),
+                metadata.prefill_cu_seqlens.slice(0, 0, num_seqs + 1),
+                metadata.prefill_context_lens.slice(0, 0, num_seqs),
+                metadata.prefill_block_table.slice(0, 0, num_seqs)
+                    .slice(1, 0, metadata.num_prefill_blocks),
+                metadata.max_prefill_chunk_length,
                 /*is_decode=*/false
             );
             validate_logits(prefill_logits, num_seqs, "prefill");
@@ -789,7 +799,8 @@ int64_t IterationLoop::step(
         update_requests(plan, next_tokens);
 
         if (metadata_transfer_) {
-            metadata_transfer_->consumed.record(*compute_stream);
+            metadata_transfer_->consumed[active_batch_metadata_].record(*compute_stream);
+            metadata_transfer_->consumed_valid[active_batch_metadata_] = true;
         }
         return completed_outputs_.size() - prev_completed;
     } catch (...) {
