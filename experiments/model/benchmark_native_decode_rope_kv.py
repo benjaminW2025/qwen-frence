@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Real-Qwen eager decode A/B for native RoPE plus paged KV-write fusion.
+"""Real-Qwen eager decode A/B for native K RoPE plus paged KV-write fusion.
 
 The two variants share weights, input tensors, resident KV, and dispatch. Model
-loading, KV staging, and scheduler work are outside the paired timing.
+loading, KV staging, and scheduler work are outside the paired timing. Both
+variants use the production Q RoPE kernel; only K rotation and KV writes differ.
 """
 from __future__ import annotations
 
@@ -83,6 +84,7 @@ def main():
         "preset": args.preset, "trials": args.trials, "samples": args.samples,
         "warmups": args.warmups, "device": args.device, "model": args.model,
         "cases": cases, "packed_qkv": True, "packed_gate_up": True,
+        "query_rope": "production_kernel_in_both_variants",
         "sources_sha256": {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                            for p in sources},
     }
