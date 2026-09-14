@@ -94,7 +94,8 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          block_table, slot_mapping, decode_attention_policy="production",
                          max_decode_context_length=None,
                          enable_regime_fusions=False,
-                         enable_native_decode_rope_kv=False):
+                         enable_native_decode_rope_kv=False,
+                         layer_observer=None):
     """
     Mirrors paged_forward's decode branch, with RoPE from a
     positions tensor and the KV write as a tensor scatter.
@@ -135,6 +136,11 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             k_flat.index_copy_(0, slot_mapping, k[:, :, 0, :].contiguous())
             v_flat.index_copy_(0, slot_mapping, v[:, :, 0, :].contiguous())
 
+        if layer_observer is not None:
+            layer_observer(i, "rope_kv", q,
+                           cache.k_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping),
+                           cache.v_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping))
+
         out = paged_decode_attention_dispatch(
             q[:, :, 0, :], cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
             policy=effective_decode_attention_policy,
@@ -155,6 +161,8 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             )
         )
         x = residual + h
+        if layer_observer is not None:
+            layer_observer(i, "layer_output", x)
 
     x = apply_rms_norm(x, model.norm, cfg)
     return model.lm_head(x[:, -1:, :])
