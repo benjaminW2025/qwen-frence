@@ -375,6 +375,8 @@ class PinnedMetadataCudaTests(unittest.TestCase):
                 make_cpp_config(max_prefill_tokens_per_iter=3), device
             )
             trace = []
+            # Device metadata is double-buffered: each phase may alternate
+            # between two stable address sets across iterations.
             pointers = {}
             streams = [torch.cuda.Stream(device=device) for _ in range(2)] if device.type == "cuda" else []
 
@@ -382,9 +384,9 @@ class PinnedMetadataCudaTests(unittest.TestCase):
                 tensors = args[:6]
                 decode = args[-1]
                 ptrs = tuple(t.data_ptr() for t in tensors if t.numel())
-                if decode in pointers:
-                    self.assertEqual(ptrs, pointers[decode])
-                pointers[decode] = ptrs
+                seen = pointers.setdefault(decode, set())
+                seen.add(ptrs)
+                self.assertLessEqual(len(seen), 2)
                 if streams:
                     self.assertEqual(torch.cuda.current_stream(device), streams[iteration % 2])
                     # Delay reads to exercise event ordering without an incidental
