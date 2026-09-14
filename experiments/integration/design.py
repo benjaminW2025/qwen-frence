@@ -19,10 +19,30 @@ VARIANTS = {
     "cpp-selected": ("cpp", "selected"),
 }
 
+# `select_action` falls back to production attention outside the sweep's observed
+# batch/page ranges, so a case whose context leaves those ranges measures the
+# production kernel in both arms and reports a null effect that looks like a
+# finding. The current decode sweep bounds pages at 1024, i.e. 16384 tokens of
+# context including generated output; `longctx_plan` asserts against this.
+POLICY_MAX_CONTEXT = 16384
+
+# The frozen tree splits on max_pages <= 80. Below that it selects K=8/stages=2,
+# above it K=22/stages=3, so 1280 tokens of context is a policy decision boundary
+# independent of any kernel crossover. The tree does not split on batch at all,
+# so every batch above the threshold receives the same action.
+POLICY_SPLIT_CONTEXT = 80 * 16
+
+# Bytes of K/V pool per reserved page, matching the runner's own sizing:
+# page16 x 2 KV heads x dim128 x 2 bytes x 2 tensors x 28 layers. The runner
+# checks the real figure against physically free memory before allocating.
+POOL_BYTES_PER_PAGE = 16 * 2 * 128 * 2 * 28 * 2
+
 
 def make_plan(preset="full"):
-    if preset not in ("smoke", "full"):
+    if preset not in ("smoke", "full", "longctx"):
         raise ValueError("unknown preset")
+    if preset == "longctx":
+        return longctx_plan()
     shapes = [(2, 257), (4, 513)] if preset == "smoke" else [
         (b, length) for b in (1, 8, 32, 128) for length in (512, 8192)
     ]
@@ -53,6 +73,75 @@ def make_plan(preset="full"):
                       "arrivals": [0 if kind == "ragged" else (i % 4) * 2 for i in range(batch)],
                       "outputs": [output + i % 3 for i in range(batch)],
                       "max_running": batch // 2, "prefill_budget": 128 if preset == "smoke" else 2048})
+    return cases
+
+
+def longctx_plan(output=64, budget=2048):
+    """Uniform context sweep at low batch, spanning the policy's page threshold.
+
+    Neither existing preset places a cohort between 1280 and 8192 tokens, so the
+    tree's long-context action has never been exercised end to end: every smoke
+    case tops out at 49 pages and takes the K=8/stages=2 branch. Decode attention
+    cost grows with context while the rest of the layer does not, so the same
+    kernel change is expected to move from a regression to a gain somewhere in
+    this range. Lengths bracket the 80-page split from both sides, then extend to
+    the largest context the frozen policy still covers.
+    """
+    cases = []
+    # 1216 and 1280 straddle the split at a fixed 64 outputs: contexts peak at
+    # 1280 (80 pages, left branch) and 1344 (84 pages, right branch), so the pair
+    # isolates the change of action from the change of context length.
+    for batch, lengths in ((4, (512, 1024, 1216, 1280, 2048, 4096, 8192, 16256)),
+                           # A single request is admitted in one iteration and never
+                           # produces a mixed step, so its decode-only timings carry
+                           # the least prefill contamination.
+                           (1, (2048, 16256))):
+        for length in lengths:
+            cases.append({"id": f"uniform-b{batch}-l{length}", "kind": "uniform",
+                          "lengths": [length] * batch, "arrivals": [0] * batch,
+                          "outputs": [output] * batch, "max_running": batch,
+                          "prefill_budget": budget})
+    # Batch is the second axis of the same crossover, and it moves it the opposite
+    # way from intuition. Split-K's *ratio* over production shrinks as batch grows
+    # (19.7x at B=1 down to ~1.65x at B=256), but its absolute per-call saving grows
+    # with the extra work, and the host overhead it must repay is fixed. So the
+    # break-even context falls as batch rises: at 512 tokens the microbenchmark
+    # saving crosses the measured overhead between B=64 and B=96. Hold context —
+    # and therefore the selected action — fixed and sweep across that boundary.
+    for batch in (32, 64, 96, 128):
+        length = 512
+        # Same device as the full preset's saturation cases: 512-token prompts admit
+        # 4 per iteration at this budget, so without extra outputs the early
+        # arrivals retire before the declared batch ever forms. The runner asserts
+        # that a "saturated" case reaches max_running, so a batch that silently
+        # failed to form aborts instead of being timed at the wrong batch.
+        limit = math.ceil(batch * length / budget) + output
+        cases.append({"id": f"saturated-b{batch}-l{length}", "kind": "saturated",
+                      "lengths": [length] * batch, "arrivals": [0] * batch,
+                      "outputs": [limit] * batch, "max_running": batch,
+                      "prefill_budget": budget})
+    # One interior point, so the two axes can be checked for composition rather
+    # than assumed independent from the two edges alone.
+    batch, length = 32, 4096
+    limit = math.ceil(batch * length / budget) + output
+    cases.append({"id": f"saturated-b{batch}-l{length}", "kind": "saturated",
+                  "lengths": [length] * batch, "arrivals": [0] * batch,
+                  "outputs": [limit] * batch, "max_running": batch,
+                  "prefill_budget": budget})
+    # Split-K partitions each sequence's own pages, so uneven lengths give uneven
+    # partitions; check the long-context action under that skew too.
+    batch, length = 4, 16256
+    for kind in ("ragged", "staggered"):
+        cases.append({"id": f"{kind}-b{batch}-l{length}", "kind": kind,
+                      "lengths": [max(1, length // (1 + i % 4)) for i in range(batch)],
+                      "arrivals": [0 if kind == "ragged" else (i % 4) * 2 for i in range(batch)],
+                      "outputs": [output + i % 3 for i in range(batch)],
+                      "max_running": batch // 2, "prefill_budget": budget})
+    for case in cases:
+        context = max(n + out for n, out in zip(case["lengths"], case["outputs"]))
+        if context > POLICY_MAX_CONTEXT:
+            raise ValueError(f"{case['id']}: peak context {context} exceeds the frozen "
+                             f"policy's {POLICY_MAX_CONTEXT}-token page range")
     return cases
 
 

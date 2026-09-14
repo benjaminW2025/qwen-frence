@@ -22,15 +22,22 @@ def default_buckets(max_running):
 
 
 class BucketedGraphDecoder:
-    def __init__(self, model, cache, max_running, max_blocks, device, dtype, buckets=None):
+    def __init__(self, model, cache, max_running, max_blocks, device, dtype, buckets=None,
+                 decode_attention_policy="production", max_decode_context_length=None):
         self.max_blocks = max_blocks
         self.buckets = default_buckets(max_running) if buckets is None else sorted(set(buckets))
+        self.decode_attention_policy = decode_attention_policy
 
-        # Capture one graph per bucket, all against the SAME shared cache pool.
+        # Capture one graph per bucket, all against the SAME shared cache pool. Every
+        # bucket bakes the same attention action: the policy is resolved from the
+        # context bound, which is a property of the shared block-table width rather
+        # than of the batch, so it does not vary across buckets.
         self.decoders = {}
         for b in self.buckets:
             dec = CUDAGraphDecoder(model, cache, batch_size=b, max_blocks=max_blocks,
-                                   device=device, dtype=dtype)
+                                   device=device, dtype=dtype,
+                                   decode_attention_policy=decode_attention_policy,
+                                   max_decode_context_length=max_decode_context_length)
             dec.capture()
             self.decoders[b] = dec
 

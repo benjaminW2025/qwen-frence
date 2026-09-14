@@ -29,13 +29,23 @@ from naive_forward import (
 
 
 class CUDAGraphDecoder:
-    def __init__(self, model, cache, batch_size, max_blocks, device, dtype):
+    def __init__(self, model, cache, batch_size, max_blocks, device, dtype,
+                 decode_attention_policy="production", max_decode_context_length=None):
         self.model = model
         self.cache = cache
         self.B = batch_size
         self.max_blocks = max_blocks          # fixed block-table width baked into the graph
         self.device = device
         self.dtype = dtype
+        # A graph cannot re-decide anything on replay, so the attention policy is
+        # resolved once here and its action is recorded into the captured kernels.
+        # The context bound defaults to everything the fixed block table can address:
+        # that is the longest step this graph will ever replay, and a policy resolved
+        # for it stays valid for every shorter one.
+        self.decode_attention_policy = decode_attention_policy
+        if max_decode_context_length is None and decode_attention_policy != "production":
+            max_decode_context_length = max_blocks * cache.block_size
+        self.max_decode_context_length = max_decode_context_length
 
         # Static input buffers
         self.s_input_ids    = torch.zeros(batch_size, 1, dtype=torch.long,  device=device)
@@ -53,6 +63,8 @@ class CUDAGraphDecoder:
             self.model, self.cache,
             self.s_input_ids, self.s_positions, self.s_seq_lens,
             self.s_block_table, self.s_slot_mapping,
+            decode_attention_policy=self.decode_attention_policy,
+            max_decode_context_length=self.max_decode_context_length,
         )
 
     def capture(self, warmup=3):

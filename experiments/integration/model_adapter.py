@@ -1,5 +1,7 @@
 """Real Qwen forward from scheduler-owned GPU metadata; no second KV allocator."""
 from __future__ import annotations
+from pathlib import Path
+import sys
 from types import SimpleNamespace
 import torch
 
@@ -78,4 +80,96 @@ class ModelAdapter:
         logits = model.lm_head(x)
         if self.observer is not None:
             self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+        return logits
+
+
+class GraphModelAdapter(ModelAdapter):
+    """Run C++-scheduled decode through bucketed full-model CUDA graphs.
+
+    Prefill keeps the existing eager adapter. The C++ loop owns and transfers
+    metadata; the graph decoder copies the active views into fixed capture inputs.
+    Capture happens at construction, before requests are submitted or timed.
+    """
+
+    def __init__(self, model, pool, loop, *, max_running, max_context_length,
+                 decode_attention_policy="production"):
+        super().__init__(model, pool, loop)
+        if decode_attention_policy not in ("production", "splitk"):
+            raise ValueError("graph decode policy must be 'production' or 'splitk'")
+        graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
+        if str(graph_dir) not in sys.path:
+            sys.path.insert(0, str(graph_dir))
+        from bucketed_graph_decoder import BucketedGraphDecoder
+
+        self.decode_attention_policy = decode_attention_policy
+        self.max_context_length = max_context_length
+        self.max_blocks = (max_context_length + pool.block_size - 1) // pool.block_size
+        if self.max_blocks < 1:
+            raise ValueError("graph decode requires a positive context bound")
+        from paged_decode_attention import (resolve_decode_attention_policy,
+                                            select_splitk_config)
+        effective = resolve_decode_attention_policy(decode_attention_policy,
+                                                    max_context_length)
+        if effective == "splitk":
+            config = select_splitk_config(max_context_length, page_size=pool.block_size)
+            self.action = f"H1-K{config['split_k']}-S{config['num_stages']}"
+        else:
+            self.action = "production"
+        self.graph_decoder = BucketedGraphDecoder(
+            model, pool, max_running, self.max_blocks,
+            pool.k_pool[0].device, pool.k_pool[0].dtype,
+            decode_attention_policy=decode_attention_policy,
+            max_decode_context_length=max_context_length,
+        )
+
+    @torch.no_grad()
+    def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+        if not decode:
+            return super().__call__(ids, positions, slots, cu, context, table,
+                                    max_query, decode)
+        if ids.ndim != 1 or max_query != 1 or cu.numel() != 0:
+            raise ValueError("graph decode requires one token per sequence")
+        if table.shape[1] > self.max_blocks:
+            raise ValueError("decode block table exceeds captured width")
+
+        self.decisions[self.action] = self.decisions.get(self.action, 0) + 1
+        self.step_calls.append((True, ids.numel(), context.numel(), max_query))
+        logits = self.graph_decoder.decode(
+            ids.view(-1, 1), positions, context, table, slots
+        ).squeeze(1)
+        if self.observer is not None:
+            self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+        return logits
+
+
+class PiecewiseGraphModelAdapter(GraphModelAdapter):
+    """Captured decode plus bucketed prefill pieces around eager attention."""
+
+    def __init__(self, model, pool, loop, *, max_running, max_context_length,
+                 decode_attention_policy="production", max_capture_tokens=2048,
+                 max_prefill_shapes=8, prefill_buckets=None):
+        super().__init__(model, pool, loop, max_running=max_running,
+                         max_context_length=max_context_length,
+                         decode_attention_policy=decode_attention_policy)
+        graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
+        if str(graph_dir) not in sys.path:
+            sys.path.insert(0, str(graph_dir))
+        from piecewise_prefill import PiecewisePrefill
+        self.piecewise_prefill = PiecewisePrefill(
+            model, pool, max_capture_tokens=max_capture_tokens,
+            max_shapes=max_prefill_shapes, token_buckets=prefill_buckets)
+
+    @torch.no_grad()
+    def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+        if decode:
+            return super().__call__(ids, positions, slots, cu, context, table,
+                                    max_query, decode)
+        logits = self.piecewise_prefill.forward(
+            ids, positions, slots, cu, context, table, max_query)
+        if logits is None:
+            return ModelAdapter.__call__(self, ids, positions, slots, cu, context,
+                                         table, max_query, False)
+        self.step_calls.append((False, ids.numel(), context.numel(), max_query))
+        if self.observer is not None:
+            self.observer((ids, positions, slots, cu, context, table, max_query, False), logits)
         return logits
