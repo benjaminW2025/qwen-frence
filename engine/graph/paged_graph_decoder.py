@@ -93,7 +93,8 @@ class CUDAGraphDecoder:
 def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          block_table, slot_mapping, decode_attention_policy="production",
                          max_decode_context_length=None,
-                         enable_regime_fusions=False):
+                         enable_regime_fusions=False,
+                         enable_native_decode_rope_kv=False):
     """
     Mirrors paged_forward's decode branch, with RoPE from a
     positions tensor and the KV write as a tensor scatter.
@@ -118,17 +119,21 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
         q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)   # (B, n_heads, 1, d)
         k = k.view(B, S, n_kv, d_head).transpose(1, 2)          # (B, n_kv,    1, d)
         v = v.view(B, S, n_kv, d_head).transpose(1, 2)
-        # Native decode is (B, H, 1, D). The packed RoPE/KV fusion wins when its
-        # inputs are already (1, H, T, D), as in mixed/resumed prefill, but adapting
-        # decode required three materializing layout copies per layer. At short
-        # contexts those copies outweighed the fused work by roughly 10%, so decode
-        # deliberately retains its native-layout kernels.
-        q = apply_rope(q, cos, sin, cfg, rope_positions)
-        k = apply_rope(k, cos, sin, cfg, rope_positions)
-        k_flat = cache.k_pool[i].view(-1, n_kv, d_head)
-        v_flat = cache.v_pool[i].view(-1, n_kv, d_head)
-        k_flat.index_copy_(0, slot_mapping, k[:, :, 0, :].contiguous())
-        v_flat.index_copy_(0, slot_mapping, v[:, :, 0, :].contiguous())
+        if enable_native_decode_rope_kv:
+            from kernel_dispatch import native_decode_rope_kv_write
+            q = native_decode_rope_kv_write(
+                q, k, v, positions, slot_mapping, cache.k_pool[i], cache.v_pool[i],
+                base=cfg.rope_theta,
+            )
+        else:
+            # Adapting native decode to the packed-layout fusion materialized
+            # three copies per layer and regressed. Keep that path unchanged.
+            q = apply_rope(q, cos, sin, cfg, rope_positions)
+            k = apply_rope(k, cos, sin, cfg, rope_positions)
+            k_flat = cache.k_pool[i].view(-1, n_kv, d_head)
+            v_flat = cache.v_pool[i].view(-1, n_kv, d_head)
+            k_flat.index_copy_(0, slot_mapping, k[:, :, 0, :].contiguous())
+            v_flat.index_copy_(0, slot_mapping, v[:, :, 0, :].contiguous())
 
         out = paged_decode_attention_dispatch(
             q[:, :, 0, :], cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
