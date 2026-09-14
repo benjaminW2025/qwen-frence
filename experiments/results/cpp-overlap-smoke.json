@@ -1,0 +1,23 @@
+{
+  "scope": "synthetic mixed-iteration C++ scheduling, not full-model throughput",
+  "configuration": {
+    "device": "cuda",
+    "trials": 1,
+    "long_requests": 2,
+    "prompt_length": 512,
+    "prefill_chunk": 128,
+    "matrix_size": 1024,
+    "decode_matmuls": 2,
+    "output": "experiments/results/cpp-overlap-smoke.json"
+  },
+  "trials": [
+    {
+      "trial": 0,
+      "baseline_mixed_ms": 0.22990629076957703,
+      "overlap_mixed_ms": 0.21551735699176788,
+      "mixed_steps": 8,
+      "speedup": 1.066764616913703
+    }
+  ],
+  "geomean_speedup": 1.066764616913703
+}

@@ -1,0 +1,51 @@
+{
+  "scope": "synthetic mixed-iteration C++ scheduling, not full-model throughput",
+  "configuration": {
+    "device": "cuda",
+    "trials": 5,
+    "long_requests": 7,
+    "prompt_length": 4096,
+    "prefill_chunk": 512,
+    "matrix_size": 2048,
+    "decode_matmuls": 8,
+    "output": "experiments/results/cpp-overlap-full.json"
+  },
+  "trials": [
+    {
+      "trial": 0,
+      "baseline_mixed_ms": 0.30989106744527817,
+      "overlap_mixed_ms": 0.3047604113817215,
+      "mixed_steps": 56,
+      "speedup": 1.0168350477028671
+    },
+    {
+      "trial": 1,
+      "baseline_mixed_ms": 0.31230971217155457,
+      "overlap_mixed_ms": 0.306151807308197,
+      "mixed_steps": 56,
+      "speedup": 1.020113893553333
+    },
+    {
+      "trial": 2,
+      "baseline_mixed_ms": 0.31206943094730377,
+      "overlap_mixed_ms": 0.3060363233089447,
+      "mixed_steps": 56,
+      "speedup": 1.0197136979464645
+    },
+    {
+      "trial": 3,
+      "baseline_mixed_ms": 0.3115711733698845,
+      "overlap_mixed_ms": 0.3043990582227707,
+      "mixed_steps": 56,
+      "speedup": 1.0235615549830808
+    },
+    {
+      "trial": 4,
+      "baseline_mixed_ms": 0.3113960847258568,
+      "overlap_mixed_ms": 0.3049904480576515,
+      "mixed_steps": 56,
+      "speedup": 1.0210027451974313
+    }
+  ],
+  "geomean_speedup": 1.0202430842190415
+}
