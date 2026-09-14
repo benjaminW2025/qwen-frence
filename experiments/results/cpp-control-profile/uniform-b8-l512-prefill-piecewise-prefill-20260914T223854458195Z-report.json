@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-14T22:38:54.498423+00:00",
+  "case": {
+    "id": "uniform-b8-l512",
+    "kind": "uniform",
+    "lengths": [
+      512,
+      512,
+      512,
+      512,
+      512,
+      512,
+      512,
+      512
+    ],
+    "arrivals": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "outputs": [
+      64,
+      64,
+      64,
+      64,
+      64,
+      64,
+      64,
+      64
+    ],
+    "max_running": 8,
+    "prefill_budget": 2048
+  },
+  "kind": "prefill",
+  "adapter": "piecewise-prefill",
+  "target_step_index": 0,
+  "target_step_calls": [
+    [
+      false,
+      2048,
+      4,
+      512
+    ]
+  ],
+  "unprofiled_target_wall_ms": [
+    13.357114046812057,
+    13.353463262319565,
+    13.646537438035011,
+    13.636279851198196,
+    13.760842382907867
+  ],
+  "unprofiled_median_wall_ms": 13.636279851198196,
+  "profiled_target_wall_ms": 45.64840905368328,
+  "cpu_ranges": [
+    {
+      "name": "experiment/target_step",
+      "calls": 1,
+      "cpu_total_us": 14569.489,
+      "cpu_self_us": 97.76299999999901
+    },
+    {
+      "name": "cpp/step",
+      "calls": 1,
+      "cpu_total_us": 14471.726,
+      "cpu_self_us": 20.439000000002125
+    },
+    {
+      "name": "cpp/update_requests",
+      "calls": 1,
+      "cpu_total_us": 9577.768,
+      "cpu_self_us": 1.4510000000009313
+    },
+    {
+      "name": "cpp/sample_device_to_host",
+      "calls": 1,
+      "cpu_total_us": 9576.317,
+      "cpu_self_us": 2.1529999999984284
+    },
+    {
+      "name": "cpp/callback_prefill",
+      "calls": 1,
+      "cpu_total_us": 4074.0919999999996,
+      "cpu_self_us": 51.64899999999943
+    },
+    {
+      "name": "python/model_callback_prefill",
+      "calls": 1,
+      "cpu_total_us": 4014.316,
+      "cpu_self_us": 2330.4830000000034
+    },
+    {
+      "name": "cpp/transfer_prefill",
+      "calls": 1,
+      "cpu_total_us": 707.57,
+      "cpu_self_us": 6.14200000000028
+    },
+    {
+      "name": "cpp/copy_batch_enqueue",
+      "calls": 1,
+      "cpu_total_us": 697.419,
+      "cpu_self_us": 16.15399999999954
+    },
+    {
+      "name": "cpp/build_prefill_batch",
+      "calls": 1,
+      "cpu_total_us": 59.200000000000045,
+      "cpu_self_us": 25.429999999999836
+    },
+    {
+      "name": "cpp/sample_argmax",
+      "calls": 1,
+      "cpu_total_us": 28.19800000000032,
+      "cpu_self_us": 2.168999999999869
+    },
+    {
+      "name": "cpp/schedule",
+      "calls": 1,
+      "cpu_total_us": 2.826999999999998,
+      "cpu_self_us": 2.826999999999998
+    },
+    {
+      "name": "cpp/wait_h2d_source_reuse",
+      "calls": 1,
+      "cpu_total_us": 0.08300000000008367,
+      "cpu_self_us": 0.08300000000008367
+    },
+    {
+      "name": "experiment/target_step",
+      "calls": 2,
+      "cpu_total_us": 0,
+      "cpu_self_us": 0
+    },
+    {
+      "name": "python/model_callback_prefill",
+      "calls": 1,
+      "cpu_total_us": 0,
+      "cpu_self_us": 0
+    }
+  ],
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "b9b7109df854ae49696d43916d8f6f818d68e0e1",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "model_load_seconds": 16.33143847808242,
+  "hub_transfer": "standard_fallback_missing_hf_transfer",
+  "trace": "/workspace/qwen-frence/experiments/results/cpp-control-profile/uniform-b8-l512-prefill-piecewise-prefill-20260914T223854458195Z-trace.json",
+  "operators": "/workspace/qwen-frence/experiments/results/cpp-control-profile/uniform-b8-l512-prefill-piecewise-prefill-20260914T223854458195Z-operators.txt"
+}

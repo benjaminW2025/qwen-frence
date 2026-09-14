@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-14T22:37:30.377474+00:00",
+  "case": {
+    "id": "uniform-b4-l513",
+    "kind": "uniform",
+    "lengths": [
+      513,
+      513,
+      513,
+      513
+    ],
+    "arrivals": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "outputs": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "max_running": 4,
+    "prefill_budget": 128
+  },
+  "kind": "decode",
+  "adapter": "piecewise-prefill",
+  "target_step_index": 17,
+  "target_step_calls": [
+    [
+      true,
+      1,
+      1,
+      1
+    ]
+  ],
+  "unprofiled_target_wall_ms": [
+    3.7613995373249054,
+    3.7548113614320755,
+    3.7858840078115463,
+    3.758113831281662,
+    3.7650689482688904
+  ],
+  "unprofiled_median_wall_ms": 3.7613995373249054,
+  "profiled_target_wall_ms": 29.943468049168587,
+  "cpu_ranges": [
+    {
+      "name": "experiment/target_step",
+      "calls": 1,
+      "cpu_total_us": 6774.095,
+      "cpu_self_us": 61.613000000000284
+    },
+    {
+      "name": "cpp/step",
+      "calls": 1,
+      "cpu_total_us": 6712.482,
+      "cpu_self_us": 22.438999999999396
+    },
+    {
+      "name": "cpp/update_requests",
+      "calls": 1,
+      "cpu_total_us": 3500.0380000000005,
+      "cpu_self_us": 1.981000000000222
+    },
+    {
+      "name": "cpp/sample_device_to_host",
+      "calls": 1,
+      "cpu_total_us": 3498.0570000000002,
+      "cpu_self_us": 4.2630000000008295
+    },
+    {
+      "name": "cpp/wait_h2d_source_reuse",
+      "calls": 1,
+      "cpu_total_us": 1400.542,
+      "cpu_self_us": 4.63599999999974
+    },
+    {
+      "name": "cpp/callback_decode",
+      "calls": 1,
+      "cpu_total_us": 1102.864,
+      "cpu_self_us": 47.03600000000051
+    },
+    {
+      "name": "python/model_callback_decode",
+      "calls": 1,
+      "cpu_total_us": 1047.455,
+      "cpu_self_us": 205.7170000000001
+    },
+    {
+      "name": "cpp/build_decode_batch",
+      "calls": 1,
+      "cpu_total_us": 452.9380000000001,
+      "cpu_self_us": 113.36800000000017
+    },
+    {
+      "name": "cpp/transfer_decode",
+      "calls": 1,
+      "cpu_total_us": 181.8380000000002,
+      "cpu_self_us": 7.66399999999976
+    },
+    {
+      "name": "cpp/copy_batch_enqueue",
+      "calls": 1,
+      "cpu_total_us": 167.32499999999982,
+      "cpu_self_us": 11.931999999999789
+    },
+    {
+      "name": "cpp/sample_argmax",
+      "calls": 1,
+      "cpu_total_us": 46.94200000000001,
+      "cpu_self_us": 1.2059999999996762
+    },
+    {
+      "name": "cpp/wait_device_metadata_reuse",
+      "calls": 1,
+      "cpu_total_us": 2.6009999999998854,
+      "cpu_self_us": 0.63799999999992
+    },
+    {
+      "name": "cpp/schedule",
+      "calls": 1,
+      "cpu_total_us": 0.49399999999997135,
+      "cpu_self_us": 0.49399999999997135
+    },
+    {
+      "name": "experiment/target_step",
+      "calls": 2,
+      "cpu_total_us": 0,
+      "cpu_self_us": 0
+    },
+    {
+      "name": "python/model_callback_decode",
+      "calls": 1,
+      "cpu_total_us": 0,
+      "cpu_self_us": 0
+    }
+  ],
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "b9b7109df854ae49696d43916d8f6f818d68e0e1",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "model_load_seconds": 24.57070974819362,
+  "hub_transfer": "standard_fallback_missing_hf_transfer",
+  "trace": "/workspace/qwen-frence/experiments/results/cpp-control-profile/uniform-b4-l513-decode-piecewise-prefill-20260914T223730352167Z-trace.json",
+  "operators": "/workspace/qwen-frence/experiments/results/cpp-control-profile/uniform-b4-l513-decode-piecewise-prefill-20260914T223730352167Z-operators.txt"
+}
