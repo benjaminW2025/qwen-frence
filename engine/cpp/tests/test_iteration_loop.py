@@ -320,15 +320,16 @@ class IterationLoopTests(unittest.TestCase):
 
     def test_reused_metadata_clears_padding_and_keeps_storage(self):
         loop = cpp.IterationLoop(make_cpp_config(max_batch_size=1), torch.device("cpu"))
+        # Two device metadata buffers alternate between iterations.
         pointers = {}
         widths = []
 
         def forward(*args):
             ids, positions, slots, cu, context, blocks, _, decode = args
             ptrs = tuple(t.data_ptr() for t in (ids, positions, slots, context, blocks))
-            if decode in pointers:
-                self.assertEqual(ptrs, pointers[decode])
-            pointers[decode] = ptrs
+            seen = pointers.setdefault(decode, set())
+            seen.add(ptrs)
+            self.assertLessEqual(len(seen), 2)
             # Admission reserves blocks for the whole prompt + output budget.
             width = widths[-1]
             self.assertEqual(torch.count_nonzero(blocks[:, width:]).item(), 0)
