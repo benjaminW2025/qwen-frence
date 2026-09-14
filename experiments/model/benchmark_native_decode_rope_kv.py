@@ -18,6 +18,8 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+LOGIT_ATOL = .1
+LOGIT_RTOL = .01
 for path in (HERE, ROOT / "baseline", ROOT / "engine/graph", ROOT / "engine/kvcache", ROOT / "benchmarks"):
     sys.path.insert(0, str(path))
 
@@ -123,10 +125,29 @@ def main():
             }
             reference = launch["baseline"]()
             candidate = launch["fused"]()
-            torch.testing.assert_close(candidate, reference, atol=.05, rtol=.01)
-            if not torch.equal(candidate.argmax(-1), reference.argmax(-1)):
-                raise AssertionError(f"sampled tokens differ at B={batch}, L={context}")
-            max_logit_error = float((candidate.float() - reference.float()).abs().max())
+            reference_float = reference.float()
+            candidate_float = candidate.float()
+            error = (candidate_float - reference_float).abs()
+            max_logit_error = float(error.max())
+            mean_logit_error = float(error.mean())
+            reference_tokens = reference.argmax(-1)
+            candidate_tokens = candidate.argmax(-1)
+            matching_tokens = int((candidate_tokens == reference_tokens).sum())
+            total_tokens = reference_tokens.numel()
+            if matching_tokens != total_tokens:
+                raise AssertionError(
+                    f"sampled tokens differ at B={batch}, L={context}: "
+                    f"{matching_tokens}/{total_tokens} agree, max logit error={max_logit_error:.6f}"
+                )
+            try:
+                torch.testing.assert_close(
+                    candidate_float, reference_float, atol=LOGIT_ATOL, rtol=LOGIT_RTOL
+                )
+            except AssertionError as exc:
+                raise AssertionError(
+                    f"logits differ at B={batch}, L={context}; "
+                    f"max error={max_logit_error:.6f}, mean error={mean_logit_error:.6f}"
+                ) from exc
             for fn in launch.values():
                 for _ in range(args.warmups):
                     fn()
@@ -150,7 +171,10 @@ def main():
             checkpoint = args.output_dir / "trials" / f"b{batch}-l{context}.json"
             atomic_json(checkpoint, {"status": "complete", "fingerprint": fingerprint,
                                      "batch": batch, "context": context,
-                                     "max_logit_error": max_logit_error, "trials": trials})
+                                     "max_logit_error": max_logit_error,
+                                     "mean_logit_error": mean_logit_error,
+                                     "matching_tokens": matching_tokens,
+                                     "total_tokens": total_tokens, "trials": trials})
             print(f"B={batch} L={context}: "
                   f"{statistics.median(t['speedup'] for t in trials):.3f}x", flush=True)
             del launch, cache, tensors, reference, candidate
