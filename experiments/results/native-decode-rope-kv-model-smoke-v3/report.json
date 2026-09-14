@@ -1,0 +1,136 @@
+{
+  "configuration": {
+    "preset": "smoke",
+    "trials": 1,
+    "samples": 1,
+    "warmups": 3,
+    "device": "cuda",
+    "model": "Qwen/Qwen2.5-1.5B",
+    "cases": [
+      [
+        1,
+        512
+      ],
+      [
+        8,
+        512
+      ],
+      [
+        8,
+        2048
+      ]
+    ],
+    "packed_qkv": true,
+    "packed_gate_up": true,
+    "query_rope": "production_kernel_in_both_variants",
+    "sources_sha256": {
+      "experiments/model/benchmark_native_decode_rope_kv.py": "d1158bdace1ff1cd9acaee7407721b5d8dea6a8e68a48514bbe3d273be97a838",
+      "experiments/model/benchmark_packed_projection_decode.py": "d5277e7941e2e3c149f4b6fdf5bf3f3df51c175adeef22c5e4ac4eba557fd28e",
+      "engine/graph/paged_graph_decoder.py": "47444d0185c268049b940678469e8a06548ef28a16d28291a8f756b9e1d2b814",
+      "custom_kernels/rope_kv_write.py": "d4185d56edb9d61b34600a60a0f1ade8bfba908f864ca2b4095d4290307e19e3",
+      "baseline/kernel_dispatch.py": "797223638e5f89f230f10e942b407433e459fa313a1eecb66b88d7b8f1c4f27f"
+    }
+  },
+  "fingerprint": "f3ac270f94fd024132b7c1a7158787195988027880e5aede2d79b39b0940ec5c",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "b34200abd206b285d612c695bb647eab44669fee",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "cases": [
+    {
+      "status": "complete",
+      "fingerprint": "f3ac270f94fd024132b7c1a7158787195988027880e5aede2d79b39b0940ec5c",
+      "batch": 1,
+      "context": 512,
+      "max_logit_error": 0.0,
+      "mean_logit_error": 0.0,
+      "matching_tokens": 1,
+      "total_tokens": 1,
+      "trials": [
+        {
+          "trial": 0,
+          "samples_ms": {
+            "baseline": [
+              9.75984001159668
+            ],
+            "fused": [
+              9.766783714294434
+            ]
+          },
+          "baseline_median_ms": 9.75984001159668,
+          "fused_median_ms": 9.766783714294434,
+          "speedup": 0.9992890491997287
+        }
+      ]
+    },
+    {
+      "status": "complete",
+      "fingerprint": "f3ac270f94fd024132b7c1a7158787195988027880e5aede2d79b39b0940ec5c",
+      "batch": 8,
+      "context": 512,
+      "max_logit_error": 0.1015625,
+      "mean_logit_error": 0.002175097819417715,
+      "matching_tokens": 8,
+      "total_tokens": 8,
+      "trials": [
+        {
+          "trial": 0,
+          "samples_ms": {
+            "baseline": [
+              10.283807754516602
+            ],
+            "fused": [
+              10.121248245239258
+            ]
+          },
+          "baseline_median_ms": 10.283807754516602,
+          "fused_median_ms": 10.121248245239258,
+          "speedup": 1.0160612115559766
+        }
+      ]
+    },
+    {
+      "status": "complete",
+      "fingerprint": "f3ac270f94fd024132b7c1a7158787195988027880e5aede2d79b39b0940ec5c",
+      "batch": 8,
+      "context": 2048,
+      "max_logit_error": 0.0,
+      "mean_logit_error": 0.0,
+      "matching_tokens": 8,
+      "total_tokens": 8,
+      "trials": [
+        {
+          "trial": 0,
+          "samples_ms": {
+            "baseline": [
+              10.29263973236084
+            ],
+            "fused": [
+              10.407872200012207
+            ]
+          },
+          "baseline_median_ms": 10.29263973236084,
+          "fused_median_ms": 10.407872200012207,
+          "speedup": 0.9889283356447025
+        }
+      ]
+    }
+  ]
+}
