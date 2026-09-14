@@ -1,0 +1,86 @@
+{
+  "scope": "synthetic mixed-iteration C++ scheduling, not full-model throughput",
+  "configuration": {
+    "device": "cuda",
+    "trials": 10,
+    "long_requests": 8,
+    "prompt_length": 8192,
+    "prefill_chunk": 2048,
+    "matrix_size": 2048,
+    "decode_matmuls": 2,
+    "output": "experiments/results/cpp-overlap-double-buffer.json"
+  },
+  "trials": [
+    {
+      "trial": 0,
+      "baseline_mixed_ms": 0.2197716385126114,
+      "overlap_mixed_ms": 0.2187555655837059,
+      "mixed_steps": 32,
+      "speedup": 1.0046447866420876
+    },
+    {
+      "trial": 1,
+      "baseline_mixed_ms": 0.2164095640182495,
+      "overlap_mixed_ms": 0.21628011018037796,
+      "mixed_steps": 32,
+      "speedup": 1.0005985471237442
+    },
+    {
+      "trial": 2,
+      "baseline_mixed_ms": 0.21713599562644958,
+      "overlap_mixed_ms": 0.21783728152513504,
+      "mixed_steps": 32,
+      "speedup": 0.9967806892659715
+    },
+    {
+      "trial": 3,
+      "baseline_mixed_ms": 0.21802634000778198,
+      "overlap_mixed_ms": 0.2166442573070526,
+      "mixed_steps": 32,
+      "speedup": 1.006379503052188
+    },
+    {
+      "trial": 4,
+      "baseline_mixed_ms": 0.21570269018411636,
+      "overlap_mixed_ms": 0.21643005311489105,
+      "mixed_steps": 32,
+      "speedup": 0.9966392701923491
+    },
+    {
+      "trial": 5,
+      "baseline_mixed_ms": 0.21537300199270248,
+      "overlap_mixed_ms": 0.21700933575630188,
+      "mixed_steps": 32,
+      "speedup": 0.9924596158137778
+    },
+    {
+      "trial": 6,
+      "baseline_mixed_ms": 0.21651946008205414,
+      "overlap_mixed_ms": 0.21855346858501434,
+      "mixed_steps": 32,
+      "speedup": 0.9906933140154259
+    },
+    {
+      "trial": 7,
+      "baseline_mixed_ms": 0.21655485033988953,
+      "overlap_mixed_ms": 0.2172337844967842,
+      "mixed_steps": 32,
+      "speedup": 0.9968746382683181
+    },
+    {
+      "trial": 8,
+      "baseline_mixed_ms": 0.21635089069604874,
+      "overlap_mixed_ms": 0.21676532924175262,
+      "mixed_steps": 32,
+      "speedup": 0.9980880773361976
+    },
+    {
+      "trial": 9,
+      "baseline_mixed_ms": 0.21639466285705566,
+      "overlap_mixed_ms": 0.2162102609872818,
+      "mixed_steps": 32,
+      "speedup": 1.0008528821385805
+    }
+  ],
+  "geomean_speedup": 0.9983903006766245
+}
