@@ -183,7 +183,13 @@ def run(args):
     sources = list((ROOT / "engine/cpp/src").glob("*.cpp")) + list((ROOT / "engine/cpp/include").glob("*.hpp"))
     if any(p.stat().st_mtime_ns > extension.stat().st_mtime_ns for p in sources):
         raise RuntimeError("C++ extension is older than source; rebuild it")
-    torch.cuda.set_device(args.device)
+    device = torch.device(args.device)
+    if device.type != "cuda":
+        raise ValueError("--device must be a CUDA device")
+    if device.index is None:
+        device = torch.device("cuda", 0)
+    args.device = str(device)
+    torch.cuda.set_device(device)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     hw = hardware(torch, triton)

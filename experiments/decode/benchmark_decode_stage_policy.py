@@ -190,7 +190,13 @@ def run(args, cache_modes):
     from paged_decode_grouped_splitk_pipelined import grouped_splitk_attention
     from paged_decode_attention import paged_decode_attention
 
-    torch.cuda.set_device(args.device)
+    device = torch.device(args.device)
+    if device.type != "cuda":
+        raise ValueError("--device must be a CUDA device")
+    if device.index is None:
+        device = torch.device("cuda", 0)
+    args.device = str(device)
+    torch.cuda.set_device(device)
     torch.backends.cuda.matmul.allow_tf32 = False
     props = torch.cuda.get_device_properties(args.device)
     sms = props.multi_processor_count
