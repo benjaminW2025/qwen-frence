@@ -144,6 +144,9 @@ class DesignTests(unittest.TestCase):
             path.write_text(json.dumps(report))
             with self.assertRaisesRegex(ValueError, "gate"):
                 load_policy(directory)
+            candidate = load_policy(directory, allow_candidate=True)
+            self.assertTrue(candidate["experimental_override"])
+            self.assertEqual(candidate["policy_status"], "needs_more_work")
 
 
 @unittest.skipIf(cpp is None, "build C++ extension first")

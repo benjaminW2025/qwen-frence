@@ -105,7 +105,14 @@ def load_policy(directory, hardware=None, allow_candidate=False):
         if stable_hash((DECODE / name).read_text()) != digest and not allow_candidate:
             raise ValueError(f"decode source changed since sweep: {name}; use a new sweep directory")
     if hardware is not None:
-        for key in ("name", "sms", "capability", "memory", "uuid", "torch", "triton", "cuda", "driver", "python"):
+        # UUID identifies one physical accelerator and legitimately changes
+        # between otherwise identical RunPod H100 sessions. Candidate-policy
+        # experiments remain pinned to the H100/software configuration, but
+        # do not require the original rented GPU.
+        keys = ("name", "sms", "capability", "memory", "torch", "triton", "cuda", "driver", "python")
+        if not allow_candidate:
+            keys += ("uuid",)
+        for key in keys:
             if hardware.get(key) != manifest["hardware"].get(key):
                 raise ValueError(f"decode policy hardware/software mismatch: {key}")
     tree = report["policy"]["selected"]["tree"]
@@ -113,6 +120,8 @@ def load_policy(directory, hardware=None, allow_candidate=False):
     cases = [c for c in manifest["plan"] if c["suite"] != "mechanism"]
     return {"tree": tree, "report_hash": stable_hash(report),
             "sweep_fingerprint": manifest["fingerprint"],
+            "experimental_override": allow_candidate,
+            "policy_status": report.get("status"),
             "batch_range": [min(c["batch"] for c in cases), max(c["batch"] for c in cases)],
             "pages_range": [min(c["features"]["max_pages"] for c in cases),
                             max(c["features"]["max_pages"] for c in cases)],
