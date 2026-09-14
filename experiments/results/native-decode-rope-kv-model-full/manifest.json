@@ -1,0 +1,84 @@
+{
+  "fingerprint": "c56a73c27c04e3091170c17ae6674daf4ce73e0d8366f42a085d10256733a1a2",
+  "configuration": {
+    "preset": "full",
+    "trials": 3,
+    "samples": 7,
+    "warmups": 3,
+    "device": "cuda",
+    "model": "Qwen/Qwen2.5-1.5B",
+    "cases": [
+      [
+        1,
+        512
+      ],
+      [
+        1,
+        8192
+      ],
+      [
+        8,
+        512
+      ],
+      [
+        8,
+        8192
+      ],
+      [
+        32,
+        512
+      ],
+      [
+        32,
+        8192
+      ],
+      [
+        64,
+        512
+      ],
+      [
+        64,
+        8192
+      ],
+      [
+        128,
+        512
+      ],
+      [
+        128,
+        8192
+      ]
+    ],
+    "packed_qkv": true,
+    "packed_gate_up": true,
+    "sources_sha256": {
+      "experiments/model/benchmark_native_decode_rope_kv.py": "92034611903171e052aaaba56771d8c5ddbd31a8a062302f062899bc1c5230f7",
+      "experiments/model/benchmark_packed_projection_decode.py": "d5277e7941e2e3c149f4b6fdf5bf3f3df51c175adeef22c5e4ac4eba557fd28e",
+      "engine/graph/paged_graph_decoder.py": "8d9bb589e7560c2af20cedcfc206271922a72913ddca5ebb7e47c56b57707217",
+      "custom_kernels/rope_kv_write.py": "d84cc8e82253410bd0afe8d7be6c6fca1a5b1f5412dcb7bb1be81eea6e8740fa",
+      "baseline/kernel_dispatch.py": "797223638e5f89f230f10e942b407433e459fa313a1eecb66b88d7b8f1c4f27f"
+    }
+  },
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "8e2d0bfbdaf235dc219c17886622bc2321a35b50",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": null
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "created_at": "2026-09-14T00:32:19.800357+00:00"
+}
