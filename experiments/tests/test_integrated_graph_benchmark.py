@@ -34,6 +34,7 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         case = MODULE.validate_args(args)
 
         class Adapter:
+            corrupt_splitk = False
             def __init__(self, candidate=False, pieces=False, splitk=False):
                 self.decisions, self.step_calls, self.observer = {}, [], None
                 self.candidate, self.pieces = candidate, pieces
@@ -52,6 +53,8 @@ class IntegratedGraphDesignTests(unittest.TestCase):
                     self.piecewise_prefill.captured_calls += 1
                     self.piecewise_prefill.graph_replays += 29
                 logits = torch.tensor([[1.002, 1.0] if self.candidate else [1.0, 1.001]])
+                if decode and self.corrupt_splitk and self.action != "production":
+                    logits = torch.tensor([[10., 1.]])
                 logits = logits.repeat(context.numel(), 1)
                 if self.observer is not None:
                     replacement = self.observer(raw, logits)
@@ -70,6 +73,9 @@ class IntegratedGraphDesignTests(unittest.TestCase):
               redirect_stdout(io.StringIO())):
             row = MODULE.run_case(torch, cpp, engine, case, args,
                                   MODULE.make_requests(case, args.seed, 16))
+            Adapter.corrupt_splitk = True
+            rejected_row = MODULE.run_case(torch, cpp, engine, case, args,
+                                           MODULE.make_requests(case, args.seed, 16))
         self.assertEqual(row["status"], "ok")
         self.assertTrue(row["splitk_executed"])
         self.assertNotEqual(row["output_ids_by_arm"]["eager"],
@@ -77,6 +83,10 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         self.assertGreater(row["checks"]["piecewise_splitk"]
                            ["argmax_differences_on_reference_history"], 0)
         self.assertEqual(set(row["measurements"]), set(MODULE.ARMS))
+        self.assertEqual(rejected_row["splitk_decision"]["choice"], "rejected_numerical_correctness")
+        self.assertNotIn("piecewise_splitk", rejected_row["measurements"])
+        self.assertNotIn("piecewise_splitk", rejected_row["output_ids_by_arm"])
+        self.assertEqual(set(rejected_row["measurements"]), set(MODULE.ARMS[:3]))
 
     def test_teacher_forced_preflight_and_free_generation_use_distinct_histories(self):
         from python_control import PythonControl
@@ -131,6 +141,20 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         self.assertIs(returned, expected)
         self.assertEqual(checker.argmax_differences, 1)
         checker.finish()
+
+    def test_explicit_tolerance_accepts_small_outlier_but_retains_strict_default(self):
+        args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),
+                torch.tensor([], dtype=torch.int32), torch.tensor([4]),
+                torch.tensor([[0]]), 1, True)
+        expected, actual = torch.tensor([[0., 2.]]), torch.tensor([[.064, 2.]])
+        reference = MODULE.TraceCheck(torch)
+        reference(args, expected)
+        strict = MODULE.SameHistoryCheck(torch, lambda *a: expected, reference.rows, "splitk")
+        with self.assertRaises(MODULE.NumericalMismatch):
+            strict(args, actual)
+        relaxed = MODULE.SameHistoryCheck(torch, lambda *a: expected, reference.rows, "splitk", atol=.075)
+        relaxed(args, actual)
+        self.assertAlmostEqual(relaxed.max_logit_error, .064, places=6)
 
     def test_same_history_checks_repeated_shapes_and_rejects_corruption(self):
         args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),
