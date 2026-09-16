@@ -49,6 +49,8 @@ avoid cross-backend GPU memory ownership.
 Start locally, before the H100 session:
 
 ```bash
+python3 experiments/integration/benchmark_latest_vs_vllm.py stage-model-cache
+python3 experiments/integration/benchmark_latest_vs_vllm.py check-model-cache
 python3 experiments/integration/benchmark_latest_vs_vllm.py table
 python3 experiments/integration/benchmark_latest_vs_vllm.py plan \
   --shape-id fixed-b8-l256-o128
@@ -65,7 +67,6 @@ The checkpoint defaults to a **one-sample smoke** (one trial/sample, no warmup,
 one reference repetition), not a selection-quality benchmark:
 
 ```bash
-python3 experiments/integration/benchmark_latest_vs_vllm.py check-model-cache
 python3 experiments/integration/benchmark_latest_vs_vllm.py run-ablation \
   --shape-id fixed-b8-l256-o128 \
   --output-dir experiments/results/latest-vllm-b8-short-main
