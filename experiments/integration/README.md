@@ -98,7 +98,9 @@ runs the four integrated arms, runs `regime-dispatched` and vLLM, analyzes the
 matched results, and finally writes `table-summary.json` and `table-summary.csv`.
 Completed cells are validated and reused, so rerunning the same command resumes
 at the first missing cell. Partial or ambiguous cell output fails closed instead
-of being overwritten.
+of being overwritten. If a process was intentionally interrupted, add
+`--retry-failed`; the runner moves its incomplete `ablation` directory to a
+timestamped `ablation-failed-*` sibling before retrying it.
 
 ```bash
 # Inspect the exact timed-work count before allocating GPU time.
@@ -184,12 +186,19 @@ python3 experiments/integration/benchmark_integrated_graph.py \
   --output-dir experiments/results/integrated-graph-smoke
 ```
 
-The default row is B=8, 2048-token prompts, 128 outputs each, and a 2048-token
+The default row is B=8, 256-token prompts, 128 outputs each, and a 2048-token
 prefill budget. The preflight requires an **observed** maximum
 decode batch of eight and at least 64 pure B=8 decode steps, an actual
-2048-token packed-prefill call, exact scheduled
-work and generated tokens across arms, and representative full logits within
-the existing integration tolerance. It also checks that split-K and piecewise
+2048-token packed-prefill call and exact scheduled work. For each candidate, an
+independent eager KV pool follows the same inputs and validates full logits on
+every callback with the existing tolerance (`atol=.05`, `rtol=.01`). Only during
+this untimed check, eager logits are returned to sampling to keep token histories
+identical. Argmax flips and their first logit margins are recorded. This adds one
+temporary KV pool and an eager forward per candidate validation callback.
+Free-generation preflight, warmups and timed runs use each arm's own sampling;
+each timed run must reproduce that arm's preflight outputs and the shared schedule.
+Reports include `output_ids_by_arm` and token agreement against vLLM for each arm.
+It also checks that split-K and piecewise
 capture actually execute. The real C++ scheduler runs a CPU-only dry schedule
 first, so a case-name/shape mismatch fails before model loading or graph capture;
 the GPU preflight repeats the shape check before warmup or timing.

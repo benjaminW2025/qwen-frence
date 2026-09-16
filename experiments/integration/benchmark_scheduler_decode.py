@@ -62,14 +62,17 @@ class TraceCheck:
 
     def __call__(self, args, logits):
         digest = hashlib.sha256()
-        for tensor in args[:6]:
+        fields = {}
+        for name, tensor in zip(("input_ids", "positions", "slots", "cu_seqlens", "context", "block_table"), args[:6]):
             cpu = tensor.detach().cpu().contiguous()
+            fields[name] = hashlib.sha256(str((tuple(cpu.shape), str(cpu.dtype))).encode()
+                                          + cpu.numpy().tobytes()).hexdigest()
             digest.update(str((tuple(cpu.shape), str(cpu.dtype))).encode())
             digest.update(cpu.numpy().tobytes())
         key = (bool(args[-1]), args[0].numel(), args[4].numel(), int(args[-2]))
-        row = {"shape": key, "metadata": digest.hexdigest()}
+        row = {"shape": key, "metadata": digest.hexdigest(), "fields": fields}
         if self.reference is None:
-            row["logits"] = logits.detach().cpu() if key not in self.seen else None
+            row["logits"] = logits.detach().cpu().clone() if key not in self.seen else None
             self.rows.append(row)
             self.seen.add(key)
         else:
@@ -77,7 +80,9 @@ class TraceCheck:
                 raise AssertionError("extra callback in candidate")
             expected = self.reference[self.cursor]
             if any(row[k] != expected[k] for k in ("shape", "metadata")):
-                raise AssertionError("scheduler plans or metadata differ")
+                changed = [name for name in fields if fields[name] != expected.get("fields", {}).get(name)]
+                raise AssertionError(f"callback {self.cursor}: scheduler plans or metadata differ; "
+                                     f"fields={changed}, shape={key}, expected={expected['shape']}")
             if expected["logits"] is not None:
                 actual = logits.detach().cpu()
                 self.torch.testing.assert_close(actual, expected["logits"], atol=.05, rtol=.01)

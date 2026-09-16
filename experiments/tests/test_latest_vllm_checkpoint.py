@@ -65,6 +65,33 @@ class CheckpointContractTests(unittest.TestCase):
                 [call.args[0].shape_id for call in ablation.call_args_list],
                 [shape["id"] for shape in MODULE.FACTORIAL_SHAPES])
 
+    def test_retry_failed_archives_interrupted_ablation_recoverably(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = MODULE.build_parser().parse_args(
+                ["run-table", "--retry-failed", "--output-dir", directory])
+            args.output_dir = Path(directory)
+            MODULE.atomic_json(args.output_dir / "ablation/manifest.json", {"partial": True})
+            with redirect_stdout(io.StringIO()):
+                state = MODULE.validate_resumed_measurements(args)
+            self.assertFalse(state["ablation_complete"])
+            self.assertFalse(state["ablation_partial"])
+            self.assertFalse((args.output_dir / "ablation").exists())
+            archives = list(args.output_dir.glob("ablation-failed-*"))
+            self.assertEqual(len(archives), 1)
+            self.assertTrue((archives[0] / "manifest.json").is_file())
+
+    def test_error_report_is_not_treated_as_completed_ablation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = MODULE.build_parser().parse_args(
+                ["run-table", "--output-dir", directory])
+            args.output_dir = Path(directory)
+            MODULE.atomic_json(args.output_dir / "ablation/manifest.json", {})
+            MODULE.atomic_json(args.output_dir / "ablation/report.json",
+                               {"status": "error", "error": "interrupted"})
+            state = MODULE.result_state(args)
+            self.assertFalse(state["ablation_complete"])
+            self.assertTrue(state["ablation_partial"])
+
     def test_exact_frozen_prompt_workloads_reach_all_ten_cpp_shapes(self):
         import torch
         try:
@@ -223,6 +250,21 @@ class CheckpointContractTests(unittest.TestCase):
             self.assertAlmostEqual(summary["integrated_splitk_vs_old"], 2.0)
             self.assertAlmostEqual(summary["vllm_vs_integrated_splitk"], 1.25)
             self.assertTrue(summary["output_agreement"]["old_vs_integrated"])
+            report_path = root / "ablation/report.json"
+            report = json.loads(report_path.read_text())
+            report["output_ids_by_arm"] = {
+                arm: {key: list(tokens) for key, tokens in outputs.items()}
+                for arm in MODULE.ARMS}
+            report["output_ids_by_arm"]["piecewise"]["0"][0] = 1
+            MODULE.atomic_json(report_path, report)
+            with redirect_stdout(io.StringIO()):
+                MODULE.analyze(args, case, blocks)
+            summary = json.loads((root / "summary.json").read_text())
+            self.assertFalse(summary["output_agreement"]["old_vs_integrated"])
+            agreement = summary["output_agreement_by_arm"]["piecewise"]["vs_vllm"]
+            self.assertEqual(agreement["matched_tokens"], 1023)
+            self.assertEqual(agreement["first_difference"]["position"], 0)
+            self.assertTrue(summary["output_agreement_by_arm"]["piecewise_splitk"]["vs_vllm"]["exact"])
             broken = json.loads((root / "reference/reference.json").read_text())
             broken["comparison_contract"]["sampling"] = "temperature-1"
             MODULE.atomic_json(root / "reference/reference.json", broken)
