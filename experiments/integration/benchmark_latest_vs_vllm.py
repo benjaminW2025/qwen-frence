@@ -37,12 +37,12 @@ VOCAB = 151936
 MODEL = "Qwen/Qwen2.5-1.5B"
 MODEL_REVISION = "8faed761d45a263340a0528343f099c05c9a4323"
 ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk")
-TABLE_ACTIONS = ("plan-table", "run-table", "analyze-table")
+TABLE_ACTIONS = ("plan-table", "run-table", "analyze-table", "retry-splitk-table")
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("table", "plan-table", "run-table", "analyze-table",
+    parser.add_argument("action", choices=("table", "plan-table", "run-table", "analyze-table", "retry-splitk-table",
                                            "plan", "prepare", "dry-schedule",
                                            "stage-model-cache", "check-model-cache",
                                            "run-profile", "run-ablation",
@@ -266,9 +266,9 @@ def token_agreement(expected, actual):
             "exact": matched == total, "first_difference": first}
 
 
-def run_ablation(args, case):
+def run_ablation(args, case, *, splitk_only=False):
     load_frozen(args, case)
-    output = args.output_dir / "ablation"
+    output = args.output_dir / ("splitk-retry" if splitk_only else "ablation")
     if any((output / name).exists() for name in ("manifest.json", "report.json")):
         raise ValueError("ablation output already exists; refusing to overwrite it")
     model_source = resolve_model_source(args)
@@ -283,6 +283,8 @@ def run_ablation(args, case):
                "--trials", str(args.trials), "--samples", str(args.samples),
                "--logit-atol", str(args.logit_atol),
                "--warmups", str(args.warmups), "--output-dir", str(output)]
+    if splitk_only:
+        command.append("--splitk-only")
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -345,6 +347,30 @@ def analyze(args, case, num_blocks):
     workload, requests = load_frozen(args, case)
     ablation_manifest = json.loads((args.output_dir / "ablation/manifest.json").read_text())
     ablation = json.loads((args.output_dir / "ablation/report.json").read_text())
+    retry_report = args.output_dir / "splitk-retry/report.json"
+    retry_provenance = None
+    if retry_report.is_file():
+        retry = json.loads(retry_report.read_text())
+        if retry.get("status") != "ok" or not retry.get("splitk_only"):
+            raise ValueError("split-K retry is incomplete; retry it before analyzing")
+        manifest = json.loads((args.output_dir / "splitk-retry/manifest.json").read_text())
+        if (retry["case_id"] != case["id"] or manifest["model"] != ablation_manifest["model"]
+                or manifest["plan"]["requests_sha256"] != requests_fingerprint(requests)
+                or retry["actual_work"] != ablation["actual_work"]):
+            raise ValueError("split-K retry does not match the original workload/model/schedule")
+        arm = "piecewise_splitk"
+        for field in ("checks", "capture", "measurements"):
+            ablation.setdefault(field, {})[arm] = retry[field][arm]
+        for phase, values in retry["trial_medians_ms"].items():
+            ablation["trial_medians_ms"][phase][arm] = values[arm]
+        outputs = ablation.setdefault("output_ids_by_arm", {a: ablation["output_ids"] for a in ARMS})
+        outputs[arm] = retry["output_ids_by_arm"][arm]
+        ablation.get("rejected_arms", {}).pop(arm, None)
+        ablation["splitk_decision"] = retry["splitk_decision"]
+        ablation["effects"] = {k: v for k, v in ablation["effects"].items() if "splitk" not in k}
+        retry_provenance = {"report": str(retry_report), "system": manifest.get("system"),
+                            "logit_tolerance": retry["logit_tolerance"],
+                            "comparison": "separate run; not a paired split-K speedup experiment"}
     reference_files = list((args.output_dir / "reference").glob("*.json"))
     if len(reference_files) != 1:
         raise ValueError("expected exactly one reference JSON result")
@@ -454,6 +480,8 @@ def analyze(args, case, num_blocks):
                "output_agreement_by_arm": agreements,
                "correctness_mode": ablation.get("correctness_mode", "legacy-exact-trajectory"),
                "logit_tolerance": ablation.get("logit_tolerance", {"atol": .05, "rtol": .01}),
+               "numerical_checks": ablation["checks"],
+               "splitk_retry": retry_provenance,
                "splitk_executed": splitk_executed,
                "ablation_effects": ablation["effects"],
                "reference_file": str(reference_files[0])}
@@ -461,6 +489,10 @@ def analyze(args, case, num_blocks):
     for name, value in rows.items():
         print(f"{name}: {value:.1f} output tok/s" if value is not None else
               f"{name}: REJECTED (numerical correctness); no performance result")
+    for arm, check in ablation["checks"].items():
+        if check.get("numerical_validation_passed") is False:
+            print(f"{arm}: NUMERICAL WARNING; max absolute logit error={check['max_logit_error']:.6g}, "
+                  f"outside tolerance={check['logits_outside_tolerance']}/{check['logits_compared']}; timing retained")
     print(f"piecewise production vs old: {summary['integrated_production_vs_old']:.3f}x")
     if splitk_rate is not None:
         print(f"piecewise split-K vs old: {summary['integrated_splitk_vs_old']:.3f}x")
@@ -532,6 +564,7 @@ def aggregate_table(args):
             "output_length": shape["output_length"],
             "splitk_executed": summary["splitk_executed"],
             "splitk_choice": summary["splitk_decision"]["choice"],
+            "numerical_checks": json.dumps(summary.get("numerical_checks", {}), sort_keys=True),
             "old_tok_s": throughput["prior_regime_dispatched_engine"],
             "eager_cpp_tok_s": throughput["integrated_eager_cpp"],
             "decode_graph_tok_s": throughput["integrated_decode_graph"],
@@ -591,6 +624,43 @@ def plan_table(args):
                       "output_dir": str(args.output_dir)}, indent=2))
 
 
+def retry_splitk_table(args):
+    """Recover omitted split-K timings without rerunning production or vLLM."""
+    cells = []
+    # Check the entire original suite before spending GPU time on recovery.
+    for shape in table_shapes(args):
+        child = cell_args(args, shape["id"])
+        case, blocks = contract(child)
+        load_frozen(child, case)
+        path = child.output_dir / "ablation/report.json"
+        if not path.is_file() or json.loads(path.read_text()).get("status") != "ok":
+            raise ValueError(f"original sweep must finish first: {path}")
+        if not (child.output_dir / "summary.json").is_file():
+            raise ValueError(f"original reference/analysis must finish first: {child.output_dir}")
+        report = json.loads(path.read_text())
+        cells.append((child, case, blocks, "piecewise_splitk" in report.get("rejected_arms", {})))
+    for child, case, blocks, missing in cells:
+        if not missing:
+            print(f"{case['id']}: split-K timing already present; skipping", flush=True)
+            continue
+        output = child.output_dir / "splitk-retry"
+        report_path, manifest_path = output / "report.json", output / "manifest.json"
+        complete = (report_path.is_file() and manifest_path.is_file()
+                    and json.loads(report_path.read_text()).get("status") == "ok")
+        if output.exists() and not complete:
+            if not args.retry_failed:
+                raise ValueError(f"interrupted retry at {output}; use --retry-failed")
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            archive = output.with_name(f"splitk-retry-interrupted-{stamp}")
+            output.rename(archive)
+            print(f"archived interrupted retry: {archive}", flush=True)
+        if not complete:
+            print(f"{case['id']}: validating and timing split-K only", flush=True)
+            run_ablation(child, case, splitk_only=True)
+        analyze(child, case, blocks)
+    aggregate_table(args)
+
+
 def run_table(args):
     # Fail before launching any measured cell if the two external prerequisites are absent.
     resolve_model_source(args)
@@ -630,6 +700,9 @@ def main():
         return
     if args.action == "run-table":
         run_table(args)
+        return
+    if args.action == "retry-splitk-table":
+        retry_splitk_table(args)
         return
     if args.action == "analyze-table":
         for shape in table_shapes(args):

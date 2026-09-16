@@ -21,6 +21,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CheckpointContractTests(unittest.TestCase):
+    def test_splitk_retry_selects_only_missing_cells_and_never_runs_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = MODULE.build_parser().parse_args([
+                "retry-splitk-table", "--include-context-probes", "--output-dir", directory])
+            for index, shape in enumerate(MODULE.table_shapes(args)):
+                child = MODULE.cell_args(args, shape["id"])
+                case, _ = MODULE.contract(child)
+                workload, _ = MODULE.planned_workload(case, args.seed)
+                MODULE.atomic_json(child.output_dir / "workload.json", workload.to_dict())
+                MODULE.atomic_json(child.output_dir / "summary.json", {})
+                MODULE.atomic_json(child.output_dir / "ablation/report.json", {
+                    "status": "ok", "rejected_arms": {"piecewise_splitk": {}} if index in (2, 9) else {}})
+            with (patch.object(MODULE, "run_ablation") as ablation,
+                  patch.object(MODULE, "run_reference") as reference,
+                  patch.object(MODULE, "analyze") as analyze,
+                  patch.object(MODULE, "aggregate_table"), redirect_stdout(io.StringIO())):
+                MODULE.retry_splitk_table(args)
+            self.assertEqual(ablation.call_count, 2)
+            self.assertEqual(analyze.call_count, 2)
+            reference.assert_not_called()
+            self.assertTrue(all(call.kwargs == {"splitk_only": True} for call in ablation.call_args_list))
+
     def test_table_actions_default_to_eight_factorial_cells(self):
         args = MODULE.build_parser().parse_args(["plan-table", "--output-dir", "/tmp/suite"])
         self.assertEqual(len(MODULE.table_shapes(args)), 8)
@@ -288,6 +310,34 @@ class CheckpointContractTests(unittest.TestCase):
             MODULE.atomic_json(root / "ablation/report.json", fixed)
             with self.assertRaisesRegex(ValueError, "split-K execution"):
                 MODULE.analyze(args, case, blocks)
+            # Recover just the omitted split-K arm and overlay it without
+            # changing the original report or inventing paired measurements.
+            broken["comparison_contract"]["sampling"] = "greedy-temperature-0-ignore-eos"
+            MODULE.atomic_json(root / "reference/reference.json", broken)
+            MODULE.atomic_json(report_path, report)
+            original_report = report_path.read_text()
+            MODULE.atomic_json(root / "splitk-retry/manifest.json", {
+                "model": model_source, "plan": {
+                    "requests_sha256": MODULE.requests_fingerprint(requests)}})
+            MODULE.atomic_json(root / "splitk-retry/report.json", {
+                "status": "ok", "case_id": case["id"], "splitk_only": True,
+                "actual_work": report["actual_work"],
+                "checks": {"piecewise_splitk": {"decisions": {"production": 127},
+                           "numerical_validation_passed": False, "max_logit_error": .064,
+                           "logits_outside_tolerance": 4, "logits_compared": 1215488}},
+                "capture": {"piecewise_splitk": {"timed_prefill_capture_calls": 1}},
+                "measurements": {"piecewise_splitk": []},
+                "trial_medians_ms": {"wall_ms": {"piecewise_splitk": [64, 64, 64]}},
+                "output_ids_by_arm": {"piecewise_splitk": outputs},
+                "splitk_decision": {"choice": "timed_with_numerical_warning"},
+                "logit_tolerance": {"atol": .05, "rtol": .01}})
+            with redirect_stdout(io.StringIO()):
+                MODULE.analyze(args, case, blocks)
+            summary = json.loads((root / "summary.json").read_text())
+            self.assertEqual(report_path.read_text(), original_report)
+            self.assertEqual(summary["output_throughput_tok_s"]["integrated_piecewise_splitk"], 16000)
+            self.assertFalse(summary["numerical_checks"]["piecewise_splitk"]["numerical_validation_passed"])
+            self.assertIn("separate run", summary["splitk_retry"]["comparison"])
 
     def test_gpu_commands_parse_with_frozen_contract_without_running(self):
         from benchmark_integrated_graph import build_parser as integrated_parser

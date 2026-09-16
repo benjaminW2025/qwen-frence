@@ -76,6 +76,9 @@ class IntegratedGraphDesignTests(unittest.TestCase):
             Adapter.corrupt_splitk = True
             rejected_row = MODULE.run_case(torch, cpp, engine, case, args,
                                            MODULE.make_requests(case, args.seed, 16))
+            args.splitk_only = True
+            retry_row = MODULE.run_case(torch, cpp, engine, case, args,
+                                       MODULE.make_requests(case, args.seed, 16))
         self.assertEqual(row["status"], "ok")
         self.assertTrue(row["splitk_executed"])
         self.assertNotEqual(row["output_ids_by_arm"]["eager"],
@@ -83,10 +86,18 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         self.assertGreater(row["checks"]["piecewise_splitk"]
                            ["argmax_differences_on_reference_history"], 0)
         self.assertEqual(set(row["measurements"]), set(MODULE.ARMS))
-        self.assertEqual(rejected_row["splitk_decision"]["choice"], "rejected_numerical_correctness")
-        self.assertNotIn("piecewise_splitk", rejected_row["measurements"])
-        self.assertNotIn("piecewise_splitk", rejected_row["output_ids_by_arm"])
-        self.assertEqual(set(rejected_row["measurements"]), set(MODULE.ARMS[:3]))
+        self.assertEqual(rejected_row["splitk_decision"]["choice"], "timed_with_numerical_warning")
+        self.assertIn("piecewise_splitk", rejected_row["measurements"])
+        self.assertIn("piecewise_splitk", rejected_row["output_ids_by_arm"])
+        self.assertEqual(set(rejected_row["measurements"]), set(MODULE.ARMS))
+        check = rejected_row["checks"]["piecewise_splitk"]
+        self.assertFalse(check["numerical_validation_passed"])
+        self.assertGreater(check["logits_outside_tolerance"], 0)
+        self.assertAlmostEqual(check["max_logit_error"], 9.)
+        self.assertEqual(set(retry_row["measurements"]), {"piecewise_splitk"})
+        self.assertTrue(retry_row["splitk_only"])
+        self.assertEqual(retry_row["effects"], {})
+        self.assertEqual(retry_row["splitk_decision"]["choice"], "timed_with_numerical_warning")
 
     def test_teacher_forced_preflight_and_free_generation_use_distinct_histories(self):
         from python_control import PythonControl
@@ -155,6 +166,11 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         relaxed = MODULE.SameHistoryCheck(torch, lambda *a: expected, reference.rows, "splitk", atol=.075)
         relaxed(args, actual)
         self.assertAlmostEqual(relaxed.max_logit_error, .064, places=6)
+        diagnostic = MODULE.SameHistoryCheck(torch, lambda *a: expected, reference.rows,
+                                             "splitk", report_only=True)
+        diagnostic(args, actual)
+        self.assertEqual(diagnostic.logits_outside_tolerance, 1)
+        self.assertEqual(diagnostic.logits_compared, 2)
 
     def test_same_history_checks_repeated_shapes_and_rejects_corruption(self):
         args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),

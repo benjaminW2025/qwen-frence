@@ -202,11 +202,20 @@ Reports include `output_ids_by_arm` and token agreement against vLLM for each ar
 relative tolerance remains `.01`. The manifest, report and summary record the
 chosen tolerance. For example, `.075` admits an absolute error of `.064` near
 zero. This is an experiment setting, not a claim of equivalent model quality.
-Completed results checked at a stricter tolerance can be reused. If split-K
-alone fails this finite-logit tolerance check, its rejection is recorded and its
-timing is omitted (`null` in the summary, `REJECTED` in the printed table); the
-three production arms and vLLM comparison continue. Metadata, nonfinite logits,
-and production-arm correctness failures still stop the cell.
+Completed results checked at a stricter tolerance can be reused. Finite logit
+differences above tolerance are reported as numerical warnings alongside timing
+for every arm. Reports include maximum absolute error, total compared and
+out-of-tolerance logits, affected callback count, first failure and argmax
+differences. A split-K speedup with such warnings is not labeled a validated
+replacement. Metadata, shape/dtype and nonfinite-logit failures still stop the cell.
+
+For suites run with the older code that omitted rejected split-K timings, wait
+for the original sweep to finish, then use `retry-splitk-table` with the same
+directory and `--include-context-probes` if applicable. It selects only rejected
+cells, validates against an eager reference and times only split-K. Production
+and vLLM are not rerun. New raw results live under each cell's `splitk-retry/`;
+the original reports remain intact and summaries incorporate the follow-up with
+explicit separate-run provenance (no paired split-K speedup claim).
 It also checks that split-K and piecewise
 capture actually execute. The real C++ scheduler runs a CPU-only dry schedule
 first, so a case-name/shape mismatch fails before model loading or graph capture;
