@@ -55,6 +55,8 @@ def build_parser():
     parser.add_argument("--trials", type=int, default=1)
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--warmups", type=int, default=0)
+    parser.add_argument("--logit-atol", type=float, default=.05,
+                        help="absolute full-logit tolerance, recorded per cell; relative tolerance stays .01")
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--profile-kind", choices=("decode", "prefill", "mixed"),
                         default="decode")
@@ -74,6 +76,8 @@ def build_parser():
 
 
 def contract(args):
+    if not 0 <= args.logit_atol < float("inf"):
+        raise ValueError("logit-atol must be finite and nonnegative")
     if min(args.trials, args.samples, args.repetitions) < 1 or args.warmups < 0 or args.profile_occurrence < 0:
         raise ValueError("trials, samples, repetitions must be positive; "
                          "warmups and profile occurrence nonnegative")
@@ -277,6 +281,7 @@ def run_ablation(args, case):
                "--expected-prefill-tokens", str(PREFILL_TOKENS_PER_STEP),
                "--prefill-buckets", str(PREFILL_TOKENS_PER_STEP),
                "--trials", str(args.trials), "--samples", str(args.samples),
+               "--logit-atol", str(args.logit_atol),
                "--warmups", str(args.warmups), "--output-dir", str(output)]
     subprocess.run(command, cwd=ROOT, check=True)
 
@@ -354,7 +359,15 @@ def analyze(args, case, num_blocks):
             get_fixed_shape(args.shape_id)["expected_full_decode_steps"]
             or PREFILL_TOKENS_PER_STEP not in actual["prefill_token_counts"]):
         raise ValueError("ablation did not meet the fixed input shape gates")
-    for arm in ("piecewise", "piecewise_splitk"):
+    rejected = ablation.get("rejected_arms", {})
+    if set(rejected) - {"piecewise_splitk"}:
+        raise ValueError("a required production arm was rejected")
+    if rejected and (rejected["piecewise_splitk"].get("status") != "rejected_numerical_correctness"
+                     or ablation["splitk_decision"]["choice"] != "rejected_numerical_correctness"
+                     or "piecewise_splitk" in ablation["trial_medians_ms"]["wall_ms"]):
+        raise ValueError("invalid split-K rejection record")
+    active_arms = tuple(arm for arm in ARMS if arm not in rejected)
+    for arm in (arm for arm in ("piecewise", "piecewise_splitk") if arm not in rejected):
         if ablation["capture"][arm]["timed_prefill_capture_calls"] < 1:
             raise ValueError(f"{arm} did not use piecewise capture during timing")
     splitk_expected = (shape_summary(get_fixed_shape(args.shape_id))["max_context_tokens_per_request"]
@@ -403,7 +416,7 @@ def analyze(args, case, num_blocks):
     agreements = {arm: {"vs_eager": token_agreement(outputs_by_arm["eager"], outputs_by_arm[arm]),
                         "vs_vllm": token_agreement(vllm_outputs, outputs_by_arm[arm]),
                         "vs_old": token_agreement(old_outputs, outputs_by_arm[arm])}
-                  for arm in ARMS}
+                  for arm in active_arms}
     if set(integrated_outputs) != {request.request_id for request in workload.requests}:
         raise ValueError("integrated ablation lost request outputs")
     for request in workload.requests:
@@ -412,13 +425,14 @@ def analyze(args, case, num_blocks):
     total_output_tokens = sum(row["output"] for row in requests)
     integrated = {arm: total_output_tokens * 1000 /
                   statistics.median(ablation["trial_medians_ms"]["wall_ms"][arm])
-                  for arm in ARMS}
+                  for arm in active_arms}
+    splitk_rate = integrated.get("piecewise_splitk")
     old = reference["backends"]["regime-dispatched"]["summary"]["output_throughput_tok_s"]
     vllm = reference["backends"]["vllm"]["summary"]["output_throughput_tok_s"]
     rows = {"prior_regime_dispatched_engine": old, "integrated_eager_cpp": integrated["eager"],
             "integrated_decode_graph": integrated["decode_graph"],
             "integrated_piecewise_production": integrated["piecewise"],
-            "integrated_piecewise_splitk": integrated["piecewise_splitk"],
+            "integrated_piecewise_splitk": splitk_rate,
             "vllm": vllm}
     summary = {"status": "complete", "created_at": datetime.now(timezone.utc).isoformat(),
                "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
@@ -428,27 +442,30 @@ def analyze(args, case, num_blocks):
                             "output_tokens": total_output_tokens, "logical_kv_blocks": num_blocks},
                "output_throughput_tok_s": rows,
                "integrated_production_vs_old": integrated["piecewise"] / old,
-               "integrated_splitk_vs_old": integrated["piecewise_splitk"] / old,
+               "integrated_splitk_vs_old": splitk_rate / old if splitk_rate is not None else None,
                "vllm_vs_integrated_production": vllm / integrated["piecewise"],
-               "vllm_vs_integrated_splitk": vllm / integrated["piecewise_splitk"],
+               "vllm_vs_integrated_splitk": vllm / splitk_rate if splitk_rate is not None else None,
                "output_agreement": {"old_vs_integrated": old_outputs == integrated_outputs,
                                     "vllm_vs_integrated": vllm_outputs == integrated_outputs,
                                     "old_repetitions_identical": old_repeatable,
                                     "vllm_repetitions_identical": vllm_repeatable},
                "splitk_decision": ablation["splitk_decision"],
+               "rejected_arms": rejected,
                "output_agreement_by_arm": agreements,
                "correctness_mode": ablation.get("correctness_mode", "legacy-exact-trajectory"),
+               "logit_tolerance": ablation.get("logit_tolerance", {"atol": .05, "rtol": .01}),
                "splitk_executed": splitk_executed,
                "ablation_effects": ablation["effects"],
                "reference_file": str(reference_files[0])}
     atomic_json(args.output_dir / "summary.json", summary)
     for name, value in rows.items():
-        print(f"{name}: {value:.1f} output tok/s")
+        print(f"{name}: {value:.1f} output tok/s" if value is not None else
+              f"{name}: REJECTED (numerical correctness); no performance result")
     print(f"piecewise production vs old: {summary['integrated_production_vs_old']:.3f}x")
-    print(f"piecewise split-K vs old: {summary['integrated_splitk_vs_old']:.3f}x")
-    print(f"vLLM gap vs production/split-K: "
-          f"{summary['vllm_vs_integrated_production']:.3f}x / "
-          f"{summary['vllm_vs_integrated_splitk']:.3f}x")
+    if splitk_rate is not None:
+        print(f"piecewise split-K vs old: {summary['integrated_splitk_vs_old']:.3f}x")
+        print(f"vLLM gap vs split-K: {summary['vllm_vs_integrated_splitk']:.3f}x")
+    print(f"vLLM gap vs production: {summary['vllm_vs_integrated_production']:.3f}x")
 
 
 def validate_resumed_measurements(args):
@@ -472,6 +489,11 @@ def validate_resumed_measurements(args):
         case = get_fixed_case(args.shape_id)
         _, requests = load_frozen(args, case)
         report = json.loads((args.output_dir / "ablation/report.json").read_text())
+        recorded_atol = report.get("logit_tolerance", {"atol": .05})["atol"]
+        if recorded_atol > args.logit_atol:
+            raise ValueError("existing ablation used a looser logit tolerance; use a fresh cell directory")
+        if report.get("rejected_arms") and recorded_atol < args.logit_atol:
+            raise ValueError("existing split-K rejection used a stricter tolerance; use a fresh cell directory")
         if (report.get("case_id") != args.shape_id or
                 plan["requests_sha256"] != requests_fingerprint(requests)):
             raise ValueError("existing ablation shape/workload differs; use a fresh cell directory")
@@ -509,6 +531,7 @@ def aggregate_table(args):
             "prompt_length": shape["prompt_length"],
             "output_length": shape["output_length"],
             "splitk_executed": summary["splitk_executed"],
+            "splitk_choice": summary["splitk_decision"]["choice"],
             "old_tok_s": throughput["prior_regime_dispatched_engine"],
             "eager_cpp_tok_s": throughput["integrated_eager_cpp"],
             "decode_graph_tok_s": throughput["integrated_decode_graph"],
@@ -537,8 +560,10 @@ def aggregate_table(args):
     temporary.replace(csv_path)
     print("\nshape                              production    split-K       vLLM  vLLM/prod")
     for row in rows:
+        splitk_text = (f"{row['piecewise_splitk_tok_s']:.1f}"
+                       if row['piecewise_splitk_tok_s'] is not None else "REJECTED")
         print(f"{row['shape_id']:<34} {row['piecewise_production_tok_s']:>10.1f} "
-              f"{row['piecewise_splitk_tok_s']:>10.1f} {row['vllm_tok_s']:>10.1f} "
+              f"{splitk_text:>10} {row['vllm_tok_s']:>10.1f} "
               f"{row['vllm_vs_production']:>10.3f}x")
     print(f"\naggregate JSON: {args.output_dir / 'table-summary.json'}")
     print(f"aggregate CSV:  {csv_path}")

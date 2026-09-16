@@ -40,6 +40,10 @@ COMPARISONS = (("decode_graph", "eager"),
                ("piecewise_splitk", "eager"))
 
 
+class NumericalMismatch(AssertionError):
+    """Finite candidate logits exceeded the established numerical tolerance."""
+
+
 class SameHistoryCheck:
     """Untimed full-logit validation using an independent eager KV pool.
 
@@ -48,22 +52,23 @@ class SameHistoryCheck:
     The candidate still computes and validates every layer and KV write.
     """
 
-    def __init__(self, torch, eager, reference, arm):
+    def __init__(self, torch, eager, reference, arm, *, atol=.05, rtol=.01):
         self.torch, self.eager, self.arm = torch, eager, arm
         self.trace = TraceCheck(torch, reference)
         self.max_logit_error = 0.0
         self.argmax_differences = 0
         self.first_argmax_difference = None
+        self.atol, self.rtol = atol, rtol
 
     def __call__(self, args, actual):
         expected = self.eager(*args)
+        self.trace(args, expected)
+        if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
+            raise AssertionError(f"{self.arm}: nonfinite logits at callback {self.trace.cursor}")
         try:
-            self.trace(args, expected)
-            if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
-                raise AssertionError("nonfinite logits")
-            self.torch.testing.assert_close(actual, expected, atol=.05, rtol=.01)
+            self.torch.testing.assert_close(actual, expected, atol=self.atol, rtol=self.rtol)
         except AssertionError as error:
-            raise AssertionError(f"{self.arm}: same-history validation at callback "
+            raise NumericalMismatch(f"{self.arm}: same-history validation at callback "
                                  f"{self.trace.cursor}, decode={args[-1]}: {error}") from error
         self.max_logit_error = max(self.max_logit_error,
                                   float((actual.float() - expected.float()).abs().max()))
@@ -94,6 +99,8 @@ def build_parser():
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--logit-atol", type=float, default=.05,
+                        help="recorded absolute tolerance for same-history full logits")
     parser.add_argument("--expected-max-decode-batch", type=int, default=8,
                         help="hard gate on observed maximum decode batch; set for the chosen case")
     parser.add_argument("--min-full-decode-steps", type=int, default=64,
@@ -118,6 +125,8 @@ def build_parser():
 
 
 def validate_args(args):
+    if not 0 <= args.logit_atol < float("inf"):
+        raise ValueError("logit-atol must be finite and nonnegative")
     if min(args.trials, args.samples, args.expected_max_decode_batch,
            args.min_full_decode_steps, args.expected_prefill_tokens, args.max_capture_tokens,
            args.max_prefill_shapes) < 1 or args.warmups < 0:
@@ -249,10 +258,12 @@ def metrics(result):
 
 def paired_summary(measurements):
     medians = {phase: {arm: [statistics.median(row[phase] for row in trial)
-                             for trial in measurements[arm]] for arm in ARMS}
+                             for trial in measurements[arm]] for arm in measurements}
                for phase in PHASES}
     effects = {}
     for candidate, baseline in COMPARISONS:
+        if candidate not in measurements or baseline not in measurements:
+            continue
         phase_effects = {}
         for phase in PHASES:
             ratios = [a / b for a, b in zip(medians[phase][baseline],
@@ -325,6 +336,7 @@ def run_case(torch, cpp, engine, case, args, requests):
 
     reference = expected_outputs = expected_schedule = actual_work = None
     checks = {}
+    rejected_arms = {}
     # A separate pool preserves both implementations' accumulated KV state while
     # checking all logits, without retaining gigabytes of per-step logits on CPU.
     reference_pool = allocate_pool(engine.cfg, blocks, engine.device)
@@ -334,9 +346,17 @@ def run_case(torch, cpp, engine, case, args, requests):
         for tensor in reference_pool.k_pool + reference_pool.v_pool:
             tensor.fill_(float("nan"))
         checker = (TraceCheck(torch) if reference is None else
-                   SameHistoryCheck(torch, reference_adapter, reference, arm))
+                   SameHistoryCheck(torch, reference_adapter, reference, arm, atol=args.logit_atol))
         try:
             result = execute_arm(arm, observer=checker)
+        except NumericalMismatch as error:
+            if arm != "piecewise_splitk":
+                raise
+            rejected_arms[arm] = {"status": "rejected_numerical_correctness", "error": str(error)}
+            checks[arm] = {"decisions": dict(adapters[arm].decisions),
+                           "status": "rejected_numerical_correctness"}
+            print(f"{case['id']}: SPLIT-K REJECTED; no split-K timing will be reported.\n{error}", flush=True)
+            continue
         except Exception as error:
             raise AssertionError(f"{case['id']} arm={arm}: {error}") from error
         checker.finish()
@@ -361,7 +381,8 @@ def run_case(torch, cpp, engine, case, args, requests):
     # Free generation is measured, with each arm checked against its own
     # untimed output. Numerical agreement above is checked on identical history.
     outputs_by_arm = {}
-    for arm in ARMS:
+    active_arms = tuple(arm for arm in ARMS if arm not in rejected_arms)
+    for arm in active_arms:
         print(f"{case['id']}: free-generation preflight {arm}", flush=True)
         result = execute_arm(arm)
         if schedule_of(result) != expected_schedule:
@@ -372,7 +393,7 @@ def run_case(torch, cpp, engine, case, args, requests):
                           checks["piecewise_splitk"]["decisions"])
     if adapters["piecewise_splitk"].action != "production" and not splitk_executed:
         raise AssertionError("split-K arm did not use split-K; choose a supported context")
-    pieces = {arm: adapters[arm].piecewise_prefill for arm in ARMS[2:]}
+    pieces = {arm: adapters[arm].piecewise_prefill for arm in active_arms if arm in ARMS[2:]}
     for arm, piece in pieces.items():
         if piece.captured_calls == 0:
             raise AssertionError(f"{arm}: piecewise capture was never used")
@@ -383,7 +404,7 @@ def run_case(torch, cpp, engine, case, args, requests):
                 raise AssertionError(f"{arm}: expected packed-prefill bucket was not captured")
 
     for _ in range(args.warmups):
-        for arm in ARMS:
+        for arm in active_arms:
             execute_arm(arm)
     capture_before = {arm: {"calls": piece.captured_calls,
                             "fallbacks": piece.eager_calls,
@@ -391,11 +412,11 @@ def run_case(torch, cpp, engine, case, args, requests):
                             "shapes": sorted(piece.shapes)}
                       for arm, piece in pieces.items()}
 
-    measurements = {arm: [] for arm in ARMS}
+    measurements = {arm: [] for arm in active_arms}
     for trial in range(args.trials):
-        trial_samples = {arm: [] for arm in ARMS}
+        trial_samples = {arm: [] for arm in active_arms}
         for sample in range(args.samples):
-            order = list(ARMS)
+            order = list(active_arms)
             random.Random(args.seed + trial * 1009 + sample).shuffle(order)
             for arm in order:
                 result = execute_arm(arm)
@@ -406,7 +427,7 @@ def run_case(torch, cpp, engine, case, args, requests):
                 if result["outputs"] != outputs_by_arm[arm] or schedule_of(result) != expected_schedule:
                     raise AssertionError(f"{arm}: timed tokens or schedule changed")
                 trial_samples[arm].append(metrics(result))
-        for arm in ARMS:
+        for arm in active_arms:
             measurements[arm].append(trial_samples[arm])
 
     capture = {}
@@ -426,9 +447,12 @@ def run_case(torch, cpp, engine, case, args, requests):
             "trial_medians_ms": medians, "effects": effects,
             "output_ids": outputs_by_arm["eager"],
             "output_ids_by_arm": outputs_by_arm,
-            "correctness_mode": "all-step-same-history-logits-atol0.05-rtol0.01",
+            "correctness_mode": "all-step-same-history-logits",
+            "logit_tolerance": {"atol": args.logit_atol, "rtol": .01},
+            "rejected_arms": rejected_arms,
             "splitk_executed": splitk_executed,
-            "splitk_decision": splitk_decision(effects, executed=splitk_executed)}
+            "splitk_decision": ({"choice": "rejected_numerical_correctness"} if rejected_arms else
+                                splitk_decision(effects, executed=splitk_executed))}
 
 
 def main():
@@ -444,6 +468,7 @@ def main():
             "expected_prefill_tokens": args.expected_prefill_tokens,
             "prefill_buckets": args.prefill_buckets, "trials": args.trials,
             "samples": args.samples, "warmups": args.warmups,
+            "logit_atol": args.logit_atol,
             "workload_in": str(args.workload_in) if args.workload_in else None,
             "requests_sha256": requests_fingerprint(requests)}
     if args.plan:

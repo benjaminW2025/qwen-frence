@@ -198,6 +198,15 @@ temporary KV pool and an eager forward per candidate validation callback.
 Free-generation preflight, warmups and timed runs use each arm's own sampling;
 each timed run must reproduce that arm's preflight outputs and the shared schedule.
 Reports include `output_ids_by_arm` and token agreement against vLLM for each arm.
+`--logit-atol` explicitly changes the absolute logit tolerance (default `.05`);
+relative tolerance remains `.01`. The manifest, report and summary record the
+chosen tolerance. For example, `.075` admits an absolute error of `.064` near
+zero. This is an experiment setting, not a claim of equivalent model quality.
+Completed results checked at a stricter tolerance can be reused. If split-K
+alone fails this finite-logit tolerance check, its rejection is recorded and its
+timing is omitted (`null` in the summary, `REJECTED` in the printed table); the
+three production arms and vLLM comparison continue. Metadata, nonfinite logits,
+and production-arm correctness failures still stop the cell.
 It also checks that split-K and piecewise
 capture actually execute. The real C++ scheduler runs a CPU-only dry schedule
 first, so a case-name/shape mismatch fails before model loading or graph capture;

@@ -265,6 +265,19 @@ class CheckpointContractTests(unittest.TestCase):
             self.assertEqual(agreement["matched_tokens"], 1023)
             self.assertEqual(agreement["first_difference"]["position"], 0)
             self.assertTrue(summary["output_agreement_by_arm"]["piecewise_splitk"]["vs_vllm"]["exact"])
+            report["rejected_arms"] = {"piecewise_splitk": {
+                "status": "rejected_numerical_correctness", "error": "test outlier"}}
+            report["splitk_decision"] = {"choice": "rejected_numerical_correctness"}
+            del report["output_ids_by_arm"]["piecewise_splitk"]
+            del report["trial_medians_ms"]["wall_ms"]["piecewise_splitk"]
+            del report["capture"]["piecewise_splitk"]
+            MODULE.atomic_json(report_path, report)
+            with redirect_stdout(io.StringIO()):
+                MODULE.analyze(args, case, blocks)
+            summary = json.loads((root / "summary.json").read_text())
+            self.assertIsNone(summary["output_throughput_tok_s"]["integrated_piecewise_splitk"])
+            self.assertIsNone(summary["vllm_vs_integrated_splitk"])
+            self.assertAlmostEqual(summary["integrated_production_vs_old"], 1.6)
             broken = json.loads((root / "reference/reference.json").read_text())
             broken["comparison_contract"]["sampling"] = "temperature-1"
             MODULE.atomic_json(root / "reference/reference.json", broken)
