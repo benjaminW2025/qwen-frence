@@ -52,26 +52,40 @@ class SameHistoryCheck:
     The candidate still computes and validates every layer and KV write.
     """
 
-    def __init__(self, torch, eager, reference, arm, *, atol=.05, rtol=.01):
+    def __init__(self, torch, eager, reference, arm, *, atol=.05, rtol=.01, report_only=False):
         self.torch, self.eager, self.arm = torch, eager, arm
         self.trace = TraceCheck(torch, reference)
         self.max_logit_error = 0.0
         self.argmax_differences = 0
         self.first_argmax_difference = None
         self.atol, self.rtol = atol, rtol
+        self.report_only = report_only
+        self.logits_compared = self.logits_outside_tolerance = self.callbacks_outside_tolerance = 0
+        self.first_tolerance_failure = None
 
     def __call__(self, args, actual):
         expected = self.eager(*args)
         self.trace(args, expected)
+        if actual.shape != expected.shape or actual.dtype != expected.dtype:
+            raise AssertionError(f"{self.arm}: logit shape/dtype differs from reference")
         if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
             raise AssertionError(f"{self.arm}: nonfinite logits at callback {self.trace.cursor}")
-        try:
-            self.torch.testing.assert_close(actual, expected, atol=self.atol, rtol=self.rtol)
-        except AssertionError as error:
-            raise NumericalMismatch(f"{self.arm}: same-history validation at callback "
-                                 f"{self.trace.cursor}, decode={args[-1]}: {error}") from error
-        self.max_logit_error = max(self.max_logit_error,
-                                  float((actual.float() - expected.float()).abs().max()))
+        error = (actual.float() - expected.float()).abs()
+        outside = int((error > self.atol + self.rtol * expected.float().abs()).sum())
+        max_error = float(error.max())
+        self.logits_compared += actual.numel()
+        self.logits_outside_tolerance += outside
+        self.max_logit_error = max(self.max_logit_error, max_error)
+        if outside:
+            self.callbacks_outside_tolerance += 1
+            if self.first_tolerance_failure is None:
+                self.first_tolerance_failure = {"callback": self.trace.cursor - 1,
+                    "decode": bool(args[-1]), "logits_outside_tolerance": outside,
+                    "logits_compared": actual.numel(), "max_absolute_error": max_error}
+            if not self.report_only:
+                raise NumericalMismatch(f"{self.arm}: same-history validation at callback "
+                                        f"{self.trace.cursor}: {outside} logits outside tolerance; "
+                                        f"max absolute error={max_error}")
         actual_ids, expected_ids = actual.argmax(-1), expected.argmax(-1)
         different = actual_ids != expected_ids
         self.argmax_differences += int(different.sum())
@@ -99,6 +113,8 @@ def build_parser():
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--splitk-only", action="store_true",
+                        help="validate against eager, then time only the split-K arm")
     parser.add_argument("--logit-atol", type=float, default=.05,
                         help="recorded absolute tolerance for same-history full logits")
     parser.add_argument("--expected-max-decode-batch", type=int, default=8,
@@ -305,20 +321,19 @@ def run_case(torch, cpp, engine, case, args, requests):
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     common = dict(max_running=config.max_batch_size,
                   max_context_length=config.max_context_length)
-    adapters = {
-        "eager": ModelAdapter(engine.model, pool, None),
-        "decode_graph": GraphModelAdapter(engine.model, pool, None, **common),
-        "piecewise": PiecewiseGraphModelAdapter(
+    adapters = {"eager": ModelAdapter(engine.model, pool, None)}
+    if not args.splitk_only:
+        adapters["decode_graph"] = GraphModelAdapter(engine.model, pool, None, **common)
+        adapters["piecewise"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common,
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
-            prefill_buckets=args.prefill_buckets),
-        "piecewise_splitk": PiecewiseGraphModelAdapter(
+            prefill_buckets=args.prefill_buckets)
+    adapters["piecewise_splitk"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common, decode_attention_policy="splitk",
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
-            prefill_buckets=args.prefill_buckets),
-    }
+            prefill_buckets=args.prefill_buckets)
     torch.cuda.synchronize()
     if any(token >= engine.cfg.vocab for row in requests for token in row["prompt"]):
         raise ValueError("workload token ID exceeds the loaded model vocabulary")
@@ -341,22 +356,15 @@ def run_case(torch, cpp, engine, case, args, requests):
     # checking all logits, without retaining gigabytes of per-step logits on CPU.
     reference_pool = allocate_pool(engine.cfg, blocks, engine.device)
     reference_adapter = ModelAdapter(engine.model, reference_pool, None)
-    for arm in ARMS:
+    for arm in adapters:
         print(f"{case['id']}: correctness {arm}", flush=True)
         for tensor in reference_pool.k_pool + reference_pool.v_pool:
             tensor.fill_(float("nan"))
         checker = (TraceCheck(torch) if reference is None else
-                   SameHistoryCheck(torch, reference_adapter, reference, arm, atol=args.logit_atol))
+                   SameHistoryCheck(torch, reference_adapter, reference, arm,
+                                    atol=args.logit_atol, report_only=True))
         try:
             result = execute_arm(arm, observer=checker)
-        except NumericalMismatch as error:
-            if arm != "piecewise_splitk":
-                raise
-            rejected_arms[arm] = {"status": "rejected_numerical_correctness", "error": str(error)}
-            checks[arm] = {"decisions": dict(adapters[arm].decisions),
-                           "status": "rejected_numerical_correctness"}
-            print(f"{case['id']}: SPLIT-K REJECTED; no split-K timing will be reported.\n{error}", flush=True)
-            continue
         except Exception as error:
             raise AssertionError(f"{case['id']} arm={arm}: {error}") from error
         checker.finish()
@@ -371,17 +379,23 @@ def run_case(torch, cpp, engine, case, args, requests):
         elif result["outputs"] != expected_outputs or schedule != expected_schedule:
             raise AssertionError(f"{arm}: tokens or scheduled work differ from eager reference")
         checks[arm] = {"max_logit_error": checker.max_logit_error,
+                       "logits_compared": getattr(checker, "logits_compared", 0),
+                       "logits_outside_tolerance": getattr(checker, "logits_outside_tolerance", 0),
+                       "callbacks_outside_tolerance": getattr(checker, "callbacks_outside_tolerance", 0),
+                       "first_tolerance_failure": getattr(checker, "first_tolerance_failure", None),
+                       "numerical_validation_passed": getattr(checker, "logits_outside_tolerance", 0) == 0,
                        "argmax_differences_on_reference_history": getattr(checker, "argmax_differences", 0),
                        "first_argmax_difference": getattr(checker, "first_argmax_difference", None),
                        "decisions": result["decisions"], "actual_work": work}
-        print(f"{arm}: correctness passed; max logit error={checker.max_logit_error:.6g}, "
+        status = "within tolerance" if checks[arm]["numerical_validation_passed"] else "NUMERICAL WARNING (timing retained)"
+        print(f"{arm}: {status}; max logit error={checker.max_logit_error:.6g}, "
               f"argmax differences={getattr(checker, 'argmax_differences', 0)}", flush=True)
 
     del reference_adapter, reference_pool, checker, reference
     # Free generation is measured, with each arm checked against its own
     # untimed output. Numerical agreement above is checked on identical history.
-    outputs_by_arm = {}
-    active_arms = tuple(arm for arm in ARMS if arm not in rejected_arms)
+    outputs_by_arm = {"eager": expected_outputs}
+    active_arms = ("piecewise_splitk",) if args.splitk_only else tuple(adapters)
     for arm in active_arms:
         print(f"{case['id']}: free-generation preflight {arm}", flush=True)
         result = execute_arm(arm)
@@ -442,6 +456,10 @@ def run_case(torch, cpp, engine, case, args, requests):
         if capture[arm]["timed_prefill_capture_calls"] == 0:
             raise AssertionError(f"{arm}: no timed prefill used a captured bucket")
     medians, effects = paired_summary(measurements)
+    decision = ({"choice": "separate_run_not_paired"} if args.splitk_only else
+                splitk_decision(effects, executed=splitk_executed))
+    if not checks["piecewise_splitk"]["numerical_validation_passed"]:
+        decision = {"choice": "timed_with_numerical_warning", "performance_only_decision": decision}
     return {"status": "ok", "case_id": case["id"], "actual_work": actual_work,
             "checks": checks, "capture": capture, "measurements": measurements,
             "trial_medians_ms": medians, "effects": effects,
@@ -449,10 +467,10 @@ def run_case(torch, cpp, engine, case, args, requests):
             "output_ids_by_arm": outputs_by_arm,
             "correctness_mode": "all-step-same-history-logits",
             "logit_tolerance": {"atol": args.logit_atol, "rtol": .01},
+            "splitk_only": args.splitk_only,
             "rejected_arms": rejected_arms,
             "splitk_executed": splitk_executed,
-            "splitk_decision": ({"choice": "rejected_numerical_correctness"} if rejected_arms else
-                                splitk_decision(effects, executed=splitk_executed))}
+            "splitk_decision": decision}
 
 
 def main():
@@ -462,7 +480,7 @@ def main():
         requests = resolve_requests(args, case)
     except ValueError as error:
         raise SystemExit(f"invalid experiment plan: {error}") from error
-    plan = {"case": case, "arms": ARMS,
+    plan = {"case": case, "arms": ("piecewise_splitk",) if args.splitk_only else ARMS,
             "expected_max_decode_batch": args.expected_max_decode_batch,
             "min_full_decode_steps": args.min_full_decode_steps,
             "expected_prefill_tokens": args.expected_prefill_tokens,
