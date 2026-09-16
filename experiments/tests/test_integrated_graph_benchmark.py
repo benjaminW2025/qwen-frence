@@ -6,6 +6,10 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+import io
+from contextlib import redirect_stdout
+from unittest.mock import patch
+from types import SimpleNamespace
 
 import torch
 
@@ -22,6 +26,138 @@ except ImportError:
 
 
 class IntegratedGraphDesignTests(unittest.TestCase):
+    @unittest.skipIf(cpp is None, "build C++ extension first")
+    def test_long_cell_runs_full_ablation_with_close_but_different_tokens(self):
+        args = MODULE.build_parser().parse_args([
+            "--case-id", "fixed-b8-l2048-o128", "--trials", "1", "--samples", "1",
+            "--warmups", "0"])
+        case = MODULE.validate_args(args)
+
+        class Adapter:
+            def __init__(self, candidate=False, pieces=False, splitk=False):
+                self.decisions, self.step_calls, self.observer = {}, [], None
+                self.candidate, self.pieces = candidate, pieces
+                self.action = "H1-K22-S3" if splitk else "production"
+                if pieces:
+                    self.piecewise_prefill = SimpleNamespace(
+                        shapes={2048: []}, buckets=[2048], captured_calls=0,
+                        eager_calls=0, graph_replays=0)
+
+            def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+                raw = (ids, positions, slots, cu, context, table, max_query, decode)
+                self.step_calls.append((decode, ids.numel(), context.numel(), max_query))
+                if decode:
+                    self.decisions[self.action] = self.decisions.get(self.action, 0) + 1
+                elif self.pieces:
+                    self.piecewise_prefill.captured_calls += 1
+                    self.piecewise_prefill.graph_replays += 29
+                logits = torch.tensor([[1.002, 1.0] if self.candidate else [1.0, 1.001]])
+                logits = logits.repeat(context.numel(), 1)
+                if self.observer is not None:
+                    replacement = self.observer(raw, logits)
+                    if replacement is not None:
+                        return replacement
+                return logits
+
+        engine = SimpleNamespace(cfg=SimpleNamespace(vocab=16), model=None, device="cpu")
+        pool = lambda *a: SimpleNamespace(k_pool=[torch.zeros(1)], v_pool=[torch.zeros(1)])
+        with (patch.object(torch.cuda, "synchronize"),
+              patch.object(MODULE, "allocate_pool", side_effect=pool),
+              patch.object(MODULE, "ModelAdapter", side_effect=lambda *a: Adapter()),
+              patch.object(MODULE, "GraphModelAdapter", side_effect=lambda *a, **k: Adapter(True)),
+              patch.object(MODULE, "PiecewiseGraphModelAdapter", side_effect=lambda *a, **k:
+                           Adapter(True, True, k.get("decode_attention_policy") == "splitk")),
+              redirect_stdout(io.StringIO())):
+            row = MODULE.run_case(torch, cpp, engine, case, args,
+                                  MODULE.make_requests(case, args.seed, 16))
+        self.assertEqual(row["status"], "ok")
+        self.assertTrue(row["splitk_executed"])
+        self.assertNotEqual(row["output_ids_by_arm"]["eager"],
+                            row["output_ids_by_arm"]["piecewise_splitk"])
+        self.assertGreater(row["checks"]["piecewise_splitk"]
+                           ["argmax_differences_on_reference_history"], 0)
+        self.assertEqual(set(row["measurements"]), set(MODULE.ARMS))
+
+    def test_teacher_forced_preflight_and_free_generation_use_distinct_histories(self):
+        from python_control import PythonControl
+        from benchmark_scheduler_decode import execute
+
+        config = SimpleNamespace(max_batch_size=2, max_context_length=16,
+                                 max_prefill_tokens_per_iter=4, block_size=16,
+                                 eos_token_id=-1)
+        requests = [{"id": i, "arrival": 0, "prompt": [1] * 4, "output": 4}
+                    for i in range(2)]
+
+        class Adapter:
+            def __init__(self, candidate=False, observer=None):
+                self.decisions, self.step_calls = {}, []
+                self.candidate, self.observer = candidate, observer
+
+            def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+                args = (ids, positions, slots, cu, context, table, max_query, decode)
+                self.step_calls.append((decode, ids.numel(), context.numel(), max_query))
+                logits = torch.tensor([[1.002, 1.0] if self.candidate else [1.0, 1.001]])
+                logits = logits.repeat(context.numel(), 1)
+                if self.observer is not None:
+                    replacement = self.observer(args, logits)
+                    if replacement is not None:
+                        return replacement
+                return logits
+
+        with patch.object(torch.cuda, "synchronize"):
+            reference = MODULE.TraceCheck(torch)
+            expected = execute(torch, PythonControl(config, "cpu"), Adapter(observer=reference), requests)
+            checker = MODULE.SameHistoryCheck(torch, Adapter(), reference.rows, "candidate")
+            checked = execute(torch, PythonControl(config, "cpu"),
+                              Adapter(True, checker), requests)
+            checker.finish()
+            natural = execute(torch, PythonControl(config, "cpu"), Adapter(True), requests)
+        self.assertEqual(checked["outputs"], expected["outputs"])
+        self.assertNotEqual(natural["outputs"], expected["outputs"])
+        self.assertEqual(MODULE.schedule_of(natural), MODULE.schedule_of(expected))
+        self.assertGreater(checker.argmax_differences, 0)
+
+    def test_same_history_accepts_close_logits_with_different_argmax(self):
+        args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),
+                torch.tensor([], dtype=torch.int32), torch.tensor([4]),
+                torch.tensor([[0]]), 1, True)
+        expected = torch.tensor([[1.0, 1.001]])
+        reference = MODULE.TraceCheck(torch)
+        reference(args, expected)
+        checker = MODULE.SameHistoryCheck(torch, lambda *a: expected,
+                                          reference.rows, "splitk")
+        actual = torch.tensor([[1.002, 1.0]])
+        returned = checker(args, actual)
+        self.assertIs(returned, expected)
+        self.assertEqual(checker.argmax_differences, 1)
+        checker.finish()
+
+    def test_same_history_checks_repeated_shapes_and_rejects_corruption(self):
+        args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),
+                torch.tensor([], dtype=torch.int32), torch.tensor([4]),
+                torch.tensor([[0]]), 1, True)
+        expected = torch.tensor([[1.0, 2.0]])
+        reference = MODULE.TraceCheck(torch)
+        reference(args, expected)
+        reference(args, expected)
+        checker = MODULE.SameHistoryCheck(torch, lambda *a: expected,
+                                          reference.rows, "piecewise")
+        checker(args, expected.clone())
+        with self.assertRaisesRegex(AssertionError, "piecewise: same-history"):
+            checker(args, torch.tensor([[10.0, 2.0]]))
+
+    def test_metadata_diagnostic_identifies_field(self):
+        args = (torch.tensor([1]), torch.tensor([3]), torch.tensor([3]),
+                torch.tensor([], dtype=torch.int32), torch.tensor([4]),
+                torch.tensor([[0]]), 1, True)
+        logits = torch.tensor([[1.0, 2.0]])
+        reference = MODULE.TraceCheck(torch)
+        reference(args, logits)
+        checker = MODULE.TraceCheck(torch, reference.rows)
+        changed = (torch.tensor([2]), *args[1:])
+        with self.assertRaisesRegex(AssertionError, "fields=\\['input_ids'\\]"):
+            checker(changed, logits)
+
     def test_default_plan_is_one_fixed_regime(self):
         args = MODULE.build_parser().parse_args([])
         case = MODULE.validate_args(args)

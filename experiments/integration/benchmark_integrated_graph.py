@@ -40,6 +40,51 @@ COMPARISONS = (("decode_graph", "eager"),
                ("piecewise_splitk", "eager"))
 
 
+class SameHistoryCheck:
+    """Untimed full-logit validation using an independent eager KV pool.
+
+    Returning eager logits makes the scheduler sample the reference token, so
+    rounding at an argmax boundary cannot change subsequent validation inputs.
+    The candidate still computes and validates every layer and KV write.
+    """
+
+    def __init__(self, torch, eager, reference, arm):
+        self.torch, self.eager, self.arm = torch, eager, arm
+        self.trace = TraceCheck(torch, reference)
+        self.max_logit_error = 0.0
+        self.argmax_differences = 0
+        self.first_argmax_difference = None
+
+    def __call__(self, args, actual):
+        expected = self.eager(*args)
+        try:
+            self.trace(args, expected)
+            if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
+                raise AssertionError("nonfinite logits")
+            self.torch.testing.assert_close(actual, expected, atol=.05, rtol=.01)
+        except AssertionError as error:
+            raise AssertionError(f"{self.arm}: same-history validation at callback "
+                                 f"{self.trace.cursor}, decode={args[-1]}: {error}") from error
+        self.max_logit_error = max(self.max_logit_error,
+                                  float((actual.float() - expected.float()).abs().max()))
+        actual_ids, expected_ids = actual.argmax(-1), expected.argmax(-1)
+        different = actual_ids != expected_ids
+        self.argmax_differences += int(different.sum())
+        if self.first_argmax_difference is None and different.any():
+            row = int(different.nonzero()[0, 0])
+            left, right = int(expected_ids[row]), int(actual_ids[row])
+            self.first_argmax_difference = {
+                "callback": self.trace.cursor - 1, "row": row,
+                "reference_token": left, "candidate_token": right,
+                "reference_logit_margin": float(expected[row, left] - expected[row, right]),
+                "candidate_logit_margin": float(actual[row, right] - actual[row, left]),
+            }
+        return expected
+
+    def finish(self):
+        self.trace.finish()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--preset", choices=("fixed", "smoke", "full", "longctx"), default="fixed")
@@ -280,9 +325,20 @@ def run_case(torch, cpp, engine, case, args, requests):
 
     reference = expected_outputs = expected_schedule = actual_work = None
     checks = {}
+    # A separate pool preserves both implementations' accumulated KV state while
+    # checking all logits, without retaining gigabytes of per-step logits on CPU.
+    reference_pool = allocate_pool(engine.cfg, blocks, engine.device)
+    reference_adapter = ModelAdapter(engine.model, reference_pool, None)
     for arm in ARMS:
-        checker = TraceCheck(torch, reference)
-        result = execute_arm(arm, observer=checker)
+        print(f"{case['id']}: correctness {arm}", flush=True)
+        for tensor in reference_pool.k_pool + reference_pool.v_pool:
+            tensor.fill_(float("nan"))
+        checker = (TraceCheck(torch) if reference is None else
+                   SameHistoryCheck(torch, reference_adapter, reference, arm))
+        try:
+            result = execute_arm(arm, observer=checker)
+        except Exception as error:
+            raise AssertionError(f"{case['id']} arm={arm}: {error}") from error
         checker.finish()
         work = verify_actual_work(result, args.expected_max_decode_batch,
                                   args.expected_prefill_tokens, args.min_full_decode_steps)
@@ -295,7 +351,22 @@ def run_case(torch, cpp, engine, case, args, requests):
         elif result["outputs"] != expected_outputs or schedule != expected_schedule:
             raise AssertionError(f"{arm}: tokens or scheduled work differ from eager reference")
         checks[arm] = {"max_logit_error": checker.max_logit_error,
+                       "argmax_differences_on_reference_history": getattr(checker, "argmax_differences", 0),
+                       "first_argmax_difference": getattr(checker, "first_argmax_difference", None),
                        "decisions": result["decisions"], "actual_work": work}
+        print(f"{arm}: correctness passed; max logit error={checker.max_logit_error:.6g}, "
+              f"argmax differences={getattr(checker, 'argmax_differences', 0)}", flush=True)
+
+    del reference_adapter, reference_pool, checker, reference
+    # Free generation is measured, with each arm checked against its own
+    # untimed output. Numerical agreement above is checked on identical history.
+    outputs_by_arm = {}
+    for arm in ARMS:
+        print(f"{case['id']}: free-generation preflight {arm}", flush=True)
+        result = execute_arm(arm)
+        if schedule_of(result) != expected_schedule:
+            raise AssertionError(f"{arm}: free-generation schedule changed")
+        outputs_by_arm[arm] = result["outputs"]
 
     splitk_executed = any(key != "production" for key in
                           checks["piecewise_splitk"]["decisions"])
@@ -332,7 +403,7 @@ def run_case(torch, cpp, engine, case, args, requests):
                                    args.expected_prefill_tokens, args.min_full_decode_steps)
                 if args.preset == "fixed":
                     verify_fixed_result(result, case["id"])
-                if result["outputs"] != expected_outputs or schedule_of(result) != expected_schedule:
+                if result["outputs"] != outputs_by_arm[arm] or schedule_of(result) != expected_schedule:
                     raise AssertionError(f"{arm}: timed tokens or schedule changed")
                 trial_samples[arm].append(metrics(result))
         for arm in ARMS:
@@ -353,7 +424,9 @@ def run_case(torch, cpp, engine, case, args, requests):
     return {"status": "ok", "case_id": case["id"], "actual_work": actual_work,
             "checks": checks, "capture": capture, "measurements": measurements,
             "trial_medians_ms": medians, "effects": effects,
-            "output_ids": expected_outputs,
+            "output_ids": outputs_by_arm["eager"],
+            "output_ids_by_arm": outputs_by_arm,
+            "correctness_mode": "all-step-same-history-logits-atol0.05-rtol0.01",
             "splitk_executed": splitk_executed,
             "splitk_decision": splitk_decision(effects, executed=splitk_executed)}
 

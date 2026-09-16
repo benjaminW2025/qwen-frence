@@ -66,6 +66,8 @@ def build_parser():
     parser.add_argument("--profile-with-stack", action="store_true")
     parser.add_argument("--include-context-probes", action="store_true",
                         help="include the two expensive 4096-token probes in table actions")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="archive and retry interrupted/error ablations in table actions")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--model", default=MODEL)
     return parser
@@ -194,10 +196,16 @@ def prepare_or_validate(args, case):
 def result_state(args):
     ablation_files = [args.output_dir / "ablation" / name
                       for name in ("manifest.json", "report.json")]
+    ablation_complete = False
+    if all(path.is_file() for path in ablation_files):
+        try:
+            ablation_complete = json.loads(ablation_files[1].read_text()).get("status") == "ok"
+        except (OSError, ValueError):
+            pass
     reference_files = list((args.output_dir / "reference").glob("*.json"))
-    return {"ablation_complete": all(path.is_file() for path in ablation_files),
+    return {"ablation_complete": ablation_complete,
             "ablation_partial": any(path.exists() for path in ablation_files)
-                                and not all(path.is_file() for path in ablation_files),
+                                and not ablation_complete,
             "reference_complete": len(reference_files) == 1,
             "reference_ambiguous": len(reference_files) > 1,
             "analysis_complete": (args.output_dir / "summary.json").is_file()}
@@ -232,6 +240,26 @@ def reference_outputs(result, workload):
     if not maps:
         raise ValueError("reference backend has no measured runs")
     return maps[0], all(values == maps[0] for values in maps[1:])
+
+
+def token_agreement(expected, actual):
+    total = matched = 0
+    first = None
+    if set(expected) != set(actual):
+        raise ValueError("output request IDs differ")
+    for request_id, tokens in expected.items():
+        candidate = actual[request_id]
+        if len(tokens) != len(candidate):
+            raise ValueError("output lengths differ")
+        for position, (left, right) in enumerate(zip(tokens, candidate)):
+            total += 1
+            matched += left == right
+            if left != right and first is None:
+                first = {"request_id": request_id, "position": position,
+                         "reference_token": left, "candidate_token": right}
+    return {"matched_tokens": matched, "total_tokens": total,
+            "match_fraction": matched / total if total else 1.0,
+            "exact": matched == total, "first_difference": first}
 
 
 def run_ablation(args, case):
@@ -370,7 +398,12 @@ def analyze(args, case, num_blocks):
     old_outputs, old_repeatable = reference_outputs(reference["backends"]["regime-dispatched"],
                                                     workload)
     vllm_outputs, vllm_repeatable = reference_outputs(reference["backends"]["vllm"], workload)
-    integrated_outputs = ablation["output_ids"]
+    outputs_by_arm = ablation.get("output_ids_by_arm", {arm: ablation["output_ids"] for arm in ARMS})
+    integrated_outputs = outputs_by_arm["piecewise"]
+    agreements = {arm: {"vs_eager": token_agreement(outputs_by_arm["eager"], outputs_by_arm[arm]),
+                        "vs_vllm": token_agreement(vllm_outputs, outputs_by_arm[arm]),
+                        "vs_old": token_agreement(old_outputs, outputs_by_arm[arm])}
+                  for arm in ARMS}
     if set(integrated_outputs) != {request.request_id for request in workload.requests}:
         raise ValueError("integrated ablation lost request outputs")
     for request in workload.requests:
@@ -403,6 +436,8 @@ def analyze(args, case, num_blocks):
                                     "old_repetitions_identical": old_repeatable,
                                     "vllm_repetitions_identical": vllm_repeatable},
                "splitk_decision": ablation["splitk_decision"],
+               "output_agreement_by_arm": agreements,
+               "correctness_mode": ablation.get("correctness_mode", "legacy-exact-trajectory"),
                "splitk_executed": splitk_executed,
                "ablation_effects": ablation["effects"],
                "reference_file": str(reference_files[0])}
@@ -420,12 +455,26 @@ def validate_resumed_measurements(args):
     """Do not mix a weaker or differently-shaped partial run into a table sweep."""
     state = result_state(args)
     if state["ablation_partial"]:
-        raise ValueError(f"partial ablation in {args.output_dir}; use a fresh suite directory")
+        if not args.retry_failed or args.action != "run-table":
+            raise ValueError(f"interrupted/error ablation in {args.output_dir}; rerun the table "
+                             "with --retry-failed to archive and retry it")
+        source = args.output_dir / "ablation"
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        archive = args.output_dir / f"ablation-failed-{timestamp}"
+        source.replace(archive)
+        print(f"archived failed ablation: {archive}", flush=True)
+        state = result_state(args)
     if state["reference_ambiguous"]:
         raise ValueError(f"multiple reference JSON files in {args.output_dir / 'reference'}")
     if state["ablation_complete"]:
         manifest = json.loads((args.output_dir / "ablation/manifest.json").read_text())
         plan = manifest["plan"]
+        case = get_fixed_case(args.shape_id)
+        _, requests = load_frozen(args, case)
+        report = json.loads((args.output_dir / "ablation/report.json").read_text())
+        if (report.get("case_id") != args.shape_id or
+                plan["requests_sha256"] != requests_fingerprint(requests)):
+            raise ValueError("existing ablation shape/workload differs; use a fresh cell directory")
         requested = {"trials": args.trials, "samples": args.samples,
                      "warmups": args.warmups}
         for name, value in requested.items():
@@ -551,6 +600,7 @@ def main():
         print(json.dumps([shape_summary(row) for row in FIXED_SHAPES], indent=2))
         return
     if args.action == "plan-table":
+        contract(args)
         plan_table(args)
         return
     if args.action == "run-table":

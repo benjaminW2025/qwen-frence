@@ -79,7 +79,9 @@ class ModelAdapter:
             x = x.index_select(0, cu[1:].to(torch.long) - 1)
         logits = model.lm_head(x)
         if self.observer is not None:
-            self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            if checked is not None:
+                return checked
         return logits
 
 
@@ -138,7 +140,9 @@ class GraphModelAdapter(ModelAdapter):
             ids.view(-1, 1), positions, context, table, slots
         ).squeeze(1)
         if self.observer is not None:
-            self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            if checked is not None:
+                return checked
         return logits
 
 
@@ -171,5 +175,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                                          table, max_query, False)
         self.step_calls.append((False, ids.numel(), context.numel(), max_query))
         if self.observer is not None:
-            self.observer((ids, positions, slots, cu, context, table, max_query, False), logits)
+            checked = self.observer((ids, positions, slots, cu, context, table, max_query, False), logits)
+            if checked is not None:
+                return checked
         return logits
