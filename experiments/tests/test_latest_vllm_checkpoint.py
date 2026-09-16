@@ -21,6 +21,50 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CheckpointContractTests(unittest.TestCase):
+    def test_table_actions_default_to_eight_factorial_cells(self):
+        args = MODULE.build_parser().parse_args(["plan-table", "--output-dir", "/tmp/suite"])
+        self.assertEqual(len(MODULE.table_shapes(args)), 8)
+        self.assertTrue(all(shape["role"] == "factorial" for shape in MODULE.table_shapes(args)))
+        args.include_context_probes = True
+        self.assertEqual(len(MODULE.table_shapes(args)), 10)
+
+    def test_table_plan_accounts_for_every_backend_workload(self):
+        args = MODULE.build_parser().parse_args(
+            ["plan-table", "--output-dir", "/tmp/suite", "--trials", "3",
+             "--samples", "2", "--repetitions", "4"])
+        output = io.StringIO()
+        with redirect_stdout(output):
+            MODULE.plan_table(args)
+        plan = json.loads(output.getvalue())
+        self.assertEqual(len(plan["rows"]), 8)
+        self.assertTrue(all(row["ablation_workloads"] == 24 for row in plan["rows"]))
+        self.assertTrue(all(row["reference_workloads"] == 8 for row in plan["rows"]))
+
+    def test_table_runner_visits_all_eight_cells_and_both_measured_processes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = MODULE.build_parser().parse_args(
+                ["run-table", "--output-dir", directory])
+            empty = {"ablation_complete": False, "reference_complete": False}
+            with (patch.object(MODULE, "resolve_model_source", return_value="/model"),
+                  patch.object(MODULE.importlib.util, "find_spec", return_value=object()),
+                  patch.object(MODULE, "prepare_or_validate", return_value="created"),
+                  patch.object(MODULE, "check_schedule") as schedule,
+                  patch.object(MODULE, "validate_resumed_measurements", return_value=empty),
+                  patch.object(MODULE, "run_ablation") as ablation,
+                  patch.object(MODULE, "run_reference") as reference,
+                  patch.object(MODULE, "analyze") as analyze,
+                  patch.object(MODULE, "aggregate_table") as aggregate,
+                  redirect_stdout(io.StringIO())):
+                MODULE.run_table(args)
+            self.assertEqual(schedule.call_count, 8)
+            self.assertEqual(ablation.call_count, 8)
+            self.assertEqual(reference.call_count, 8)
+            self.assertEqual(analyze.call_count, 8)
+            aggregate.assert_called_once_with(args)
+            self.assertEqual(
+                [call.args[0].shape_id for call in ablation.call_args_list],
+                [shape["id"] for shape in MODULE.FACTORIAL_SHAPES])
+
     def test_exact_frozen_prompt_workloads_reach_all_ten_cpp_shapes(self):
         import torch
         try:

@@ -9,6 +9,7 @@ throughput. This is a fixed-regime checkpoint, not a serving-SLO comparison.
 from __future__ import annotations
 
 import argparse
+import csv
 from datetime import datetime, timezone
 import importlib.util
 import json
@@ -27,7 +28,8 @@ from benchmark_core import RequestSpec, Workload
 from benchmark_integrated_graph import (dry_schedule, requests_fingerprint,
                                         verify_actual_work)
 from design import make_requests
-from fixed_regime import (FIXED_SHAPES, MIN_FULL_DECODE_STEPS, SPLITK_MIN_CONTEXT,
+from fixed_regime import (FACTORIAL_SHAPES, FIXED_SHAPES, MIN_FULL_DECODE_STEPS,
+                          SPLITK_MIN_CONTEXT,
                           PREFILL_TOKENS_PER_STEP, get_fixed_case,
                           get_fixed_shape, shape_summary)
 
@@ -35,11 +37,13 @@ VOCAB = 151936
 MODEL = "Qwen/Qwen2.5-1.5B"
 MODEL_REVISION = "8faed761d45a263340a0528343f099c05c9a4323"
 ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk")
+TABLE_ACTIONS = ("plan-table", "run-table", "analyze-table")
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("table", "plan", "prepare", "dry-schedule",
+    parser.add_argument("action", choices=("table", "plan-table", "run-table", "analyze-table",
+                                           "plan", "prepare", "dry-schedule",
                                            "stage-model-cache", "check-model-cache",
                                            "run-profile", "run-ablation",
                                            "run-reference", "analyze"))
@@ -60,6 +64,8 @@ def build_parser():
     parser.add_argument("--profile-decode-policy", choices=("production", "splitk"),
                         default="production")
     parser.add_argument("--profile-with-stack", action="store_true")
+    parser.add_argument("--include-context-probes", action="store_true",
+                        help="include the two expensive 4096-token probes in table actions")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--model", default=MODEL)
     return parser
@@ -162,6 +168,39 @@ def atomic_json(path, value):
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
+
+
+def table_shapes(args):
+    return FIXED_SHAPES if args.include_context_probes else FACTORIAL_SHAPES
+
+
+def cell_args(args, shape_id):
+    values = vars(args).copy()
+    values["shape_id"] = shape_id
+    values["output_dir"] = args.output_dir / shape_id
+    return argparse.Namespace(**values)
+
+
+def prepare_or_validate(args, case):
+    path = workload_path(args)
+    if path.exists():
+        load_frozen(args, case)
+        return "validated"
+    workload, _ = planned_workload(case, args.seed)
+    atomic_json(path, workload.to_dict())
+    return "created"
+
+
+def result_state(args):
+    ablation_files = [args.output_dir / "ablation" / name
+                      for name in ("manifest.json", "report.json")]
+    reference_files = list((args.output_dir / "reference").glob("*.json"))
+    return {"ablation_complete": all(path.is_file() for path in ablation_files),
+            "ablation_partial": any(path.exists() for path in ablation_files)
+                                and not all(path.is_file() for path in ablation_files),
+            "reference_complete": len(reference_files) == 1,
+            "reference_ambiguous": len(reference_files) > 1,
+            "analysis_complete": (args.output_dir / "summary.json").is_file()}
 
 
 def workload_path(args):
@@ -377,13 +416,153 @@ def analyze(args, case, num_blocks):
           f"{summary['vllm_vs_integrated_splitk']:.3f}x")
 
 
+def validate_resumed_measurements(args):
+    """Do not mix a weaker or differently-shaped partial run into a table sweep."""
+    state = result_state(args)
+    if state["ablation_partial"]:
+        raise ValueError(f"partial ablation in {args.output_dir}; use a fresh suite directory")
+    if state["reference_ambiguous"]:
+        raise ValueError(f"multiple reference JSON files in {args.output_dir / 'reference'}")
+    if state["ablation_complete"]:
+        manifest = json.loads((args.output_dir / "ablation/manifest.json").read_text())
+        plan = manifest["plan"]
+        requested = {"trials": args.trials, "samples": args.samples,
+                     "warmups": args.warmups}
+        for name, value in requested.items():
+            if int(plan[name]) < value:
+                raise ValueError(f"existing {args.shape_id} ablation has {name}={plan[name]}, "
+                                 f"below requested {value}; use a fresh suite directory")
+    if state["reference_complete"]:
+        reference_file = next((args.output_dir / "reference").glob("*.json"))
+        config = json.loads(reference_file.read_text())["configuration"]
+        if int(config["repetitions"]) < args.repetitions or int(config["warmups"]) < args.warmups:
+            raise ValueError(f"existing {args.shape_id} reference is weaker than the requested "
+                             "repetitions/warmups; use a fresh suite directory")
+    return state
+
+
+def aggregate_table(args):
+    shapes = table_shapes(args)
+    rows = []
+    for shape in shapes:
+        child = cell_args(args, shape["id"])
+        path = child.output_dir / "summary.json"
+        if not path.is_file():
+            raise ValueError(f"missing analyzed table cell: {path}")
+        summary = json.loads(path.read_text())
+        if (summary.get("status") != "complete"
+                or summary["workload"]["case_id"] != shape["id"]):
+            raise ValueError(f"invalid analyzed table cell: {path}")
+        throughput = summary["output_throughput_tok_s"]
+        agreement = summary["output_agreement"]
+        rows.append({
+            "shape_id": shape["id"], "batch": shape["batch"],
+            "prompt_length": shape["prompt_length"],
+            "output_length": shape["output_length"],
+            "splitk_executed": summary["splitk_executed"],
+            "old_tok_s": throughput["prior_regime_dispatched_engine"],
+            "eager_cpp_tok_s": throughput["integrated_eager_cpp"],
+            "decode_graph_tok_s": throughput["integrated_decode_graph"],
+            "piecewise_production_tok_s": throughput["integrated_piecewise_production"],
+            "piecewise_splitk_tok_s": throughput["integrated_piecewise_splitk"],
+            "vllm_tok_s": throughput["vllm"],
+            "production_vs_old": summary["integrated_production_vs_old"],
+            "splitk_vs_old": summary["integrated_splitk_vs_old"],
+            "vllm_vs_production": summary["vllm_vs_integrated_production"],
+            "vllm_vs_splitk": summary["vllm_vs_integrated_splitk"],
+            "old_vs_integrated_exact": agreement["old_vs_integrated"],
+            "vllm_vs_integrated_exact": agreement["vllm_vs_integrated"],
+        })
+    payload = {"status": "complete", "created_at": datetime.now(timezone.utc).isoformat(),
+               "scope": "eight factorial cells" if not args.include_context_probes
+                        else "eight factorial cells plus two context probes",
+               "shape_ids": [row["shape_id"] for row in rows], "rows": rows}
+    atomic_json(args.output_dir / "table-summary.json", payload)
+    csv_path = args.output_dir / "table-summary.csv"
+    temporary = csv_path.with_suffix(".tmp")
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    with temporary.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    temporary.replace(csv_path)
+    print("\nshape                              production    split-K       vLLM  vLLM/prod")
+    for row in rows:
+        print(f"{row['shape_id']:<34} {row['piecewise_production_tok_s']:>10.1f} "
+              f"{row['piecewise_splitk_tok_s']:>10.1f} {row['vllm_tok_s']:>10.1f} "
+              f"{row['vllm_vs_production']:>10.3f}x")
+    print(f"\naggregate JSON: {args.output_dir / 'table-summary.json'}")
+    print(f"aggregate CSV:  {csv_path}")
+
+
+def plan_table(args):
+    rows = []
+    totals = {"timed_ablation_prompt_tokens": 0, "timed_ablation_output_tokens": 0,
+              "timed_reference_prompt_tokens": 0, "timed_reference_output_tokens": 0}
+    for shape in table_shapes(args):
+        summary = shape_summary(shape)
+        ablation_workloads = len(ARMS) * args.trials * args.samples
+        reference_workloads = 2 * args.repetitions
+        row = {"shape_id": shape["id"], "ablation_workloads": ablation_workloads,
+               "reference_workloads": reference_workloads,
+               "timed_ablation_prompt_tokens": ablation_workloads * summary["total_prompt_tokens"],
+               "timed_ablation_output_tokens": ablation_workloads * summary["total_output_tokens"],
+               "timed_reference_prompt_tokens": reference_workloads * summary["total_prompt_tokens"],
+               "timed_reference_output_tokens": reference_workloads * summary["total_output_tokens"]}
+        rows.append(row)
+        for name in totals:
+            totals[name] += row[name]
+    print(json.dumps({"rows": rows, "totals": totals,
+                      "plus_warmups_and_correctness_per_cell": True,
+                      "output_dir": str(args.output_dir)}, indent=2))
+
+
+def run_table(args):
+    # Fail before launching any measured cell if the two external prerequisites are absent.
+    resolve_model_source(args)
+    if importlib.util.find_spec("vllm") is None:
+        raise ValueError("vLLM is not installed in this interpreter")
+    for index, shape in enumerate(table_shapes(args), 1):
+        child = cell_args(args, shape["id"])
+        case, num_blocks = contract(child)
+        print(f"\n[{index}/{len(table_shapes(args))}] {shape['id']}", flush=True)
+        prepared = prepare_or_validate(child, case)
+        print(f"workload {prepared}: {workload_path(child)}", flush=True)
+        check_schedule(child, case)
+        state = validate_resumed_measurements(child)
+        if not state["ablation_complete"]:
+            run_ablation(child, case)
+        else:
+            print("resuming: validated existing ablation", flush=True)
+        if not state["reference_complete"]:
+            run_reference(child, case, num_blocks)
+        else:
+            print("resuming: validated existing reference", flush=True)
+        analyze(child, case, num_blocks)
+    aggregate_table(args)
+
+
 def main():
     args = build_parser().parse_args()
     if args.output_dir is None:
-        args.output_dir = (ROOT / "experiments/results/latest-vllm-checkpoint"
-                           / args.shape_id)
+        base = ROOT / "experiments/results/latest-vllm-checkpoint"
+        args.output_dir = base if args.action in TABLE_ACTIONS else base / args.shape_id
     if args.action == "table":
         print(json.dumps([shape_summary(row) for row in FIXED_SHAPES], indent=2))
+        return
+    if args.action == "plan-table":
+        plan_table(args)
+        return
+    if args.action == "run-table":
+        run_table(args)
+        return
+    if args.action == "analyze-table":
+        for shape in table_shapes(args):
+            child = cell_args(args, shape["id"])
+            case, num_blocks = contract(child)
+            validate_resumed_measurements(child)
+            analyze(child, case, num_blocks)
+        aggregate_table(args)
         return
     case, num_blocks = contract(args)
     workload, requests = planned_workload(case, args.seed)
