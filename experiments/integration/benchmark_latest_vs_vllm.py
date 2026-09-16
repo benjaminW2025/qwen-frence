@@ -40,7 +40,8 @@ ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk")
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("table", "plan", "prepare", "dry-schedule",
-                                           "check-model-cache", "run-profile", "run-ablation",
+                                           "stage-model-cache", "check-model-cache",
+                                           "run-profile", "run-ablation",
                                            "run-reference", "analyze"))
     parser.add_argument("--shape-id", choices=tuple(row["id"] for row in FIXED_SHAPES),
                         default=FIXED_SHAPES[0]["id"])
@@ -97,20 +98,40 @@ def resolve_model_source(args):
             from huggingface_hub import snapshot_download
             snapshot = Path(snapshot_download(repo_id=MODEL, revision=MODEL_REVISION,
                                               local_files_only=True))
+            if snapshot.name != MODEL_REVISION:
+                raise ValueError("Hub returned a model snapshot with the wrong resolved revision")
+            validate_model_files(snapshot)
         except Exception as error:
             raise ValueError(
-                f"cached Qwen snapshot {MODEL_REVISION} is missing; stage it before a GPU run "
-                "or pass its local directory with --model"
+                f"cached Qwen snapshot {MODEL_REVISION} is missing or incomplete; run "
+                "`python3 experiments/integration/benchmark_latest_vs_vllm.py "
+                "stage-model-cache` before a GPU run, or pass a complete local directory "
+                "with --model"
             ) from error
-        if snapshot.name != MODEL_REVISION:
-            raise ValueError("Hub returned a model snapshot with the wrong resolved revision")
-        validate_model_files(snapshot)
         return str(snapshot.resolve())
     local = Path(args.model)
     if local.is_dir():
         validate_model_files(local)
         return str(local.resolve())
     raise ValueError("--model must be the fixed Qwen repo ID or an existing local model directory")
+
+
+def stage_model_cache(args):
+    """Complete the immutable Hub snapshot before model loading or GPU timing."""
+    if args.model != MODEL:
+        source = resolve_model_source(args)
+        print(f"complete local model directory: {source}")
+        return
+    # Disable a stale HF_HUB_ENABLE_HF_TRANSFER=1 before importing the Hub client.
+    from model_setup import prepare_hub_transfer
+    prepare_hub_transfer()
+    from huggingface_hub import snapshot_download
+
+    snapshot = Path(snapshot_download(repo_id=MODEL, revision=MODEL_REVISION))
+    if snapshot.name != MODEL_REVISION:
+        raise ValueError("Hub downloaded a model snapshot with the wrong resolved revision")
+    validate_model_files(snapshot)
+    print(f"complete pinned model snapshot: {snapshot.resolve()}")
 
 
 def validate_model_files(directory):
@@ -388,6 +409,8 @@ def main():
         print(f"frozen workload: {path}")
     elif args.action == "dry-schedule":
         check_schedule(args, case)
+    elif args.action == "stage-model-cache":
+        stage_model_cache(args)
     elif args.action == "check-model-cache":
         print(f"model snapshot: {resolve_model_source(args)}")
     elif args.action == "run-profile":

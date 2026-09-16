@@ -101,6 +101,29 @@ class CheckpointContractTests(unittest.TestCase):
             (root / "model-00002.safetensors").write_bytes(b"test")
             MODULE.validate_model_files(root)
 
+    def test_stage_model_cache_completes_and_validates_pinned_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory) / MODULE.MODEL_REVISION
+            snapshot.mkdir()
+            (snapshot / "config.json").write_text("{}")
+            (snapshot / "tokenizer_config.json").write_text("{}")
+            (snapshot / "tokenizer.json").write_text("{}")
+            (snapshot / "model.safetensors").write_bytes(b"test")
+            args = MODULE.build_parser().parse_args(["stage-model-cache"])
+            with (patch("model_setup.prepare_hub_transfer") as transfer,
+                  patch("huggingface_hub.snapshot_download", return_value=str(snapshot)) as download,
+                  redirect_stdout(io.StringIO())):
+                MODULE.stage_model_cache(args)
+            transfer.assert_called_once_with()
+            download.assert_called_once_with(repo_id=MODULE.MODEL,
+                                             revision=MODULE.MODEL_REVISION)
+
+    def test_incomplete_default_cache_error_names_staging_command(self):
+        args = MODULE.build_parser().parse_args(["check-model-cache"])
+        with patch("huggingface_hub.snapshot_download", side_effect=FileNotFoundError()):
+            with self.assertRaisesRegex(ValueError, "stage-model-cache"):
+                MODULE.resolve_model_source(args)
+
     def test_analyzer_reports_net_gain_and_remaining_gap(self):
         with tempfile.TemporaryDirectory() as directory:
             args = MODULE.build_parser().parse_args(
