@@ -91,6 +91,18 @@ def check_swiglu():
         passed = bool(torch.isfinite(out).all()) and error <= KERNEL_TOL
         ok &= passed
         print(f"  rows={rows:<4}: max error={error:.6f}  {'PASS' if passed else 'FAIL'}")
+    rows = 1409
+    packed = torch.randn(rows, 2 * 8960, device=DEVICE, dtype=DTYPE)
+    gate, up = packed.split(8960, dim=-1)
+    if gate.is_contiguous() or up.is_contiguous():
+        raise AssertionError("packed projection preflight did not produce strided views")
+    out = swiglu(gate, up, block_size=512, num_warps=4, num_stages=2)
+    ref = torch.nn.functional.silu(gate.float()) * up.float()
+    error = (out.float() - ref).abs().max().item()
+    passed = bool(torch.isfinite(out).all()) and error <= KERNEL_TOL
+    ok &= passed
+    print(f"  packed-strided rows={rows}: max error={error:.6f}  "
+          f"{'PASS' if passed else 'FAIL'}")
     return ok
 
 

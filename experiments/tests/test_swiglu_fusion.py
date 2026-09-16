@@ -26,12 +26,19 @@ class SwiGLUFusionTests(unittest.TestCase):
     def test_kernel_fuses_activation_and_multiply(self):
         self.assertIn("gate * tl.sigmoid(gate)", KERNEL_SOURCE)
         self.assertIn("* up", KERNEL_SOURCE)
-        self.assertIn("torch.empty_like(gate)", KERNEL_SOURCE)
+        self.assertIn("gate_row_stride", KERNEL_SOURCE)
+        self.assertIn("rows * gate_row_stride + columns", KERNEL_SOURCE)
+        self.assertIn("torch.empty(gate.shape", KERNEL_SOURCE)
 
     def test_correctness_preflight_is_independent_of_benchmark_shapes(self):
         self.assertIn("torch.testing.assert_close", SOURCE)
         self.assertIn("17, 257", SOURCE)
         self.assertIn('"correctness_preflight"', SOURCE)
+
+    def test_global_correctness_covers_packed_projection_views(self):
+        correctness = (EXPERIMENTS.parent / "correctness/checks/check_custom_kernels.py").read_text()
+        self.assertIn("packed.split(8960, dim=-1)", correctness)
+        self.assertIn("packed-strided", correctness)
 
 
 if __name__ == "__main__":
