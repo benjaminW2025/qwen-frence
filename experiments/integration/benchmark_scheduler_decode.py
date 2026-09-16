@@ -16,6 +16,7 @@ for path in (HERE, ROOT / "baseline", ROOT / "engine/model_runner", ROOT / "engi
              ROOT / "engine/cpp/build", ROOT / "experiments/decode"):
     sys.path.insert(0, str(path))
 from design import VARIANTS, load_policy, make_plan, make_requests, stable_hash, summarize, validate_checkpoint, variant_order
+from fixed_regime import verify_fixed_result
 
 
 def atomic_json(path, value):
@@ -273,6 +274,8 @@ def run(args):
                 checker = TraceCheck(torch, reference)
                 adapter.observer = checker
                 validation = execute(torch, loop, adapter, requests)
+                if case["kind"] == "fixed-uniform":
+                    verify_fixed_result(validation, case["id"])
                 checker.finish()
                 adapter.observer = None
                 signature = [(r["kind"], r["calls"], r["completed"]) for r in validation["steps"]]
@@ -295,6 +298,8 @@ def run(args):
                 for name in variant_order(args.phase, args.seed + trial * 1009 + sample):
                     order.append(name)
                     measured = execute(torch, *runners[name], requests)
+                    if case["kind"] == "fixed-uniform":
+                        verify_fixed_result(measured, case["id"])
                     if measured.pop("outputs") != expected:
                         raise AssertionError("timed generation changed after preflight")
                     signature = [(r["kind"], r["calls"], r["completed"]) for r in measured["steps"]]
@@ -385,7 +390,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("plan", "run", "analyze"))
     parser.add_argument("--phase", choices=("scheduler", "combined"), default="scheduler")
-    parser.add_argument("--preset", choices=("smoke", "full", "longctx"), default="full")
+    parser.add_argument("--preset", choices=("smoke", "full", "longctx", "fixed"), default="full")
     parser.add_argument("--policy-dir", type=Path)
     parser.add_argument("--allow-unapproved-policy", action="store_true",
                         help="Use a frozen candidate policy for experiments; bypasses only the readiness gate")

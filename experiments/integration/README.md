@@ -1,5 +1,188 @@
 # C++ scheduler and decode-policy integration experiment
 
+## Frozen input-shape table
+
+`fixed_regime.py` is the source of truth for this checkpoint. All rows use
+Qwen2.5-1.5B FP16 on one H100, page16, uniform burst arrivals, greedy sampling,
+ignore EOS, factorial prompt lengths 256/2048 and output lengths 128/256
+per request, plus two targeted 4096-prompt/256-output context probes,
+prefill work capped at 2048 packed tokens per step, and the 2048-token graph
+bucket. No row is tuned from timing results.
+
+| Shape ID | B/max running | Cohort prompt tokens | Cohort output tokens | Max context/request | Max packed prefill/step | CPU dry-run pure B decode steps |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `fixed-b8-l256-o128` | 8 | 2,048 | 1,024 | 384 | 2,048 | 127 |
+| `fixed-b8-l256-o256` | 8 | 2,048 | 2,048 | 512 | 2,048 | 255 |
+| `fixed-b8-l2048-o128` | 8 | 16,384 | 1,024 | 2,176 | 2,048 | 120 |
+| `fixed-b8-l2048-o256` | 8 | 16,384 | 2,048 | 2,304 | 2,048 | 248 |
+| `fixed-b64-l256-o128` | 64 | 16,384 | 8,192 | 384 | 2,048 | 120 |
+| `fixed-b64-l256-o256` | 64 | 16,384 | 16,384 | 512 | 2,048 | 248 |
+| `fixed-b64-l2048-o128` | 64 | 131,072 | 8,192 | 2,176 | 2,048 | 64 |
+| `fixed-b64-l2048-o256` | 64 | 131,072 | 16,384 | 2,304 | 2,048 | 192 |
+| `probe-b8-l4096-o256` | 8 | 32,768 | 2,048 | 4,352 | 2,048 | 241 |
+| `probe-b64-l4096-o256` | 64 | 262,144 | 16,384 | 4,352 | 2,048 | 129 |
+
+The pure-decode counts are predictions from the current CPU C++ scheduler dry
+run. Every measured row must actually reach its declared batch for **at least
+64 pure decode steps**; the GPU preflight and timed runs assert this. “Total
+tokens” in the table means the whole request cohort, whereas the 2048-token
+limit is **per prefill iteration**. Inspect the machine-readable table with
+`python3 experiments/integration/benchmark_latest_vs_vllm.py table`.
+The old scorecard used 8192-token long prompts; this table caps the eight-cell
+factorial at 2048 and adds only two 4096-token probes to limit GPU spend.
+Split-K is intentionally inactive for
+256-token prompts because their maximum context is below its 1024-token policy
+threshold; those rows still compare eager, decode graphs, and piecewise graphs.
+
+## Tonight's fixed-regime vLLM checkpoint
+
+`benchmark_latest_vs_vllm.py` freezes one selected row from the table, then runs
+the four-arm C++/graph ablation and
+a separate reference process using the previous `regime-dispatched` Python
+engine plus vLLM. Both read the same saved prompt token IDs and output lengths.
+The reference uses FP16, page16, the row's concurrent-sequence count, a 2048-token
+prefill/batched-token budget, matched logical KV capacity, greedy sampling,
+ignore-EOS behavior, and offline burst timing. Model loading, correctness, and
+graph capture are outside measured workloads. Runs are separate processes to
+avoid cross-backend GPU memory ownership.
+
+Start locally, before the H100 session:
+
+```bash
+python3 experiments/integration/benchmark_latest_vs_vllm.py table
+python3 experiments/integration/benchmark_latest_vs_vllm.py plan \
+  --shape-id fixed-b8-l256-o128
+python3 experiments/integration/benchmark_latest_vs_vllm.py prepare \
+  --shape-id fixed-b8-l256-o128 \
+  --output-dir experiments/results/latest-vllm-b8-short-main
+python3 experiments/integration/benchmark_latest_vs_vllm.py dry-schedule \
+  --shape-id fixed-b8-l256-o128 \
+  --output-dir experiments/results/latest-vllm-b8-short-main
+```
+
+On H100, run the internal ablation, then the external reference, then analysis.
+The checkpoint defaults to a **one-sample smoke** (one trial/sample, no warmup,
+one reference repetition), not a selection-quality benchmark:
+
+```bash
+python3 experiments/integration/benchmark_latest_vs_vllm.py check-model-cache
+python3 experiments/integration/benchmark_latest_vs_vllm.py run-ablation \
+  --shape-id fixed-b8-l256-o128 \
+  --output-dir experiments/results/latest-vllm-b8-short-main
+python3 experiments/integration/benchmark_latest_vs_vllm.py run-reference \
+  --shape-id fixed-b8-l256-o128 \
+  --output-dir experiments/results/latest-vllm-b8-short-main
+python3 experiments/integration/benchmark_latest_vs_vllm.py analyze \
+  --shape-id fixed-b8-l256-o128 \
+  --output-dir experiments/results/latest-vllm-b8-short-main
+```
+
+Repeat for the other seven factorial IDs in the table, each in its **own fresh**
+output directory. Use the default one-trial smoke for all eight cells first,
+then the two context probes only if the basic run passes.
+Start with B=8 before the larger rows. For selection-quality measurements, use
+a **new** directory, run `prepare` there, then pass
+`--trials 3 --samples 3 --warmups 1` to `run-ablation` and
+`--repetitions 3 --warmups 1` to `run-reference`. Do not treat the smoke result
+as a split-K winner. The worst B=64/P=2048 full plan includes 36 timed ablation
+workloads and about 4.72 million timed ablation prompt tokens, plus reference workloads,
+preflight, and warmup; inspect `plan` with the full flags before committing GPU time.
+For the 4096-token B=64 probe, the one-trial smoke alone processes 1,048,576
+timed ablation prompt tokens and 524,288 reference prompt tokens, plus
+correctness and capture work; avoid launching the 3×3 plan across all ten rows.
+
+All integration benchmark and profile entry points accept the same table through
+`--preset fixed --case-id <shape-id>`; `make_plan("fixed")` reads
+`fixed_regime.py`, rather than duplicating shapes. The integrated ablation and
+vLLM checkpoint use the same saved `workload.json`. For a focused full-batch
+decode trace on a selected row:
+
+```bash
+python3 experiments/integration/benchmark_latest_vs_vllm.py run-profile \
+  --shape-id probe-b64-l4096-o256
+```
+
+The checkpoint action passes the pinned model and exact saved workload, and
+defaults to one unprofiled repetition with no warmup. The fixed profiler
+chooses a pure full-batch decode step. To trace long-context prefill, pass
+`--profile-kind prefill --profile-occurrence 1` on a 4096-token probe; that
+selects its second 2048-token chunk with an existing prefix. The legacy C++ graph and piecewise
+benchmarks can also select rows from the fixed table, but they are diagnostic
+sub-ablations, not additional arms in the vLLM checkpoint.
+
+The analyzer refuses mismatched prompt IDs, output lengths, model/config, or
+missing arms. It reports net output-throughput change against the prior engine,
+production-attention and split-K versions of the integrated path, and the
+remaining vLLM throughput gap. It also records whether generated token IDs
+match across the prior engine, integrated path, and vLLM; unequal IDs are
+reported, not mislabeled as an identical-trajectory comparison. Use a fresh
+directory for every run. Install the pinned vLLM environment in
+`benchmarks/requirements-vllm-cu128.txt` before the reference run. Both run
+commands resolve the same cached immutable Qwen snapshot
+(`8faed761d45a263340a0528343f099c05c9a4323`) before launching model work;
+they fail if it is not staged. `--model` may instead point to an existing local
+model directory, but that override is labeled unverified in the summary.
+
+This checkpoint measures fixed-shape offline burst **output throughput**, not
+TTFT/SLO serving behavior. The C++/graph adapter is currently an experimental
+real-model executor and is **not** a strict superset of all fusions in the prior
+`regime-dispatched` production path. Thus its ratio against that engine is the
+net package effect, not the isolated benefit of each new optimization. The
+four-arm ablation supplies attribution inside the new executor. A production
+backend integration and serving-traffic replay remain separate milestones.
+
+## One integrated graph experiment
+
+`benchmark_integrated_graph.py` runs four paired arms against the same real-model
+C++ scheduler, requests, weights, and KV pool: eager model execution, full-model
+production decode graph, that decode graph plus piecewise packed prefill, and the
+same piecewise path with split-K decode attention. It is an implementation-path
+comparison: the eager and captured decoders have different executor code, so the
+first effect is not a pure CUDA-graph-only ablation. It does **not** compare with
+vLLM or the production Python scheduler.
+
+Before renting a benchmark window, inspect the CPU-only plan, build the C++
+extension, check setup, and run one measured sample:
+
+```bash
+python3 experiments/integration/benchmark_integrated_graph.py --plan
+make cpp-scheduler-build
+python3 experiments/integration/benchmark_integrated_graph.py --dry-schedule
+python3 experiments/integration/benchmark_integrated_graph.py --check-setup
+python3 experiments/integration/benchmark_integrated_graph.py \
+  --trials 1 --samples 1 --warmups 0 \
+  --output-dir experiments/results/integrated-graph-smoke
+```
+
+The default row is B=8, 2048-token prompts, 128 outputs each, and a 2048-token
+prefill budget. The preflight requires an **observed** maximum
+decode batch of eight and at least 64 pure B=8 decode steps, an actual
+2048-token packed-prefill call, exact scheduled
+work and generated tokens across arms, and representative full logits within
+the existing integration tolerance. It also checks that split-K and piecewise
+capture actually execute. The real C++ scheduler runs a CPU-only dry schedule
+first, so a case-name/shape mismatch fails before model loading or graph capture;
+the GPU preflight repeats the shape check before warmup or timing.
+The one-sample run validates the path, but is not enough to select a winner.
+
+For the paired measurement, use the default three trials and three shuffled
+sample rounds, with compilation/capture and correctness outside timing:
+
+```bash
+python3 experiments/integration/benchmark_integrated_graph.py \
+  --output-dir experiments/results/integrated-graph-main
+```
+
+The report contains per-arm workload and phase times, actual batch histograms,
+captured prefill buckets, fallback/replay counts, and paired trial speedups.
+`splitk_decision` labels split-K a candidate only if every one of at least three
+paired trials improves full-workload wall time by 2% or more; otherwise it
+conservatively retains production attention. That threshold is a practical
+decision rule, **not** a statistical significance claim. For a different case,
+set `--expected-max-decode-batch`, `--min-full-decode-steps`,
+`--expected-prefill-tokens`, and
+`--prefill-buckets` explicitly; do not infer live work from the case ID.
+
 ## Focused C++ control-plane profile
 
 `profile_cpp_control.py` first runs an uninstrumented preflight and chooses one

@@ -39,9 +39,37 @@ class ProfileDesignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "repetitions"):
             MODULE.validate_args(args)
 
+    def test_fixed_profile_selects_real_full_batch_decode_and_packed_prefill(self):
+        from fixed_regime import get_fixed_case
+
+        case = get_fixed_case("probe-b64-l4096-o256")
+        args = MODULE.build_parser().parse_args(
+            ["--preset", "fixed", "--case-id", case["id"],
+             "--decode-attention-policy", "splitk"])
+        MODULE.validate_args(args)
+        steps = [{"kind": "prefill", "calls": [(False, 2048, 1, 2048)]},
+                 {"kind": "decode", "calls": [(True, 1, 1, 1)]},
+                 {"kind": "decode", "calls": [(True, 64, 64, 1)]}]
+        self.assertEqual(MODULE.select_fixed_target(steps, case, "prefill", 0), 0)
+        self.assertEqual(MODULE.select_fixed_target(steps, case, "decode", 0), 2)
+        with self.assertRaisesRegex(ValueError, "eligible decode"):
+            MODULE.select_fixed_target(steps, case, "decode", 1)
+
 
 @unittest.skipIf(cpp is None, "build C++ extension first")
 class CppRangeTests(unittest.TestCase):
+    def test_every_fixed_row_has_targetable_decode_and_prefill_steps(self):
+        from benchmark_integrated_graph import dry_schedule
+        from fixed_regime import FIXED_SHAPES, get_fixed_case, verify_fixed_result
+
+        for shape in FIXED_SHAPES:
+            case = get_fixed_case(shape["id"])
+            result = dry_schedule(torch, cpp, case, 20260914)
+            verify_fixed_result(result, shape["id"])
+            for kind in ("decode", "prefill"):
+                target = MODULE.select_fixed_target(result["steps"], case, kind, 0)
+                self.assertEqual(result["steps"][target]["kind"], kind)
+
     def test_scheduler_ranges_appear_in_torch_profiler(self):
         from torch.profiler import ProfilerActivity, profile
 

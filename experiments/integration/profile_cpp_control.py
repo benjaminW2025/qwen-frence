@@ -23,25 +23,31 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
     sys.path.insert(0, str(directory))
 
 from benchmark_scheduler_decode import execute, make_config
+from benchmark_integrated_graph import resolve_requests
 from design import make_plan, make_requests
+from fixed_regime import PREFILL_TOKENS_PER_STEP, verify_fixed_result
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
 from model_setup import check_startup, load_model_only
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--preset", choices=("smoke", "full", "longctx"), default="smoke")
+    parser.add_argument("--preset", choices=("smoke", "full", "longctx", "fixed"), default="smoke")
     parser.add_argument("--case-id", default="uniform-b4-l513")
     parser.add_argument("--kind", choices=("decode", "prefill", "mixed"), default="decode")
     parser.add_argument("--occurrence", type=int, default=0,
-                        help="zero-based occurrence of the selected step kind")
+                        help="zero-based occurrence; fixed decode/prefill selects only full-batch/2048-token steps")
     parser.add_argument("--adapter", choices=("eager-prefill", "piecewise-prefill"),
                         default="piecewise-prefill")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
+    parser.add_argument("--decode-attention-policy", choices=("production", "splitk"),
+                        default="production")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260914)
+    parser.add_argument("--workload-in", type=Path,
+                        help="use exact saved prompt IDs/output lengths from the fixed checkpoint")
     parser.add_argument("--with-stack", action="store_true")
     parser.add_argument("--check-setup", action="store_true",
                         help="check runtime dependencies before loading weights or allocating model GPU memory")
@@ -61,6 +67,24 @@ def select_target(steps, kind, occurrence):
     matches = [i for i, step in enumerate(steps) if step["kind"] == kind]
     if occurrence >= len(matches):
         raise ValueError(f"case has {len(matches)} {kind} steps, not occurrence {occurrence}")
+    return matches[occurrence]
+
+
+def select_fixed_target(steps, case, kind, occurrence):
+    if kind == "decode":
+        matches = [i for i, step in enumerate(steps)
+                   if step["kind"] == "decode" and
+                   any(call[0] and call[1] == case["max_running"] for call in step["calls"])]
+    elif kind == "prefill":
+        matches = [i for i, step in enumerate(steps)
+                   if step["kind"] == "prefill" and
+                   any(not call[0] and call[1] == PREFILL_TOKENS_PER_STEP
+                       for call in step["calls"])]
+    else:
+        return select_target(steps, kind, occurrence)
+    if occurrence >= len(matches):
+        raise ValueError(f"fixed case has {len(matches)} eligible {kind} steps, "
+                         f"not occurrence {occurrence}")
     return matches[occurrence]
 
 
@@ -151,15 +175,17 @@ def main():
 
     case = next(case for case in make_plan(args.preset) if case["id"] == args.case_id)
     config = make_config(cpp, case)
-    blocks = config.max_batch_size * ((config.max_context_length + 15) // 16)
+    blocks = config.max_batch_size * (((config.max_context_length + 15) // 16) + 1)
     engine, load_seconds, hub_transfer = load_model_only(
         args.model, args.device, "float16", hub_transfer=startup["hub_transfer"])
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter_cls = (PiecewiseGraphModelAdapter if args.adapter == "piecewise-prefill"
                    else GraphModelAdapter)
     adapter = adapter_cls(engine.model, pool, None, max_running=config.max_batch_size,
-                          max_context_length=config.max_context_length)
-    requests = make_requests(case, args.seed, engine.cfg.vocab)
+                          max_context_length=config.max_context_length,
+                          decode_attention_policy=args.decode_attention_policy)
+    requests = (resolve_requests(args, case) if args.workload_in is not None
+                else make_requests(case, args.seed, engine.cfg.vocab))
 
     def poison():
         for tensor in pool.k_pool + pool.v_pool:
@@ -170,7 +196,12 @@ def main():
                         adapter, requests)
     expected_steps = [(step["kind"], step["calls"], step["completed"])
                       for step in preflight["steps"]]
-    target_index = select_target(preflight["steps"], args.kind, args.occurrence)
+    if args.preset == "fixed":
+        verify_fixed_result(preflight, args.case_id)
+        target_index = select_fixed_target(preflight["steps"], case, args.kind,
+                                           args.occurrence)
+    else:
+        target_index = select_target(preflight["steps"], args.kind, args.occurrence)
 
     def checked_run(*, trace=False):
         poison()
@@ -200,6 +231,8 @@ def main():
     report = {
         "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
         "case": case, "kind": args.kind, "adapter": args.adapter,
+        "decode_attention_policy": args.decode_attention_policy,
+        "decode_attention_action": adapter.action,
         "target_step_index": target_index,
         "target_step_calls": expected_steps[target_index][1],
         "unprofiled_target_wall_ms": baseline_ms,
