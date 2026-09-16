@@ -55,14 +55,4 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
         .def("max_decode_context_length", &IterationLoop::max_decode_context_length)
         .def("num_pending", &IterationLoop::num_pending)
         .def("num_running", &IterationLoop::num_running);
-
-    // ==========================================================================
-    // TODO(you): Add any additional bindings you need
-    //
-    // IDEAS:
-    //   - Expose Request class for debugging
-    //   - Add stats (tokens/sec, queue depth over time)
-    //   - Add preemption control
-    //   - Add priority support
-    // ==========================================================================
 }
