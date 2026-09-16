@@ -23,6 +23,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 
 from benchmark_scheduler_decode import TraceCheck, execute, independent_check, make_config
 from design import make_plan, make_requests
+from fixed_regime import verify_fixed_result
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
 from model_setup import check_startup, load_model_only
 
@@ -69,6 +70,8 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed,
     for name in ("eager", "piecewise"):
         checker = TraceCheck(torch, reference)
         result = execute_arm(name, checker)
+        if case["kind"] == "fixed-uniform":
+            verify_fixed_result(result, case["id"])
         checker.finish()
         schedule = [(step["kind"], step["calls"], step["completed"])
                     for step in result["steps"]]
@@ -96,6 +99,8 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed,
             random.Random(seed + trial * 1009 + sample).shuffle(order)
             for name in order:
                 result = execute_arm(name)
+                if case["kind"] == "fixed-uniform":
+                    verify_fixed_result(result, case["id"])
                 schedule = [(step["kind"], step["calls"], step["completed"])
                             for step in result["steps"]]
                 if result["outputs"] != expected_outputs or schedule != expected_schedule:
@@ -131,7 +136,7 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--preset", choices=("smoke", "full", "longctx"), default="smoke")
+    parser.add_argument("--preset", choices=("smoke", "full", "longctx", "fixed"), default="smoke")
     parser.add_argument("--case-id", default="ragged-b4-l769")
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")

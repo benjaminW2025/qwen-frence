@@ -11,6 +11,7 @@ import sys
 DECODE = Path(__file__).resolve().parents[1] / "decode"
 sys.path.insert(0, str(DECODE))
 from decode_stage_policy import paired_interval, predict, stable_hash
+from fixed_regime import fixed_plan
 
 VARIANTS = {
     "python-production": ("python", "production"),
@@ -39,8 +40,10 @@ POOL_BYTES_PER_PAGE = 16 * 2 * 128 * 2 * 28 * 2
 
 
 def make_plan(preset="full"):
-    if preset not in ("smoke", "full", "longctx"):
+    if preset not in ("smoke", "full", "longctx", "fixed"):
         raise ValueError("unknown preset")
+    if preset == "fixed":
+        return fixed_plan()
     if preset == "longctx":
         return longctx_plan()
     shapes = [(2, 257), (4, 513)] if preset == "smoke" else [

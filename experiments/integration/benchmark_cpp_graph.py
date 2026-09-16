@@ -24,6 +24,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 
 from benchmark_scheduler_decode import TraceCheck, execute, independent_check, make_config
 from design import make_plan, make_requests
+from fixed_regime import verify_fixed_result
 from model_adapter import GraphModelAdapter, allocate_pool
 from model_setup import check_startup, load_model_only
 
@@ -72,6 +73,8 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed):
     for arm in ARMS:
         checker = TraceCheck(torch, reference)
         result = execute_arm(arm, poison=True, observer=checker)
+        if case["kind"] == "fixed-uniform":
+            verify_fixed_result(result, case["id"])
         checker.finish()
         schedule = [(step["kind"], step["calls"], step["completed"])
                     for step in result["steps"]]
@@ -85,7 +88,8 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed):
                        "decisions": result["decisions"],
                        "decode_batches": result["decode_batch_histogram"]}
 
-    if not any(key != "production" for key in checks["splitk"]["decisions"]):
+    splitk_executed = any(key != "production" for key in checks["splitk"]["decisions"])
+    if adapters["splitk"].action != "production" and not splitk_executed:
         raise AssertionError("split-K arm fell back to production for every decode step")
 
     for _ in range(warmups):
@@ -100,6 +104,8 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed):
             random.Random(seed + trial * 1009 + sample).shuffle(order)
             for arm in order:
                 result = execute_arm(arm, poison=True)
+                if case["kind"] == "fixed-uniform":
+                    verify_fixed_result(result, case["id"])
                 schedule = [(step["kind"], step["calls"], step["completed"])
                             for step in result["steps"]]
                 if result["outputs"] != expected_outputs or schedule != expected_schedule:
@@ -117,14 +123,15 @@ def run_case(torch, cpp, engine, case, *, trials, samples, warmups, seed):
                      for trial in measurements[arm]] for arm in ARMS}
     ratios = [a / c for a, c in zip(medians["production"], medians["splitk"])]
     return {"status": "ok", "case_id": case["id"], "checks": checks,
+            "splitk_executed": splitk_executed,
             "measurements": measurements, "trial_medians_ms": medians,
-            "speedup": statistics.median(ratios),
-            "speedup_range": [min(ratios), max(ratios)]}
+            "speedup": statistics.median(ratios) if splitk_executed else None,
+            "speedup_range": [min(ratios), max(ratios)] if splitk_executed else None}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--preset", choices=("smoke", "full", "longctx"), default="longctx")
+    parser.add_argument("--preset", choices=("smoke", "full", "longctx", "fixed"), default="longctx")
     parser.add_argument("--case-id", default="uniform-b4-l2048")
     parser.add_argument("--all-cases", action="store_true")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
@@ -177,7 +184,10 @@ def main():
         rows.append(row)
         atomic_json(args.output_dir / "report.json", {"cases": rows})
         if row["status"] == "ok":
-            print(f"{case['id']}: split-K {row['speedup']:.3f}x vs production graph", flush=True)
+            if row["splitk_executed"]:
+                print(f"{case['id']}: split-K {row['speedup']:.3f}x vs production graph", flush=True)
+            else:
+                print(f"{case['id']}: split-K inactive below context threshold", flush=True)
         else:
             print(f"{case['id']}: {row['error']}", flush=True)
 
