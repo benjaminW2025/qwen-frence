@@ -1,0 +1,321 @@
+{
+  "status": "complete",
+  "created_at": "2026-09-16T13:11:29.230786+00:00",
+  "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "workload": {
+    "case_id": "fixed-b8-l2048-o128",
+    "requests_sha256": "2eed407c3c88b09a704716dc9ac353734521ba233e5758ded01aa7e98fe09e5b",
+    "output_tokens": 1024,
+    "logical_kv_blocks": 1096
+  },
+  "output_throughput_tok_s": {
+    "prior_regime_dispatched_engine": 652.2861176267414,
+    "integrated_eager_cpp": 683.5831166312802,
+    "integrated_decode_graph": 801.1852447952307,
+    "integrated_piecewise_production": 804.1810587535592,
+    "integrated_piecewise_splitk": null,
+    "vllm": 2073.271619272688
+  },
+  "integrated_production_vs_old": 1.2328655125751684,
+  "integrated_splitk_vs_old": null,
+  "vllm_vs_integrated_production": 2.5781154588323134,
+  "vllm_vs_integrated_splitk": null,
+  "output_agreement": {
+    "old_vs_integrated": true,
+    "vllm_vs_integrated": false,
+    "old_repetitions_identical": true,
+    "vllm_repetitions_identical": true
+  },
+  "splitk_decision": {
+    "choice": "rejected_numerical_correctness"
+  },
+  "rejected_arms": {
+    "piecewise_splitk": {
+      "status": "rejected_numerical_correctness",
+      "error": "piecewise_splitk: same-history validation at callback 40, decode=True: Tensor-likes are not close!\n\nMismatched elements: 1 / 1215488 (0.0%)\nGreatest absolute difference: 0.078857421875 at index (2, 12404) (up to 0.075 allowed)\nGreatest relative difference: 0.22119140625 at index (2, 12404) (up to 0.01 allowed)"
+    }
+  },
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 922,
+        "total_tokens": 1024,
+        "match_fraction": 0.900390625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 922,
+        "total_tokens": 1024,
+        "match_fraction": 0.900390625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 922,
+        "total_tokens": 1024,
+        "match_fraction": 0.900390625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    }
+  },
+  "correctness_mode": "all-step-same-history-logits",
+  "logit_tolerance": {
+    "atol": 0.075,
+    "rtol": 0.01
+  },
+  "splitk_executed": true,
+  "ablation_effects": {
+    "decode_graph_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.1726110745460367,
+        "trial_speedups": [
+          1.1744742119129774,
+          1.1553238021390528,
+          1.1726110745460367
+        ],
+        "range": [
+          1.1553238021390528,
+          1.1744742119129774
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.1906956188096627,
+        "trial_speedups": [
+          1.191611019641689,
+          1.1700563344720878,
+          1.1906956188096627
+        ],
+        "range": [
+          1.1700563344720878,
+          1.191611019641689
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0068395059444812,
+        "trial_speedups": [
+          0.99633147038332,
+          1.0068395059444812,
+          1.008908561481584
+        ],
+        "range": [
+          0.99633147038332,
+          1.008908561481584
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0718625743452157,
+        "trial_speedups": [
+          1.0772396412117204,
+          1.0718625743452157,
+          1.0708612139515008
+        ],
+        "range": [
+          1.0708612139515008,
+          1.0772396412117204
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.066558999358341,
+        "trial_speedups": [
+          1.070754963558987,
+          1.066558999358341,
+          1.0651339037256309
+        ],
+        "range": [
+          1.0651339037256309,
+          1.070754963558987
+        ]
+      }
+    },
+    "piecewise_vs_decode_graph": {
+      "wall_ms": {
+        "median_speedup": 1.003739227572887,
+        "trial_speedups": [
+          1.003739227572887,
+          1.00451438554314,
+          1.002031551697024
+        ],
+        "range": [
+          1.002031551697024,
+          1.00451438554314
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0022991777054278,
+        "trial_speedups": [
+          1.0022991777054278,
+          1.0023080034176162,
+          1.0002678473549087
+        ],
+        "range": [
+          1.0002678473549087,
+          1.0023080034176162
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0396404038689828,
+        "trial_speedups": [
+          1.0443523510651527,
+          1.0396404038689828,
+          1.0351925835244191
+        ],
+        "range": [
+          1.0351925835244191,
+          1.0443523510651527
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0124697350660374,
+        "trial_speedups": [
+          1.006747173678762,
+          1.015800177332461,
+          1.0124697350660374
+        ],
+        "range": [
+          1.006747173678762,
+          1.015800177332461
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0148482612904186,
+        "trial_speedups": [
+          1.0099965060105565,
+          1.0179372407484588,
+          1.0148482612904186
+        ],
+        "range": [
+          1.0099965060105565,
+          1.0179372407484588
+        ]
+      }
+    },
+    "piecewise_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.1749932945644797,
+        "trial_speedups": [
+          1.178865838269807,
+          1.1605393792090748,
+          1.1749932945644797
+        ],
+        "range": [
+          1.1605393792090748,
+          1.178865838269807
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.1910145434816624,
+        "trial_speedups": [
+          1.1943507451315911,
+          1.172756828490853,
+          1.1910145434816624
+        ],
+        "range": [
+          1.172756828490853,
+          1.1943507451315911
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0444146603000262,
+        "trial_speedups": [
+          1.0405211135350207,
+          1.0467510305913676,
+          1.0444146603000262
+        ],
+        "range": [
+          1.0405211135350207,
+          1.0467510305913676
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0845079641646231,
+        "trial_speedups": [
+          1.0845079641646231,
+          1.0887981930958983,
+          1.0842145695819712
+        ],
+        "range": [
+          1.0842145695819712,
+          1.0887981930958983
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0814587719880375,
+        "trial_speedups": [
+          1.0814587719880375,
+          1.085690124902267,
+          1.0809492902374327
+        ],
+        "range": [
+          1.0809492902374327,
+          1.085690124902267
+        ]
+      }
+    }
+  },
+  "reference_file": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b8-l2048-o128/reference/latest-cpp-graph-vllm-fixed-b8-l2048-o128-20260916T131128074586Z.json"
+}

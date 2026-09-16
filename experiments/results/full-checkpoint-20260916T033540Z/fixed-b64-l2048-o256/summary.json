@@ -1,0 +1,321 @@
+{
+  "status": "complete",
+  "created_at": "2026-09-16T13:29:10.384431+00:00",
+  "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "workload": {
+    "case_id": "fixed-b64-l2048-o256",
+    "requests_sha256": "f1bbd1986a24a2c6d491553d8c6c48e1a2a66eba7130ff095038a7606bf75bbd",
+    "output_tokens": 16384,
+    "logical_kv_blocks": 9280
+  },
+  "output_throughput_tok_s": {
+    "prior_regime_dispatched_engine": 2523.130210876564,
+    "integrated_eager_cpp": 2475.672946927217,
+    "integrated_decode_graph": 2505.8983082139516,
+    "integrated_piecewise_production": 2512.760637478118,
+    "integrated_piecewise_splitk": null,
+    "vllm": 7936.3217482324335
+  },
+  "integrated_production_vs_old": 0.9958901949040342,
+  "integrated_splitk_vs_old": null,
+  "vllm_vs_integrated_production": 3.158407382645712,
+  "vllm_vs_integrated_splitk": null,
+  "output_agreement": {
+    "old_vs_integrated": true,
+    "vllm_vs_integrated": false,
+    "old_repetitions_identical": true,
+    "vllm_repetitions_identical": true
+  },
+  "splitk_decision": {
+    "choice": "rejected_numerical_correctness"
+  },
+  "rejected_arms": {
+    "piecewise_splitk": {
+      "status": "rejected_numerical_correctness",
+      "error": "piecewise_splitk: same-history validation at callback 64, decode=True: Tensor-likes are not close!\n\nMismatched elements: 1 / 4861952 (0.0%)\nGreatest absolute difference: 0.078857421875 at index (2, 12404) (up to 0.075 allowed)\nGreatest relative difference: 0.22119140625 at index (2, 12404) (up to 0.01 allowed)"
+    }
+  },
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 16164,
+        "total_tokens": 16384,
+        "match_fraction": 0.986572265625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 16164,
+        "total_tokens": 16384,
+        "match_fraction": 0.986572265625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 16164,
+        "total_tokens": 16384,
+        "match_fraction": 0.986572265625,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 16384,
+        "total_tokens": 16384,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    }
+  },
+  "correctness_mode": "all-step-same-history-logits",
+  "logit_tolerance": {
+    "atol": 0.075,
+    "rtol": 0.01
+  },
+  "splitk_executed": true,
+  "ablation_effects": {
+    "decode_graph_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.0122089476011968,
+        "trial_speedups": [
+          1.0118447088610851,
+          1.0171404611456938,
+          1.0122089476011968
+        ],
+        "range": [
+          1.0118447088610851,
+          1.0171404611456938
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.026205763192905,
+        "trial_speedups": [
+          1.0255298344131816,
+          1.0299236755985177,
+          1.026205763192905
+        ],
+        "range": [
+          1.0255298344131816,
+          1.0299236755985177
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 0.9966777531997976,
+        "trial_speedups": [
+          0.9966777531997976,
+          0.9941024944630321,
+          1.0244896651598685
+        ],
+        "range": [
+          0.9941024944630321,
+          1.0244896651598685
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 0.9772617609666612,
+        "trial_speedups": [
+          0.9772617609666612,
+          0.9833033671655663,
+          0.9770605014623459
+        ],
+        "range": [
+          0.9770605014623459,
+          0.9833033671655663
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 0.9775289218212196,
+        "trial_speedups": [
+          0.9774349349384172,
+          0.9842390115272259,
+          0.9775289218212196
+        ],
+        "range": [
+          0.9774349349384172,
+          0.9842390115272259
+        ]
+      }
+    },
+    "piecewise_vs_decode_graph": {
+      "wall_ms": {
+        "median_speedup": 1.0028519662573747,
+        "trial_speedups": [
+          1.0028519662573747,
+          1.0029886907062453,
+          1.002738470767817
+        ],
+        "range": [
+          1.002738470767817,
+          1.0029886907062453
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.000020199502038,
+        "trial_speedups": [
+          0.9998314321394348,
+          1.000051714897913,
+          1.000020199502038
+        ],
+        "range": [
+          0.9998314321394348,
+          1.000051714897913
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0533473364055082,
+        "trial_speedups": [
+          1.0622777772266263,
+          1.0533473364055082,
+          1.0331678016953996
+        ],
+        "range": [
+          1.0331678016953996,
+          1.0622777772266263
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0098272140716735,
+        "trial_speedups": [
+          1.0106576657677941,
+          1.0098272140716735,
+          1.0090973358606334
+        ],
+        "range": [
+          1.0090973358606334,
+          1.0106576657677941
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0102808460629806,
+        "trial_speedups": [
+          1.0110781118537893,
+          1.0102808460629806,
+          1.0092975593434694
+        ],
+        "range": [
+          1.0092975593434694,
+          1.0110781118537893
+        ]
+      }
+    },
+    "piecewise_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.0149808522151258,
+        "trial_speedups": [
+          1.01473045582846,
+          1.0201803793888657,
+          1.0149808522151258
+        ],
+        "range": [
+          1.01473045582846,
+          1.0201803793888657
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0262264920383097,
+        "trial_speedups": [
+          1.0253569630430488,
+          1.0299769379962593,
+          1.0262264920383097
+        ],
+        "range": [
+          1.0253569630430488,
+          1.0299769379962593
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0584697352128773,
+        "trial_speedups": [
+          1.0587486282803091,
+          1.0471352146567063,
+          1.0584697352128773
+        ],
+        "range": [
+          1.0471352146567063,
+          1.0587486282803091
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 0.9876770901826899,
+        "trial_speedups": [
+          0.9876770901826899,
+          0.9929664998520997,
+          0.9859491490003077
+        ],
+        "range": [
+          0.9859491490003077,
+          0.9929664998520997
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 0.9882630684774661,
+        "trial_speedups": [
+          0.9882630684774661,
+          0.9943578212939176,
+          0.98661755498181
+        ],
+        "range": [
+          0.98661755498181,
+          0.9943578212939176
+        ]
+      }
+    }
+  },
+  "reference_file": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b64-l2048-o256/reference/latest-cpp-graph-vllm-fixed-b64-l2048-o256-20260916T132908860909Z.json"
+}

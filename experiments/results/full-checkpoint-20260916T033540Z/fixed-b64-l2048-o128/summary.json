@@ -1,0 +1,321 @@
+{
+  "status": "complete",
+  "created_at": "2026-09-16T13:23:18.044276+00:00",
+  "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "workload": {
+    "case_id": "fixed-b64-l2048-o128",
+    "requests_sha256": "c9302500e1dcc6abe1ff86c5f205cf29a1d3f174ee4bb30e01d4a068b7b460d0",
+    "output_tokens": 8192,
+    "logical_kv_blocks": 8768
+  },
+  "output_throughput_tok_s": {
+    "prior_regime_dispatched_engine": 2155.1833562408574,
+    "integrated_eager_cpp": 2058.3632983237785,
+    "integrated_decode_graph": 2044.1547371830138,
+    "integrated_piecewise_production": 2054.218132633642,
+    "integrated_piecewise_splitk": null,
+    "vllm": 5639.430048994909
+  },
+  "integrated_production_vs_old": 0.9531523741055044,
+  "integrated_splitk_vs_old": null,
+  "vllm_vs_integrated_production": 2.745292702564547,
+  "vllm_vs_integrated_splitk": null,
+  "output_agreement": {
+    "old_vs_integrated": true,
+    "vllm_vs_integrated": false,
+    "old_repetitions_identical": true,
+    "vllm_repetitions_identical": true
+  },
+  "splitk_decision": {
+    "choice": "rejected_numerical_correctness"
+  },
+  "rejected_arms": {
+    "piecewise_splitk": {
+      "status": "rejected_numerical_correctness",
+      "error": "piecewise_splitk: same-history validation at callback 64, decode=True: Tensor-likes are not close!\n\nMismatched elements: 1 / 4861952 (0.0%)\nGreatest absolute difference: 0.078857421875 at index (2, 12404) (up to 0.075 allowed)\nGreatest relative difference: 0.22119140625 at index (2, 12404) (up to 0.01 allowed)"
+    }
+  },
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8083,
+        "total_tokens": 8192,
+        "match_fraction": 0.9866943359375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8083,
+        "total_tokens": 8192,
+        "match_fraction": 0.9866943359375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8083,
+        "total_tokens": 8192,
+        "match_fraction": 0.9866943359375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "42",
+          "position": 19,
+          "reference_token": 20881,
+          "candidate_token": 62884
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    }
+  },
+  "correctness_mode": "all-step-same-history-logits",
+  "logit_tolerance": {
+    "atol": 0.075,
+    "rtol": 0.01
+  },
+  "splitk_executed": true,
+  "ablation_effects": {
+    "decode_graph_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 0.9930971558070748,
+        "trial_speedups": [
+          0.9931598967195011,
+          0.9930971558070748,
+          0.9924053819637526
+        ],
+        "range": [
+          0.9924053819637526,
+          0.9931598967195011
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0047365433667703,
+        "trial_speedups": [
+          1.0047365433667703,
+          1.005783566500747,
+          1.0043591380913555
+        ],
+        "range": [
+          1.0043591380913555,
+          1.005783566500747
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0168671797613236,
+        "trial_speedups": [
+          0.9969575827506435,
+          1.0168671797613236,
+          1.0203942021853045
+        ],
+        "range": [
+          0.9969575827506435,
+          1.0203942021853045
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 0.9786404947002925,
+        "trial_speedups": [
+          0.9798612747410802,
+          0.9786404947002925,
+          0.9784516817929828
+        ],
+        "range": [
+          0.9784516817929828,
+          0.9798612747410802
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 0.9789608808176693,
+        "trial_speedups": [
+          0.9800051612377458,
+          0.9789608808176693,
+          0.9788016493997679
+        ],
+        "range": [
+          0.9788016493997679,
+          0.9800051612377458
+        ]
+      }
+    },
+    "piecewise_vs_decode_graph": {
+      "wall_ms": {
+        "median_speedup": 1.0050837284709075,
+        "trial_speedups": [
+          1.0050837284709075,
+          1.0049230106055946,
+          1.0051035027282633
+        ],
+        "range": [
+          1.0049230106055946,
+          1.0051035027282633
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0000423916499266,
+        "trial_speedups": [
+          0.9996272174392714,
+          1.0000423916499266,
+          1.000169768718651
+        ],
+        "range": [
+          0.9996272174392714,
+          1.000169768718651
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0338138901833818,
+        "trial_speedups": [
+          1.055566815351811,
+          1.0338138901833818,
+          1.032370156109918
+        ],
+        "range": [
+          1.032370156109918,
+          1.055566815351811
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0107586401285913,
+        "trial_speedups": [
+          1.0107586401285913,
+          1.0101501722158668,
+          1.010851909615226
+        ],
+        "range": [
+          1.0101501722158668,
+          1.010851909615226
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.011042926025575,
+        "trial_speedups": [
+          1.0111538131529552,
+          1.0103426673891505,
+          1.011042926025575
+        ],
+        "range": [
+          1.0103426673891505,
+          1.0111538131529552
+        ]
+      }
+    },
+    "piecewise_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 0.9979861836374989,
+        "trial_speedups": [
+          0.9982088519626174,
+          0.9979861836374989,
+          0.9974701255381478
+        ],
+        "range": [
+          0.9974701255381478,
+          0.9982088519626174
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0045296468552947,
+        "trial_speedups": [
+          1.0043619951052765,
+          1.0058262033256002,
+          1.0045296468552947
+        ],
+        "range": [
+          1.0043619951052765,
+          1.0058262033256002
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0523553406649362,
+        "trial_speedups": [
+          1.0523553406649362,
+          1.051251414908858,
+          1.0534245218036982
+        ],
+        "range": [
+          1.051251414908858,
+          1.0534245218036982
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 0.989069751006666,
+        "trial_speedups": [
+          0.9904032495719622,
+          0.9885738642589216,
+          0.989069751006666
+        ],
+        "range": [
+          0.9885738642589216,
+          0.9904032495719622
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 0.9896104836078004,
+        "trial_speedups": [
+          0.9909359556951233,
+          0.9890859475949563,
+          0.9896104836078004
+        ],
+        "range": [
+          0.9890859475949563,
+          0.9909359556951233
+        ]
+      }
+    }
+  },
+  "reference_file": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b64-l2048-o128/reference/latest-cpp-graph-vllm-fixed-b64-l2048-o128-20260916T132316660235Z.json"
+}

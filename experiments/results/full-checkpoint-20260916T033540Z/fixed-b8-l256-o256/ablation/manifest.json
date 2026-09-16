@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-16T12:51:24.281932+00:00",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "device": "cuda:0",
+  "plan": {
+    "case": {
+      "id": "fixed-b8-l256-o256",
+      "kind": "fixed-uniform",
+      "lengths": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ],
+      "arrivals": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "outputs": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ],
+      "max_running": 8,
+      "prefill_budget": 2048
+    },
+    "arms": [
+      "eager",
+      "decode_graph",
+      "piecewise",
+      "piecewise_splitk"
+    ],
+    "expected_max_decode_batch": 8,
+    "min_full_decode_steps": 64,
+    "expected_prefill_tokens": 2048,
+    "prefill_buckets": [
+      2048
+    ],
+    "trials": 3,
+    "samples": 3,
+    "warmups": 1,
+    "workload_in": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b8-l256-o256/workload.json",
+    "requests_sha256": "acb4b643f0fd9d9908ec435b1965ca5ebe9ec842705512228b290c159986f078"
+  },
+  "cpu_dry_schedule_work": {
+    "decode_batch_histogram": {
+      "8": 255
+    },
+    "prefill_token_counts": [
+      2048
+    ],
+    "max_actual_decode_batch": 8,
+    "pure_full_decode_steps_at_target_batch": 255
+  },
+  "model_load_seconds": 13.900588067248464,
+  "hub_transfer": "standard_fallback_missing_hf_transfer",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "06f374c7a00cdcb1258d5d7edbb8487381eabf3e",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": "0.10.2"
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "scope": "matched C++ scheduler and model; staged eager/graph/piecewise/split-K arms; no vLLM"
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-16T13:09:42.224006+00:00",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "device": "cuda:0",
+  "plan": {
+    "case": {
+      "id": "fixed-b8-l2048-o128",
+      "kind": "fixed-uniform",
+      "lengths": [
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048
+      ],
+      "arrivals": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "outputs": [
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128,
+        128
+      ],
+      "max_running": 8,
+      "prefill_budget": 2048
+    },
+    "arms": [
+      "eager",
+      "decode_graph",
+      "piecewise",
+      "piecewise_splitk"
+    ],
+    "expected_max_decode_batch": 8,
+    "min_full_decode_steps": 64,
+    "expected_prefill_tokens": 2048,
+    "prefill_buckets": [
+      2048
+    ],
+    "trials": 3,
+    "samples": 3,
+    "warmups": 1,
+    "logit_atol": 0.075,
+    "workload_in": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b8-l2048-o128/workload.json",
+    "requests_sha256": "2eed407c3c88b09a704716dc9ac353734521ba233e5758ded01aa7e98fe09e5b"
+  },
+  "cpu_dry_schedule_work": {
+    "decode_batch_histogram": {
+      "1": 2,
+      "2": 2,
+      "3": 2,
+      "4": 2,
+      "5": 2,
+      "6": 2,
+      "7": 2,
+      "8": 120
+    },
+    "prefill_token_counts": [
+      2048
+    ],
+    "max_actual_decode_batch": 8,
+    "pure_full_decode_steps_at_target_batch": 120
+  },
+  "model_load_seconds": 11.635386634618044,
+  "hub_transfer": "standard_fallback_missing_hf_transfer",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "8a5b8c4d24b3039803d3e615b6cfceac88eacd41",
+      "dirty": true
+    },
+    "packages": {
+      "torch": "2.8.0",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": "0.10.2"
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "scope": "matched C++ scheduler and model; staged eager/graph/piecewise/split-K arms; no vLLM"
+}

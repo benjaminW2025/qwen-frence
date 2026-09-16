@@ -1,0 +1,489 @@
+{
+  "status": "complete",
+  "created_at": "2026-09-16T13:16:25.827733+00:00",
+  "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "workload": {
+    "case_id": "fixed-b64-l256-o128",
+    "requests_sha256": "51fe29584065e7ed3200fb85ce44b3ce267cb8bb731fe155d4b4a1c0b760da25",
+    "output_tokens": 8192,
+    "logical_kv_blocks": 1600
+  },
+  "output_throughput_tok_s": {
+    "prior_regime_dispatched_engine": 5402.061143480316,
+    "integrated_eager_cpp": 5538.349704420344,
+    "integrated_decode_graph": 10577.873511554346,
+    "integrated_piecewise_production": 10623.902131039713,
+    "integrated_piecewise_splitk": 10626.613097563224,
+    "vllm": 14200.178775402577
+  },
+  "integrated_production_vs_old": 1.9666386308606625,
+  "integrated_splitk_vs_old": 1.9671404701496868,
+  "vllm_vs_integrated_production": 1.3366255261251048,
+  "vllm_vs_integrated_splitk": 1.3362845381713204,
+  "output_agreement": {
+    "old_vs_integrated": false,
+    "vllm_vs_integrated": false,
+    "old_repetitions_identical": true,
+    "vllm_repetitions_identical": true
+  },
+  "splitk_decision": {
+    "choice": "inactive_short_context",
+    "criterion": "production policy is selected below the split-K context threshold"
+  },
+  "rejected_arms": {},
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8190,
+        "total_tokens": 8192,
+        "match_fraction": 0.999755859375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8104,
+        "total_tokens": 8192,
+        "match_fraction": 0.9892578125,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8190,
+        "total_tokens": 8192,
+        "match_fraction": 0.999755859375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8104,
+        "total_tokens": 8192,
+        "match_fraction": 0.9892578125,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8190,
+        "total_tokens": 8192,
+        "match_fraction": 0.999755859375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8104,
+        "total_tokens": 8192,
+        "match_fraction": 0.9892578125,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "piecewise_splitk": {
+      "vs_eager": {
+        "matched_tokens": 8192,
+        "total_tokens": 8192,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 8190,
+        "total_tokens": 8192,
+        "match_fraction": 0.999755859375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 8104,
+        "total_tokens": 8192,
+        "match_fraction": 0.9892578125,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    }
+  },
+  "correctness_mode": "all-step-same-history-logits",
+  "logit_tolerance": {
+    "atol": 0.075,
+    "rtol": 0.01
+  },
+  "splitk_executed": false,
+  "ablation_effects": {
+    "decode_graph_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.906894471601432,
+        "trial_speedups": [
+          1.8873135033548267,
+          1.9181916178839165,
+          1.906894471601432
+        ],
+        "range": [
+          1.8873135033548267,
+          1.9181916178839165
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 2.03158854001699,
+        "trial_speedups": [
+          2.02260262491001,
+          2.03895111324779,
+          2.03158854001699
+        ],
+        "range": [
+          2.02260262491001,
+          2.03895111324779
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 0.9905608886806987,
+        "trial_speedups": [
+          0.9894764042575506,
+          0.9905608886806987,
+          1.0023312652854435
+        ],
+        "range": [
+          0.9894764042575506,
+          1.0023312652854435
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.3684696340765656,
+        "trial_speedups": [
+          1.3785357410248715,
+          1.3684696340765656,
+          1.3651380723627993
+        ],
+        "range": [
+          1.3651380723627993,
+          1.3785357410248715
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.3293483367128098,
+        "trial_speedups": [
+          1.338728417872346,
+          1.3293483367128098,
+          1.3285230473914869
+        ],
+        "range": [
+          1.3285230473914869,
+          1.338728417872346
+        ]
+      }
+    },
+    "piecewise_vs_decode_graph": {
+      "wall_ms": {
+        "median_speedup": 1.0049207984210373,
+        "trial_speedups": [
+          1.0136695018569954,
+          1.0049207984210373,
+          1.0022849288582314
+        ],
+        "range": [
+          1.0022849288582314,
+          1.0136695018569954
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0005775791230875,
+        "trial_speedups": [
+          1.0025429542462403,
+          1.0005775791230875,
+          0.9978418380470099
+        ],
+        "range": [
+          0.9978418380470099,
+          1.0025429542462403
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.066587425062344,
+        "trial_speedups": [
+          1.0848452244942521,
+          1.066587425062344,
+          1.048818216803315
+        ],
+        "range": [
+          1.048818216803315,
+          1.0848452244942521
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0220178465400669,
+        "trial_speedups": [
+          1.0220178465400669,
+          1.02211869457538,
+          1.021296972407059
+        ],
+        "range": [
+          1.021296972407059,
+          1.02211869457538
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0240803766483493,
+        "trial_speedups": [
+          1.0218466887985231,
+          1.0265221433197793,
+          1.0240803766483493
+        ],
+        "range": [
+          1.0218466887985231,
+          1.0265221433197793
+        ]
+      }
+    },
+    "piecewise_splitk_vs_piecewise": {
+      "wall_ms": {
+        "median_speedup": 1.000265294350264,
+        "trial_speedups": [
+          1.000265294350264,
+          1.000309464859634,
+          1.0002551761575054
+        ],
+        "range": [
+          1.0002551761575054,
+          1.000309464859634
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.0007599880631313,
+        "trial_speedups": [
+          1.0025362500128043,
+          1.0004160462694651,
+          1.0007599880631313
+        ],
+        "range": [
+          1.0004160462694651,
+          1.0025362500128043
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 0.9991650926667585,
+        "trial_speedups": [
+          0.9991971193141924,
+          0.9962403280519657,
+          0.9991650926667585
+        ],
+        "range": [
+          0.9962403280519657,
+          0.9991971193141924
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 0.9986361750719882,
+        "trial_speedups": [
+          0.9927451147009313,
+          0.998867277380395,
+          0.9986361750719882
+        ],
+        "range": [
+          0.9927451147009313,
+          0.998867277380395
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 0.9985556309843344,
+        "trial_speedups": [
+          0.999377637093274,
+          0.9981310450983487,
+          0.9985556309843344
+        ],
+        "range": [
+          0.9981310450983487,
+          0.999377637093274
+        ]
+      }
+    },
+    "piecewise_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.9131121387936683,
+        "trial_speedups": [
+          1.9131121387936683,
+          1.9276306521684465,
+          1.9112515898091962
+        ],
+        "range": [
+          1.9112515898091962,
+          1.9276306521684465
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 2.0277460108434817,
+        "trial_speedups": [
+          2.0277460108434817,
+          2.040128768843798,
+          2.0272040429257947
+        ],
+        "range": [
+          2.0272040429257947,
+          2.040128768843798
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0565197876254135,
+        "trial_speedups": [
+          1.073428751908548,
+          1.0565197876254135,
+          1.0512632903028893
+        ],
+        "range": [
+          1.0512632903028893,
+          1.073428751908548
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.3987383959483872,
+        "trial_speedups": [
+          1.4088881294207545,
+          1.3987383959483872,
+          1.3942113802217355
+        ],
+        "range": [
+          1.3942113802217355,
+          1.4088881294207545
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.3646055038210172,
+        "trial_speedups": [
+          1.3679752010033426,
+          1.3646055038210172,
+          1.3605143827586865
+        ],
+        "range": [
+          1.3605143827586865,
+          1.3679752010033426
+        ]
+      }
+    },
+    "piecewise_splitk_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.9136196766355116,
+        "trial_speedups": [
+          1.9136196766355116,
+          1.928227186117646,
+          1.9117392956459098
+        ],
+        "range": [
+          1.9117392956459098,
+          1.928227186117646
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 2.032888881689447,
+        "trial_speedups": [
+          2.032888881689447,
+          2.0409775568073036,
+          2.0287446937999496
+        ],
+        "range": [
+          2.0287446937999496,
+          2.0409775568073036
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0525476198173351,
+        "trial_speedups": [
+          1.0725669166960499,
+          1.0525476198173351,
+          1.0503855828726478
+        ],
+        "range": [
+          1.0503855828726478,
+          1.0725669166960499
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.3971540133283866,
+        "trial_speedups": [
+          1.3986668076425877,
+          1.3971540133283866,
+          1.3923099199864715
+        ],
+        "range": [
+          1.3923099199864715,
+          1.3986668076425877
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.3620551176758304,
+        "trial_speedups": [
+          1.367123823980917,
+          1.3620551176758304,
+          1.3585492979388625
+        ],
+        "range": [
+          1.3585492979388625,
+          1.367123823980917
+        ]
+      }
+    }
+  },
+  "reference_file": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b64-l256-o128/reference/latest-cpp-graph-vllm-fixed-b64-l256-o128-20260916T131624619164Z.json"
+}

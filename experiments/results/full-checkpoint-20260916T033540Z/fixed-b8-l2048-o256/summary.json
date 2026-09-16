@@ -1,0 +1,321 @@
+{
+  "status": "complete",
+  "created_at": "2026-09-16T13:14:24.634857+00:00",
+  "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
+  "workload": {
+    "case_id": "fixed-b8-l2048-o256",
+    "requests_sha256": "589528cd86ff109f5f0bea1e62af31b3665714663db95b06e9d783884f80b079",
+    "output_tokens": 2048,
+    "logical_kv_blocks": 1160
+  },
+  "output_throughput_tok_s": {
+    "prior_regime_dispatched_engine": 685.5392291117388,
+    "integrated_eager_cpp": 718.5070133538197,
+    "integrated_decode_graph": 843.5547090524343,
+    "integrated_piecewise_production": 845.1516136120403,
+    "integrated_piecewise_splitk": null,
+    "vllm": 2313.2168378852953
+  },
+  "integrated_production_vs_old": 1.232827499466534,
+  "integrated_splitk_vs_old": null,
+  "vllm_vs_integrated_production": 2.737043626999638,
+  "vllm_vs_integrated_splitk": null,
+  "output_agreement": {
+    "old_vs_integrated": true,
+    "vllm_vs_integrated": false,
+    "old_repetitions_identical": true,
+    "vllm_repetitions_identical": true
+  },
+  "splitk_decision": {
+    "choice": "rejected_numerical_correctness"
+  },
+  "rejected_arms": {
+    "piecewise_splitk": {
+      "status": "rejected_numerical_correctness",
+      "error": "piecewise_splitk: same-history validation at callback 40, decode=True: Tensor-likes are not close!\n\nMismatched elements: 1 / 1215488 (0.0%)\nGreatest absolute difference: 0.078857421875 at index (2, 12404) (up to 0.075 allowed)\nGreatest relative difference: 0.22119140625 at index (2, 12404) (up to 0.01 allowed)"
+    }
+  },
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1820,
+        "total_tokens": 2048,
+        "match_fraction": 0.888671875,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1820,
+        "total_tokens": 2048,
+        "match_fraction": 0.888671875,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1820,
+        "total_tokens": 2048,
+        "match_fraction": 0.888671875,
+        "exact": false,
+        "first_difference": {
+          "request_id": "2",
+          "position": 26,
+          "reference_token": 26940,
+          "candidate_token": 104455
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 2048,
+        "total_tokens": 2048,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      }
+    }
+  },
+  "correctness_mode": "all-step-same-history-logits",
+  "logit_tolerance": {
+    "atol": 0.075,
+    "rtol": 0.01
+  },
+  "splitk_executed": true,
+  "ablation_effects": {
+    "decode_graph_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.1740829364685477,
+        "trial_speedups": [
+          1.1789004236493328,
+          1.171226690039024,
+          1.1740829364685477
+        ],
+        "range": [
+          1.171226690039024,
+          1.1789004236493328
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.1812804519989906,
+        "trial_speedups": [
+          1.186414266506164,
+          1.1786135954548316,
+          1.1812804519989906
+        ],
+        "range": [
+          1.1786135954548316,
+          1.186414266506164
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0062325540738393,
+        "trial_speedups": [
+          0.9987665208224706,
+          1.0062325540738393,
+          1.012603186108747
+        ],
+        "range": [
+          0.9987665208224706,
+          1.012603186108747
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0827495742088,
+        "trial_speedups": [
+          1.0907734979277561,
+          1.0827495742088,
+          1.0774556231050894
+        ],
+        "range": [
+          1.0774556231050894,
+          1.0907734979277561
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0766006561983232,
+        "trial_speedups": [
+          1.0825019679280028,
+          1.0766006561983232,
+          1.0718220704903114
+        ],
+        "range": [
+          1.0718220704903114,
+          1.0825019679280028
+        ]
+      }
+    },
+    "piecewise_vs_decode_graph": {
+      "wall_ms": {
+        "median_speedup": 1.0024318546886994,
+        "trial_speedups": [
+          0.9996127848681129,
+          1.0026396699773426,
+          1.0024318546886994
+        ],
+        "range": [
+          0.9996127848681129,
+          1.0026396699773426
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.001309793274991,
+        "trial_speedups": [
+          0.9983615660506231,
+          1.001309793274991,
+          1.0016121728621443
+        ],
+        "range": [
+          0.9983615660506231,
+          1.0016121728621443
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.042349510989859,
+        "trial_speedups": [
+          1.0555963104502744,
+          1.042349510989859,
+          1.036761313980035
+        ],
+        "range": [
+          1.036761313980035,
+          1.0555963104502744
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.0164190837850837,
+        "trial_speedups": [
+          1.008120960965178,
+          1.0164190837850837,
+          1.017161185732836
+        ],
+        "range": [
+          1.008120960965178,
+          1.017161185732836
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0181249471200715,
+        "trial_speedups": [
+          1.0123599071644775,
+          1.0181249471200715,
+          1.018798059798212
+        ],
+        "range": [
+          1.0123599071644775,
+          1.018798059798212
+        ]
+      }
+    },
+    "piecewise_vs_eager": {
+      "wall_ms": {
+        "median_speedup": 1.1769381355625208,
+        "trial_speedups": [
+          1.1784439355663074,
+          1.1743183419693821,
+          1.1769381355625208
+        ],
+        "range": [
+          1.1743183419693821,
+          1.1784439355663074
+        ]
+      },
+      "decode_wall_ms": {
+        "median_speedup": 1.183184880286285,
+        "trial_speedups": [
+          1.1844704050938952,
+          1.1801573356159711,
+          1.183184880286285
+        ],
+        "range": [
+          1.1801573356159711,
+          1.1844704050938952
+        ]
+      },
+      "prefill_wall_ms": {
+        "median_speedup": 1.0498278097704745,
+        "trial_speedups": [
+          1.0542942543814569,
+          1.0488460106809434,
+          1.0498278097704745
+        ],
+        "range": [
+          1.0488460106809434,
+          1.0542942543814569
+        ]
+      },
+      "mixed_wall_ms": {
+        "median_speedup": 1.099631626926278,
+        "trial_speedups": [
+          1.099631626926278,
+          1.1005273301859981,
+          1.0959460391720843
+        ],
+        "range": [
+          1.0959460391720843,
+          1.1005273301859981
+        ]
+      },
+      "prefill_plus_mixed_ms": {
+        "median_speedup": 1.0958815917569573,
+        "trial_speedups": [
+          1.0958815917569573,
+          1.096113986161352,
+          1.0919702458644316
+        ],
+        "range": [
+          1.0919702458644316,
+          1.096113986161352
+        ]
+      }
+    }
+  },
+  "reference_file": "experiments/results/full-checkpoint-20260916T033540Z/fixed-b8-l2048-o256/reference/latest-cpp-graph-vllm-fixed-b8-l2048-o256-20260916T131423491973Z.json"
+}

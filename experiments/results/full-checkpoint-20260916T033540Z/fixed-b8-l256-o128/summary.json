@@ -1,6 +1,6 @@
 {
   "status": "complete",
-  "created_at": "2026-09-16T03:43:49.796489+00:00",
+  "created_at": "2026-09-16T13:09:27.143078+00:00",
   "scope": "matched fixed burst output throughput; scheduler semantics can differ; not TTFT/SLO",
   "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
   "model_revision": "8faed761d45a263340a0528343f099c05c9a4323",
@@ -31,6 +31,146 @@
   "splitk_decision": {
     "choice": "inactive_short_context",
     "criterion": "production policy is selected below the split-K context threshold"
+  },
+  "rejected_arms": {},
+  "output_agreement_by_arm": {
+    "eager": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "decode_graph": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "piecewise": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    },
+    "piecewise_splitk": {
+      "vs_eager": {
+        "matched_tokens": 1024,
+        "total_tokens": 1024,
+        "match_fraction": 1.0,
+        "exact": true,
+        "first_difference": null
+      },
+      "vs_vllm": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      },
+      "vs_old": {
+        "matched_tokens": 1023,
+        "total_tokens": 1024,
+        "match_fraction": 0.9990234375,
+        "exact": false,
+        "first_difference": {
+          "request_id": "6",
+          "position": 0,
+          "reference_token": 315,
+          "candidate_token": 409
+        }
+      }
+    }
+  },
+  "correctness_mode": "legacy-exact-trajectory",
+  "logit_tolerance": {
+    "atol": 0.05,
+    "rtol": 0.01
   },
   "splitk_executed": false,
   "ablation_effects": {
