@@ -92,6 +92,35 @@ For the 4096-token B=64 probe, the one-trial smoke alone processes 1,048,576
 timed ablation prompt tokens and 524,288 reference prompt tokens, plus
 correctness and capture work; avoid launching the 3×3 plan across all ten rows.
 
+The resumable table runner performs that eight-cell sequence automatically. For
+each cell it creates or validates the frozen workload, runs the CPU schedule gate,
+runs the four integrated arms, runs `regime-dispatched` and vLLM, analyzes the
+matched results, and finally writes `table-summary.json` and `table-summary.csv`.
+Completed cells are validated and reused, so rerunning the same command resumes
+at the first missing cell. Partial or ambiguous cell output fails closed instead
+of being overwritten.
+
+```bash
+# Inspect the exact timed-work count before allocating GPU time.
+python3 experiments/integration/benchmark_latest_vs_vllm.py plan-table \
+  --output-dir experiments/results/full-checkpoint-table
+
+# Eight-cell smoke sweep.
+/root/vllm-bench-env/bin/python \
+  experiments/integration/benchmark_latest_vs_vllm.py run-table \
+  --output-dir experiments/results/full-checkpoint-table
+
+# Selection-quality sweep; use a fresh directory.
+/root/vllm-bench-env/bin/python \
+  experiments/integration/benchmark_latest_vs_vllm.py run-table \
+  --trials 3 --samples 3 --warmups 1 --repetitions 3 \
+  --output-dir experiments/results/full-checkpoint-table-3x3
+```
+
+Pass `--include-context-probes` only when intentionally adding the two expensive
+4096-token rows. `analyze-table` rebuilds the aggregate files without launching
+model work.
+
 All integration benchmark and profile entry points accept the same table through
 `--preset fixed --case-id <shape-id>`; `make_plan("fixed")` reads
 `fixed_regime.py`, rather than duplicating shapes. The integrated ablation and
