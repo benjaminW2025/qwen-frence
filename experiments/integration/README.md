@@ -142,6 +142,52 @@ selects its second 2048-token chunk with an existing prefix. The legacy C++ grap
 benchmarks can also select rows from the fixed table, but they are diagnostic
 sub-ablations, not additional arms in the vLLM checkpoint.
 
+## Packed-prefill token-budget sweep
+
+`benchmark_prefill_budget.py` isolates the first long-prefill question from the
+checkpoint: whether the 2048-token scheduler budget is forcing too many small
+prefill calls. It keeps the requests, model, production decode graph, and
+piecewise prefill implementation fixed while sweeping the C++ scheduler budget
+and matching graph bucket together. The model and decode graph load once. Only
+one prefill bucket remains live at a time, which bounds graph memory during the
+sweep. Each budget runs an eager same-history correctness check before timing.
+
+Inspect the work plan and scheduler shapes locally:
+
+```bash
+python3 experiments/integration/benchmark_prefill_budget.py --plan
+python3 experiments/integration/benchmark_prefill_budget.py --dry-schedule
+```
+
+Run the default B8/P2048 sweep on H100 after staging the pinned model snapshot:
+
+```bash
+/root/vllm-bench-env/bin/python \
+  experiments/integration/benchmark_prefill_budget.py \
+  --budgets 2048 4096 8192 \
+  --trials 3 --samples 3 --warmups 1 \
+  --output-dir experiments/results/prefill-budget-b8-p2048
+```
+
+Then repeat the same causal test at B64. Use a fresh output directory:
+
+```bash
+/root/vllm-bench-env/bin/python \
+  experiments/integration/benchmark_prefill_budget.py \
+  --shape-id fixed-b64-l2048-o128 \
+  --budgets 2048 4096 8192 \
+  --trials 3 --samples 3 --warmups 1 \
+  --output-dir experiments/results/prefill-budget-b64-p2048
+```
+
+The report records realized prefill calls, packed tokens and sequences per call,
+budget utilization, graph replays, prefill time, wall time, output throughput,
+speedup against the smallest budget, and peak CUDA memory for each bucket. The
+CLI defaults to a one-sample smoke; the commands above explicitly request 3x3
+selection runs. A 16384-token bucket is supported when passed explicitly, but
+its 29 captured graph segments require substantially more memory than the
+default sweep.
+
 The analyzer refuses mismatched prompt IDs, output lengths, model/config, or
 missing arms. It reports net output-throughput change against the prior engine,
 production-attention and split-K versions of the integrated path, and the
