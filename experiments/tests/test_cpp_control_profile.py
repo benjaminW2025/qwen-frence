@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from types import SimpleNamespace
 
 import torch
 
@@ -38,6 +39,27 @@ class ProfileDesignTests(unittest.TestCase):
         args = MODULE.build_parser().parse_args(["--repetitions", "0"])
         with self.assertRaisesRegex(ValueError, "repetitions"):
             MODULE.validate_args(args)
+        args = MODULE.build_parser().parse_args(["--prefill-budget", "0"])
+        with self.assertRaisesRegex(ValueError, "prefill-budget"):
+            MODULE.validate_args(args)
+
+    def test_cuda_activity_summary_counts_leaf_events_once(self):
+        events = [
+            SimpleNamespace(name="decode_attention_kernel", device_type="DeviceType.CUDA",
+                            self_device_time_total=120.0),
+            SimpleNamespace(name="fused_rms_norm", device_type="DeviceType.CUDA",
+                            self_device_time_total=20.0),
+            SimpleNamespace(name="nvjet_gemm", device_type="DeviceType.CUDA",
+                            self_device_time_total=60.0),
+            SimpleNamespace(name="python/parent", device_type="DeviceType.CPU",
+                            self_device_time_total=200.0),
+        ]
+        summary = MODULE.cuda_activity_summary(events)
+        self.assertEqual(summary["summed_cuda_activity_us"], 200.0)
+        self.assertEqual(summary["activity_count"], 3)
+        categories = {row["category"]: row for row in summary["categories"]}
+        self.assertEqual(categories["attention"]["percent_of_cuda_activity"], 60.0)
+        self.assertEqual(categories["gemm"]["total_us"], 60.0)
 
     def test_fixed_profile_selects_real_full_batch_decode_and_packed_prefill(self):
         from fixed_regime import get_fixed_case

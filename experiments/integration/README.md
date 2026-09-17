@@ -190,6 +190,41 @@ selection runs. A 16384-token bucket is supported when passed explicitly, but
 its 29 captured graph segments require substantially more memory than the
 default sweep.
 
+## Detailed long-context decode profile
+
+`profile_cpp_control.py` profiles one steady full-batch token step from the same
+C++ scheduler and captured model path. Its report includes non-overlapping raw
+CUDA activity grouped into attention, GEMMs, normalization, RoPE, KV writes,
+activation/elementwise work, sampling, memory copies, and uncategorized kernels.
+It also retains exact kernel names, counts, total time, and a Chrome trace. The
+operator table is sorted by CUDA time rather than profiler CPU overhead.
+
+Profile the current split-K configuration at the selected regime budgets:
+
+```bash
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_cpp_control.py \
+  --preset fixed --case-id fixed-b8-l2048-o128 \
+  --kind decode --occurrence 32 --prefill-budget 4096 \
+  --decode-attention-policy splitk \
+  --workload-in experiments/results/full-checkpoint-20260916T033540Z/fixed-b8-l2048-o128/workload.json \
+  --warmups 1 --repetitions 5 \
+  --output-dir experiments/results/decode-breakdown-b8
+
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_cpp_control.py \
+  --preset fixed --case-id fixed-b64-l2048-o128 \
+  --kind decode --occurrence 32 --prefill-budget 8192 \
+  --decode-attention-policy splitk \
+  --workload-in experiments/results/full-checkpoint-20260916T033540Z/fixed-b64-l2048-o128/workload.json \
+  --warmups 1 --repetitions 5 \
+  --output-dir experiments/results/decode-breakdown-b64
+```
+
+The unprofiled repetitions remain the latency authority because tracing perturbs
+CPU timing. The CUDA category and kernel tables diagnose where the captured
+step spends device time.
+
 The analyzer refuses mismatched prompt IDs, output lengths, model/config, or
 missing arms. It reports net output-throughput change against the prior engine,
 production-attention and split-K versions of the integrated path, and the
