@@ -312,8 +312,8 @@ def main():
     if any((args.output_dir / name).exists() for name in ("manifest.json", "report.json")):
         raise SystemExit(f"refusing to overwrite results in {args.output_dir}")
 
-    model_source = resolve_model_source(args)
     startup = check_startup(args.device)
+    model_source = resolve_model_source(args)
     from run_benchmarks import system_metadata
 
     engine, load_seconds, hub_transfer = load_model_only(

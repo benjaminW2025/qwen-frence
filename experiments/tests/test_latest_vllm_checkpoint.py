@@ -213,9 +213,11 @@ class CheckpointContractTests(unittest.TestCase):
 
     def test_incomplete_default_cache_error_names_staging_command(self):
         args = MODULE.build_parser().parse_args(["check-model-cache"])
-        with patch("huggingface_hub.snapshot_download", side_effect=FileNotFoundError()):
+        with (patch("model_setup.prepare_hub_transfer") as transfer,
+              patch("huggingface_hub.snapshot_download", side_effect=FileNotFoundError())):
             with self.assertRaisesRegex(ValueError, "stage-model-cache"):
                 MODULE.resolve_model_source(args)
+        transfer.assert_called_once_with()
 
     def test_analyzer_reports_net_gain_and_remaining_gap(self):
         with tempfile.TemporaryDirectory() as directory:
