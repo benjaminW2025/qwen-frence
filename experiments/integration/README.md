@@ -148,9 +148,11 @@ sub-ablations, not additional arms in the vLLM checkpoint.
 checkpoint: whether the 2048-token scheduler budget is forcing too many small
 prefill calls. It keeps the requests, model, production decode graph, and
 piecewise prefill implementation fixed while sweeping the C++ scheduler budget
-and matching graph bucket together. The model and decode graph load once. Only
-one prefill bucket remains live at a time, which bounds graph memory during the
-sweep. Each budget runs an eager same-history correctness check before timing.
+and matching graph bucket together. Decode uses the latest split-K policy by
+default and the experiment fails before timing if split-K does not actually
+execute. The model and decode graph load once. Only one prefill bucket remains
+live at a time, which bounds graph memory during the sweep. Each budget runs an
+eager same-history correctness check before timing.
 
 Inspect the work plan and scheduler shapes locally:
 
