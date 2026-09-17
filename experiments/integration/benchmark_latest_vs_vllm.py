@@ -107,6 +107,11 @@ def resolve_model_source(args):
     """Use one cached immutable snapshot for all three executors."""
     if args.model == MODEL:
         try:
+            # This must run before importing huggingface_hub. RunPod images can
+            # retain HF_HUB_ENABLE_HF_TRANSFER=1 without the optional package,
+            # and the Hub client reads that flag during import.
+            from model_setup import prepare_hub_transfer
+            prepare_hub_transfer()
             from huggingface_hub import snapshot_download
             snapshot = Path(snapshot_download(repo_id=MODEL, revision=MODEL_REVISION,
                                               local_files_only=True))
