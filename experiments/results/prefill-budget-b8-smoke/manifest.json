@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-09-17T04:02:59.829630+00:00",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "device": "cuda:0",
+  "plan": {
+    "shape_id": "fixed-b8-l2048-o128",
+    "batch": 8,
+    "prompt_tokens_per_request": 2048,
+    "output_tokens_per_request": 128,
+    "cohort_prompt_tokens": 16384,
+    "cohort_output_tokens": 1024,
+    "budgets": [
+      2048,
+      4096,
+      8192
+    ],
+    "expected_prefill_calls": {
+      "2048": 8,
+      "4096": 4,
+      "8192": 2
+    },
+    "graphs_per_budget": 29,
+    "timed_workloads_per_budget": 1,
+    "warmup_workloads_per_budget": 0,
+    "correctness_workloads_per_budget": 2,
+    "requests_sha256": "2eed407c3c88b09a704716dc9ac353734521ba233e5758ded01aa7e98fe09e5b"
+  },
+  "cpu_dry_schedule": {
+    "2048": {
+      "prefill_calls": 8,
+      "packed_token_counts": [
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048,
+        2048
+      ],
+      "sequences_per_call": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "mean_packed_tokens": 2048,
+      "mean_sequences_per_call": 1,
+      "token_budget_utilization": 1.0
+    },
+    "4096": {
+      "prefill_calls": 4,
+      "packed_token_counts": [
+        4096,
+        4096,
+        4096,
+        4096
+      ],
+      "sequences_per_call": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "mean_packed_tokens": 4096,
+      "mean_sequences_per_call": 2,
+      "token_budget_utilization": 1.0
+    },
+    "8192": {
+      "prefill_calls": 2,
+      "packed_token_counts": [
+        8192,
+        8192
+      ],
+      "sequences_per_call": [
+        4,
+        4
+      ],
+      "mean_packed_tokens": 8192,
+      "mean_sequences_per_call": 4,
+      "token_budget_utilization": 1.0
+    }
+  },
+  "model_load_seconds": 20.487791454419494,
+  "hub_transfer": "unchanged",
+  "system": {
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-1008-nvidia-x86_64-with-glibc2.39",
+    "repository": {
+      "commit": "2e2298e044ad4b1e546b6a332fc8da0ebda4fd02",
+      "dirty": false
+    },
+    "packages": {
+      "torch": "2.8.0",
+      "transformers": "4.55.2",
+      "triton": "3.4.0",
+      "vllm": "0.10.2"
+    },
+    "cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu": {
+      "name": "NVIDIA H100 80GB HBM3",
+      "total_memory_bytes": 85017493504,
+      "compute_capability": "9.0"
+    }
+  },
+  "scope": "piecewise production path; one model/decode graph; one prefill bucket live at a time"
+}
