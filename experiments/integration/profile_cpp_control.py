@@ -23,7 +23,8 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
     sys.path.insert(0, str(directory))
 
 from benchmark_scheduler_decode import execute, make_config
-from benchmark_integrated_graph import resolve_requests
+from benchmark_integrated_graph import resolve_requests, verify_actual_work
+from benchmark_latest_vs_vllm import resolve_model_source
 from design import make_plan, make_requests
 from fixed_regime import PREFILL_TOKENS_PER_STEP, verify_fixed_result
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
@@ -36,12 +37,15 @@ def build_parser():
     parser.add_argument("--case-id", default="uniform-b4-l513")
     parser.add_argument("--kind", choices=("decode", "prefill", "mixed"), default="decode")
     parser.add_argument("--occurrence", type=int, default=0,
-                        help="zero-based occurrence; fixed decode/prefill selects only full-batch/2048-token steps")
+                        help="zero-based occurrence; fixed decode/prefill selects only "
+                             "full-batch/full-budget steps")
     parser.add_argument("--adapter", choices=("eager-prefill", "piecewise-prefill"),
                         default="piecewise-prefill")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--decode-attention-policy", choices=("production", "splitk"),
                         default="production")
+    parser.add_argument("--prefill-budget", type=int,
+                        help="override the case budget and matching piecewise graph bucket")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=5)
@@ -50,7 +54,8 @@ def build_parser():
                         help="use exact saved prompt IDs/output lengths from the fixed checkpoint")
     parser.add_argument("--with-stack", action="store_true")
     parser.add_argument("--check-setup", action="store_true",
-                        help="check runtime dependencies before loading weights or allocating model GPU memory")
+                        help="check runtime dependencies before loading weights or "
+                             "allocating model GPU memory")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/cpp-control-profile")
     return parser
@@ -61,6 +66,8 @@ def validate_args(args):
         raise ValueError("warmups/occurrence must be nonnegative and repetitions positive")
     if args.case_id not in {case["id"] for case in make_plan(args.preset)}:
         raise ValueError("case ID is not in the selected preset")
+    if args.prefill_budget is not None and args.prefill_budget < 1:
+        raise ValueError("prefill-budget must be positive")
 
 
 def select_target(steps, kind, occurrence):
@@ -70,7 +77,8 @@ def select_target(steps, kind, occurrence):
     return matches[occurrence]
 
 
-def select_fixed_target(steps, case, kind, occurrence):
+def select_fixed_target(steps, case, kind, occurrence,
+                        prefill_tokens=PREFILL_TOKENS_PER_STEP):
     if kind == "decode":
         matches = [i for i, step in enumerate(steps)
                    if step["kind"] == "decode" and
@@ -78,7 +86,7 @@ def select_fixed_target(steps, case, kind, occurrence):
     elif kind == "prefill":
         matches = [i for i, step in enumerate(steps)
                    if step["kind"] == "prefill" and
-                   any(not call[0] and call[1] == PREFILL_TOKENS_PER_STEP
+                   any(not call[0] and call[1] == prefill_tokens
                        for call in step["calls"])]
     else:
         return select_target(steps, kind, occurrence)
@@ -162,6 +170,66 @@ def stage_summary(prof):
     return sorted(rows, key=lambda row: row["cpu_total_us"], reverse=True)
 
 
+def cuda_kernel_category(name):
+    """Classify one raw CUDA activity without double-counting parent ranges."""
+    lower = name.lower()
+    if "memcpy" in lower or "memset" in lower:
+        return "memory_copy_or_set"
+    if any(token in lower for token in
+           ("attention", "grouped_gqa", "grouped_splitk", "splitk_reduce")):
+        return "attention"
+    if "rope" in lower:
+        return "rope"
+    if "rms" in lower or "norm" in lower:
+        return "normalization"
+    if any(token in lower for token in ("swiglu", "silu", "sigmoid")):
+        return "activation"
+    if "index_elementwise" in lower or "scatter" in lower:
+        return "kv_write"
+    if any(token in lower for token in
+           ("nvjet", "gemm", "cublas", "cutlass", "matmul")):
+        return "gemm"
+    if "argmax" in lower or "reduce_kernel" in lower:
+        return "sampling"
+    if "elementwise" in lower:
+        return "elementwise"
+    return "other"
+
+
+def cuda_activity_summary(events):
+    """Aggregate leaf CUDA activities by semantic category and exact kernel name."""
+    kernels = {}
+    for event in events:
+        if "cuda" not in str(getattr(event, "device_type", "")).lower():
+            continue
+        duration = float(getattr(event, "self_device_time_total", 0.0))
+        if duration <= 0:
+            duration = float(getattr(event, "device_time_total", 0.0))
+        if duration <= 0:
+            continue
+        name = str(event.name)
+        row = kernels.setdefault(name, {"name": name, "category": cuda_kernel_category(name),
+                                        "calls": 0, "total_us": 0.0})
+        row["calls"] += 1
+        row["total_us"] += duration
+    kernel_rows = sorted(kernels.values(), key=lambda row: row["total_us"], reverse=True)
+    total = sum(row["total_us"] for row in kernel_rows)
+    categories = {}
+    for row in kernel_rows:
+        row["mean_us"] = row["total_us"] / row["calls"]
+        row["percent_of_cuda_activity"] = 100 * row["total_us"] / total if total else 0.0
+        category = categories.setdefault(row["category"], {
+            "category": row["category"], "calls": 0, "total_us": 0.0})
+        category["calls"] += row["calls"]
+        category["total_us"] += row["total_us"]
+    category_rows = sorted(categories.values(), key=lambda row: row["total_us"], reverse=True)
+    for row in category_rows:
+        row["percent_of_cuda_activity"] = 100 * row["total_us"] / total if total else 0.0
+    return {"summed_cuda_activity_us": total,
+            "activity_count": sum(row["calls"] for row in kernel_rows),
+            "categories": category_rows, "kernels": kernel_rows}
+
+
 def main():
     args = build_parser().parse_args()
     validate_args(args)
@@ -174,16 +242,24 @@ def main():
     from run_benchmarks import system_metadata
 
     case = next(case for case in make_plan(args.preset) if case["id"] == args.case_id)
+    if args.prefill_budget is not None:
+        case = {**case, "prefill_budget": args.prefill_budget}
     config = make_config(cpp, case)
     blocks = config.max_batch_size * (((config.max_context_length + 15) // 16) + 1)
+    model_source = resolve_model_source(args)
     engine, load_seconds, hub_transfer = load_model_only(
-        args.model, args.device, "float16", hub_transfer=startup["hub_transfer"])
+        model_source, args.device, "float16", hub_transfer=startup["hub_transfer"])
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter_cls = (PiecewiseGraphModelAdapter if args.adapter == "piecewise-prefill"
                    else GraphModelAdapter)
-    adapter = adapter_cls(engine.model, pool, None, max_running=config.max_batch_size,
-                          max_context_length=config.max_context_length,
-                          decode_attention_policy=args.decode_attention_policy)
+    adapter_options = dict(max_running=config.max_batch_size,
+                           max_context_length=config.max_context_length,
+                           decode_attention_policy=args.decode_attention_policy)
+    if adapter_cls is PiecewiseGraphModelAdapter and args.prefill_budget is not None:
+        adapter_options.update(max_capture_tokens=args.prefill_budget,
+                               max_prefill_shapes=1,
+                               prefill_buckets=[args.prefill_budget])
+    adapter = adapter_cls(engine.model, pool, None, **adapter_options)
     requests = (resolve_requests(args, case) if args.workload_in is not None
                 else make_requests(case, args.seed, engine.cfg.vocab))
 
@@ -197,9 +273,13 @@ def main():
     expected_steps = [(step["kind"], step["calls"], step["completed"])
                       for step in preflight["steps"]]
     if args.preset == "fixed":
-        verify_fixed_result(preflight, args.case_id)
+        if args.prefill_budget is None:
+            verify_fixed_result(preflight, args.case_id)
+        else:
+            verify_actual_work(preflight, case["max_running"], args.prefill_budget, 1)
         target_index = select_fixed_target(preflight["steps"], case, args.kind,
-                                           args.occurrence)
+                                           args.occurrence,
+                                           args.prefill_budget or PREFILL_TOKENS_PER_STEP)
     else:
         target_index = select_target(preflight["steps"], args.kind, args.occurrence)
 
@@ -226,19 +306,22 @@ def main():
     report_path = args.output_dir / f"{stem}-report.json"
     table_path = args.output_dir / f"{stem}-operators.txt"
     prof.export_chrome_trace(str(trace_path))
-    table_path.write_text(prof.key_averages().table(sort_by="self_cpu_time_total",
+    table_path.write_text(prof.key_averages().table(sort_by="self_cuda_time_total",
                                                      row_limit=80) + "\n")
+    cuda = cuda_activity_summary(prof.events())
     report = {
         "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
         "case": case, "kind": args.kind, "adapter": args.adapter,
         "decode_attention_policy": args.decode_attention_policy,
         "decode_attention_action": adapter.action,
+        "prefill_budget": case["prefill_budget"],
         "target_step_index": target_index,
         "target_step_calls": expected_steps[target_index][1],
         "unprofiled_target_wall_ms": baseline_ms,
         "unprofiled_median_wall_ms": statistics.median(baseline_ms),
         "profiled_target_wall_ms": traced["target_wall_ms"],
         "cpu_ranges": stage_summary(prof),
+        "cuda_activity": cuda,
         "system": system_metadata(), "model_load_seconds": load_seconds,
         "hub_transfer": hub_transfer,
         "trace": str(trace_path), "operators": str(table_path),
@@ -246,6 +329,10 @@ def main():
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
     print(f"{args.kind} step {target_index}: unprofiled median "
           f"{report['unprofiled_median_wall_ms']:.3f} ms; trace {trace_path}")
+    print("CUDA activity by category:")
+    for row in cuda["categories"]:
+        print(f"  {row['category']:<20} {row['total_us']:>10.1f} us "
+              f"{row['percent_of_cuda_activity']:>6.2f}%  ({row['calls']} activities)")
 
 
 if __name__ == "__main__":
