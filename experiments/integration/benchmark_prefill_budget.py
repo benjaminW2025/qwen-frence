@@ -52,6 +52,10 @@ def build_parser():
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--warmups", type=int, default=0)
     parser.add_argument("--logit-atol", type=float, default=.05)
+    parser.add_argument("--decode-attention-policy", choices=("production", "splitk"),
+                        default="splitk",
+                        help="fixed decode policy across budgets; splitk matches the "
+                             "latest long-context arm")
     parser.add_argument("--workload-in", type=Path,
                         help="optional benchmark_core workload.json with the exact "
                              "table-row requests")
@@ -164,6 +168,7 @@ def plan_payload(args, base, requests):
         "cohort_prompt_tokens": prompt_tokens,
         "cohort_output_tokens": output_tokens,
         "budgets": args.budgets,
+        "decode_attention_policy": args.decode_attention_policy,
         "expected_prefill_calls": {str(value): prompt_tokens // value for value in args.budgets},
         "graphs_per_budget": 29,
         "timed_workloads_per_budget": args.trials * args.samples,
@@ -225,6 +230,9 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
     expected_outputs = free["outputs"]
     if expected_schedule != schedule_of(eager_result):
         raise AssertionError(f"budget={budget}: free-generation schedule changed")
+    splitk_executed = any(name != "production" for name in free["decisions"])
+    if args.decode_attention_policy == "splitk" and not splitk_executed:
+        raise AssertionError(f"budget={budget}: split-K policy never executed")
     for _ in range(args.warmups):
         warm = execute_arm(candidate, pool)
         if schedule_of(warm) != expected_schedule or warm["outputs"] != expected_outputs:
@@ -252,6 +260,9 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
         raise AssertionError(f"budget={budget}: timing did not stay on captured prefill")
     return {
         "budget": budget,
+        "decode_attention_policy": args.decode_attention_policy,
+        "decode_decisions": free["decisions"],
+        "splitk_executed": splitk_executed,
         "work": call_summary(free, budget),
         "actual_work": work,
         "correctness": {
@@ -325,7 +336,9 @@ def main():
     reference_pool = allocate_pool(engine.cfg, blocks, engine.device)
     common = {"max_running": base["max_running"], "max_context_length": max_context}
     candidate = PiecewiseGraphModelAdapter(
-        engine.model, pool, None, **common, max_capture_tokens=args.budgets[0],
+        engine.model, pool, None, **common,
+        decode_attention_policy=args.decode_attention_policy,
+        max_capture_tokens=args.budgets[0],
         max_prefill_shapes=1, prefill_buckets=[args.budgets[0]])
     eager = ModelAdapter(engine.model, reference_pool, None)
     manifest = {

@@ -22,6 +22,7 @@ class PrefillBudgetBenchmarkTests(unittest.TestCase):
         requests = MODULE.resolve_requests(args, base)
         plan = MODULE.plan_payload(args, base, requests)
         self.assertEqual(plan["budgets"], [2048, 4096, 8192])
+        self.assertEqual(plan["decode_attention_policy"], "splitk")
         self.assertEqual(plan["expected_prefill_calls"],
                          {"2048": 8, "4096": 4, "8192": 2})
         self.assertEqual(plan["cohort_prompt_tokens"], 16384)
