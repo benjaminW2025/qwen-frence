@@ -61,6 +61,18 @@ class ProfileDesignTests(unittest.TestCase):
         self.assertEqual(categories["attention"]["percent_of_cuda_activity"], 60.0)
         self.assertEqual(categories["gemm"]["total_us"], 60.0)
 
+    def test_profile_callback_defers_context_device_copy(self):
+        class Adapter:
+            def __call__(self, *args):
+                return "logits"
+
+        callback = MODULE.ProfileCallback(Adapter())
+        context = torch.tensor([513, 1025])
+        args = (torch.tensor([1, 2]), None, None, None, context, None, 1, True)
+        self.assertEqual(callback(*args), "logits")
+        self.assertEqual(callback.calls[0]["context"].data_ptr(), context.data_ptr())
+        self.assertEqual(callback.materialize()[0]["context_lengths"], [513, 1025])
+
     def test_fixed_profile_selects_real_full_batch_decode_and_packed_prefill(self):
         from fixed_regime import get_fixed_case
 

@@ -99,16 +99,30 @@ def select_fixed_target(steps, case, kind, occurrence,
 class ProfileCallback:
     def __init__(self, adapter):
         self.adapter = adapter
+        self.calls = []
 
     def __call__(self, *args):
         from torch.profiler import record_function
+        # Keep a reference and materialize it only after profiling has stopped;
+        # a device-to-host copy here would contaminate the target step trace.
+        self.calls.append({
+            "decode": bool(args[-1]),
+            "tokens": int(args[0].numel()),
+            "context": args[4],
+        })
         name = "python/model_callback_decode" if args[-1] else "python/model_callback_prefill"
         with record_function(name):
             return self.adapter(*args)
 
+    def materialize(self):
+        return [{"decode": row["decode"], "tokens": row["tokens"],
+                 "context_lengths": [int(value) for value in
+                                     row["context"].cpu().tolist()]}
+                for row in self.calls]
+
 
 def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target=False,
-          with_stack=False):
+          with_stack=False, collect_target_metadata=False):
     """Drain the same arrival-index workload, profiling only one chosen step."""
     from torch.profiler import ProfilerActivity, profile, record_function
 
@@ -119,6 +133,7 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
     iteration_limit = (sum(len(r["prompt"]) + r["output"] for r in requests)
                        + max(r["arrival"] for r in requests) + 1)
     target_ms = None
+    target_calls = None
     prof = None
     torch.cuda.synchronize()
     while cursor < len(pending) or loop.num_pending() or loop.num_running():
@@ -133,15 +148,23 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
         if is_target:
             start = time.perf_counter()
             if profile_target:
+                callback = ProfileCallback(adapter)
                 with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                              record_shapes=False, profile_memory=False,
                              with_stack=with_stack) as prof:
                     with record_function("experiment/target_step"):
-                        completed = loop.step(ProfileCallback(adapter))
+                        completed = loop.step(callback)
                     prof.step()
+                # Record latency before copying metadata back to the host. The
+                # C++ loop reuses this device buffer on the following step.
+                target_ms = (time.perf_counter() - start) * 1000
+                target_calls = callback.materialize()
             else:
-                completed = loop.step(adapter)
-            target_ms = (time.perf_counter() - start) * 1000
+                callback = ProfileCallback(adapter) if collect_target_metadata else adapter
+                completed = loop.step(callback)
+                target_ms = (time.perf_counter() - start) * 1000
+                if collect_target_metadata:
+                    target_calls = callback.materialize()
         else:
             completed = loop.step(adapter)
         if not adapter.step_calls:
@@ -157,7 +180,8 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
     torch.cuda.synchronize()
     if target_ms is None:
         raise AssertionError("selected target step was not reached")
-    return {"target_wall_ms": target_ms, "steps": steps, "outputs": outputs, "profiler": prof}
+    return {"target_wall_ms": target_ms, "steps": steps, "outputs": outputs,
+            "profiler": prof, "target_calls": target_calls}
 
 
 def stage_summary(prof):
@@ -184,7 +208,8 @@ def cuda_kernel_category(name):
         return "normalization"
     if any(token in lower for token in ("swiglu", "silu", "sigmoid")):
         return "activation"
-    if "index_elementwise" in lower or "scatter" in lower:
+    if ("index_elementwise" in lower or "scatter" in lower
+            or "reshape_and_cache" in lower or "concat_and_cache" in lower):
         return "kv_write"
     if any(token in lower for token in
            ("nvjet", "gemm", "cublas", "cutlass", "matmul")):
@@ -311,12 +336,14 @@ def main():
     cuda = cuda_activity_summary(prof.events())
     report = {
         "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
-        "case": case, "kind": args.kind, "adapter": args.adapter,
+        "case": case, "kind": args.kind, "occurrence": args.occurrence,
+        "adapter": args.adapter, "model": model_source,
         "decode_attention_policy": args.decode_attention_policy,
         "decode_attention_action": adapter.action,
         "prefill_budget": case["prefill_budget"],
         "target_step_index": target_index,
         "target_step_calls": expected_steps[target_index][1],
+        "target_callback_calls": traced["target_calls"],
         "unprofiled_target_wall_ms": baseline_ms,
         "unprofiled_median_wall_ms": statistics.median(baseline_ms),
         "profiled_target_wall_ms": traced["target_wall_ms"],
