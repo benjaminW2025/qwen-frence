@@ -94,7 +94,7 @@ class GraphModelAdapter(ModelAdapter):
     """
 
     def __init__(self, model, pool, loop, *, max_running, max_context_length,
-                 decode_attention_policy="production"):
+                 decode_attention_policy="production", decode_buckets=None):
         super().__init__(model, pool, loop)
         if decode_attention_policy not in ("production", "splitk"):
             raise ValueError("graph decode policy must be 'production' or 'splitk'")
@@ -120,6 +120,7 @@ class GraphModelAdapter(ModelAdapter):
         self.graph_decoder = BucketedGraphDecoder(
             model, pool, max_running, self.max_blocks,
             pool.k_pool[0].device, pool.k_pool[0].dtype,
+            buckets=decode_buckets,
             decode_attention_policy=decode_attention_policy,
             max_decode_context_length=max_context_length,
         )
@@ -151,10 +152,11 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
 
     def __init__(self, model, pool, loop, *, max_running, max_context_length,
                  decode_attention_policy="production", max_capture_tokens=2048,
-                 max_prefill_shapes=8, prefill_buckets=None):
+                 max_prefill_shapes=8, prefill_buckets=None, decode_buckets=None):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
-                         decode_attention_policy=decode_attention_policy)
+                         decode_attention_policy=decode_attention_policy,
+                         decode_buckets=decode_buckets)
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))

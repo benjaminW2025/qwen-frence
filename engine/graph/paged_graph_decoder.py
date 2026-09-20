@@ -107,6 +107,8 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          max_decode_context_length=None,
                          enable_regime_fusions=False,
                          enable_native_decode_rope_kv=False,
+                         output_head_policy="logits",
+                         output_head_config=None,
                          layer_observer=None):
     """
     Mirrors paged_forward's decode branch, with RoPE from a
@@ -181,6 +183,14 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             layer_observer(i, "layer_output", x)
 
     x = apply_rms_norm(x, model.norm, cfg)
+    if output_head_policy == "fused_argmax":
+        from kernel_dispatch import fused_lm_head_argmax
+        return fused_lm_head_argmax(
+            x[:, -1, :].contiguous(), model.lm_head.weight,
+            **(output_head_config or {}),
+        )
+    if output_head_policy != "logits":
+        raise ValueError(f"unknown output-head policy: {output_head_policy}")
     return model.lm_head(x[:, -1:, :])
 
 
