@@ -92,3 +92,13 @@ def masked_kv_write(*args, **kwargs):
 def native_decode_rope_kv_write(*args, **kwargs):
     """Experimental native-layout decode RoPE and cache placement."""
     return _load("rope_kv_write").native_decode_rope_kv_write(*args, **kwargs)
+
+
+def fused_lm_head_argmax(*args, **kwargs):
+    """Project to vocabulary tiles and return exact greedy token IDs."""
+    return _load("fused_lm_head").fused_lm_head_argmax(*args, **kwargs)
+
+
+def chunked_lm_head_argmax(*args, **kwargs):
+    """Low-memory PyTorch output-head control used by experiments."""
+    return _load("fused_lm_head").chunked_lm_head_argmax(*args, **kwargs)

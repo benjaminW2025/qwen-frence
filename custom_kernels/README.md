@@ -14,6 +14,8 @@ criteria pass:
 - `swiglu.py`: fused SiLU and gate product
 - `rope_kv_write.py`: fused Q/K rotation and direct paged K/V placement
 - `masked_kv_write.py`: capture-safe K/V placement for padded prefill token buckets
+- `fused_lm_head.py`: tiled exact-greedy projection/argmax without full logits,
+  plus a chunked PyTorch control
 
 The inference engine loads these lazily through `baseline/kernel_dispatch.py`, so
 the PyTorch baseline and CPU-only infrastructure do not require Triton imports.

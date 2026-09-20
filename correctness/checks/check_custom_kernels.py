@@ -4,7 +4,7 @@ import _bootstrap  # noqa: F401
 
 import torch
 
-from kernel_dispatch import rms_norm, rope, rope_kv_write, swiglu
+from kernel_dispatch import fused_lm_head_argmax, rms_norm, rope, rope_kv_write, swiglu
 from kv_cache import KVCache
 from naive_forward import Qwen2Config
 from weight_loader import QwenWeightLoader
@@ -148,6 +148,25 @@ def check_rope_kv_write():
     return passed
 
 
+def check_fused_lm_head():
+    print("isolated fused output-head argmax parity...")
+    ok = True
+    for batch in (8, 64):
+        generator = torch.Generator(device=DEVICE).manual_seed(500 + batch)
+        hidden = torch.randn(batch, 128, device=DEVICE, dtype=DTYPE,
+                             generator=generator)
+        weight = torch.randn(1024, 128, device=DEVICE, dtype=DTYPE,
+                             generator=generator)
+        reference = torch.nn.functional.linear(hidden, weight).argmax(-1)
+        actual = fused_lm_head_argmax(hidden, weight)
+        matching = int((actual == reference).sum())
+        passed = matching == batch
+        ok &= passed
+        print(f"  B={batch:<2}: matching tokens={matching}/{batch}  "
+              f"{'PASS' if passed else 'FAIL'}")
+    return ok
+
+
 @torch.no_grad()
 def check_full_model():
     print("full-model PyTorch versus custom-kernel prefill/decode parity...")
@@ -182,6 +201,7 @@ def main():
     ok = check_rope() and ok
     ok = check_swiglu() and ok
     ok = check_rope_kv_write() and ok
+    ok = check_fused_lm_head() and ok
     ok = check_full_model() and ok
     print("OVERALL:", "PASS" if ok else "FAIL")
     return ok
