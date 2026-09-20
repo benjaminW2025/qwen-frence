@@ -225,6 +225,107 @@ The unprofiled repetitions remain the latency authority because tracing perturbs
 CPU timing. The CUDA category and kernel tables diagnose where the captured
 step spends device time.
 
+### Matched local/vLLM decode profile
+
+`profile_latest_vs_vllm.py` advances both engines through the exact saved
+checkpoint workload and profiles the same zero-based occurrence of a pure,
+full-cohort decode step. It runs each engine in a separate process, uses the
+checkpoint's matched KV-cache allocation for vLLM, and keeps profiler overhead
+out of the reported wall-time medians. The report records the context state at
+the selected step because the schedulers' earlier mixed prefill/decode histories
+can differ even with identical prompt IDs and requested lengths.
+
+Run the cheap preflight first, then the two-sided profile:
+
+```bash
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_latest_vs_vllm.py check-setup \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --shape-id fixed-b8-l2048-o128
+
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_latest_vs_vllm.py run \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --shape-id fixed-b8-l2048-o128 \
+  --occurrence 32 --warmups 1 --repetitions 3
+```
+
+For the B64 long-context row, change the shape to
+`fixed-b64-l2048-o128`; the harness automatically uses the selected 4096-token
+local prefill bucket for B8 and 8192-token bucket for B64 while preserving the
+2048-token vLLM setting used by the checkpoint. Interrupted output is never
+silently reused; pass `--retry-failed` to archive it and rerun only that arm.
+
+### Comprehensive decode diagnosis
+
+`profile_decode_comprehensive.py` is the cost-controlled follow-up. It covers
+the B8/B64 × 256/2048/4096 context surface, production-versus-split-K latency,
+matched vLLM latency, one detailed local/vLLM trace at the selected worst-case
+shape, raw attention scaling, contiguous-versus-random page-table locality,
+effective KV bandwidth, packed QKV/gate-up projections, SwiGLU fusion, sampling,
+the residual/RMSNorm boundary, the native K-RoPE/KV-write candidate, and every
+production decode GEMM at the exact B8/B64 regime shapes. The GEMM screen records
+warm-cache and 128 MiB cache-evicted timings, eager versus CUDA-graph replay,
+graph numerical checks, explicit cuBLAS/cuBLASLt routing when the installed
+PyTorch exposes it, and the LM-head-plus-argmax boundary. This is a routing and
+prioritization screen; it does not claim to enumerate internal cuBLASLt algorithm IDs.
+
+The output-head section goes beyond timing the existing projection. It compares
+materialized logits, materialized logits plus argmax, an exact chunked-logits
+control, and three two-stage Triton projection/argmax tilings. The fused candidate
+stores one winner per vocabulary tile instead of a `[B, 151936]` logits tensor.
+Every candidate is checked against the FP16 reference token, including graph
+replay, and failures retain their timing. A second A/B places each correct fused
+configuration inside the complete 28-layer split-K decode and selects the fastest
+configuration separately for B8 and B64.
+
+The same run also captures exact-regime autoregressive graphs for K=2, 4, and 8
+at B8/B64 and contexts 256/2048/4096. Each K graph is compared with K repeated
+K1 graph replays. Validation graphs deliberately retain every `[B, 1, vocab]`
+logit tensor and report per-step maximum/mean error, values outside tolerance,
+sampled-token agreement, first trajectory divergence, and future-slot KV parity.
+Production-shaped graphs retain only `[K, B]` token IDs; a second production arm
+uses the fastest correctness-passing fused output head when available. Capture
+time, graph allocator pressure, GPU/wall latency, per-token latency, token D2H,
+and EOS scan+D2H are recorded. EOS is checked across all K positions and the
+commit contract stops each row at its first EOS.
+
+The local model and vLLM are each loaded exactly once. Local graph measurements
+capture only the full-cohort bucket being measured; that graph is identical to
+the corresponding production bucket, while avoiding unused smaller captures.
+Although B8 and B64 are themselves powers of two, they are selected because they
+are the fixed input regimes: the profiler does not capture the generic
+`1,2,4,...,max_running` ladder. Isolated GEMM graph controls follow the same exact
+B8/B64 rule.
+vLLM uses one max-B64/max-context diagnostic engine across the surface. The
+result records that distinction instead of presenting the slope sweep as six
+independently configured throughput benchmarks.
+
+Inspect the exact cost first, perform the no-allocation preflight, then run:
+
+```bash
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_decode_comprehensive.py plan \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z
+
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_decode_comprehensive.py check-setup \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z
+
+/root/vllm-bench-env/bin/python \
+  experiments/integration/profile_decode_comprehensive.py run \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --warmups 1 --repetitions 3 --kernel-repetitions 20 --l2-evict-mib 128
+```
+
+The default heavyweight trace is `probe-b64-l4096-o256`; change it with
+`--trace-shape`. The final `summary.json` includes the fitted microseconds per
+context token for each engine, per-cell gaps and split-K effects, trace category
+comparisons, attention/page-locality rows, and all fusion A/B measurements.
+It also estimates the cache-evicted projection share of the shortest-context full
+decode step, which tells us whether a deeper cuBLASLt/CUTLASS algorithm tuner is
+likely to beat attention/KV work as the next investment.
+
 The analyzer refuses mismatched prompt IDs, output lengths, model/config, or
 missing arms. It reports net output-throughput change against the prior engine,
 production-attention and split-K versions of the integrated path, and the
