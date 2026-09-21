@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One paired C++-scheduled experiment: eager, decode graph, prefill pieces, split-K.
+"""Paired C++-scheduled experiment for graph, split-K, and optional FA3 decode.
 
 This is an implementation comparison, not a vLLM or production-Python comparison.
 All arms share requests, weights, scheduler configuration, and the physical KV pool.
@@ -30,14 +30,17 @@ from model_adapter import (GraphModelAdapter, ModelAdapter, PiecewiseGraphModelA
                            allocate_pool)
 from model_setup import check_startup, load_model_only
 
-ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk")
+ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk", "piecewise_fa3")
 PHASES = ("wall_ms", "decode_wall_ms", "prefill_wall_ms", "mixed_wall_ms",
           "prefill_plus_mixed_ms")
 COMPARISONS = (("decode_graph", "eager"),
                ("piecewise", "decode_graph"),
                ("piecewise_splitk", "piecewise"),
+               ("piecewise_fa3", "piecewise_splitk"),
+               ("piecewise_fa3", "piecewise"),
                ("piecewise", "eager"),
-               ("piecewise_splitk", "eager"))
+               ("piecewise_splitk", "eager"),
+               ("piecewise_fa3", "eager"))
 
 
 class NumericalMismatch(AssertionError):
@@ -113,8 +116,13 @@ def build_parser():
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
-    parser.add_argument("--splitk-only", action="store_true",
-                        help="validate against eager, then time only the split-K arm")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--splitk-only", action="store_true",
+                      help="validate against eager, then time only the split-K arm")
+    mode.add_argument("--fa3-only", action="store_true",
+                      help="validate against eager, then time only the FA3 arm")
+    parser.add_argument("--include-fa3", action="store_true",
+                        help="add piecewise capture with FA3-auto to the paired ablation")
     parser.add_argument("--logit-atol", type=float, default=.05,
                         help="recorded absolute tolerance for same-history full logits")
     parser.add_argument("--expected-max-decode-batch", type=int, default=8,
@@ -322,15 +330,22 @@ def run_case(torch, cpp, engine, case, args, requests):
     common = dict(max_running=config.max_batch_size,
                   max_context_length=config.max_context_length)
     adapters = {"eager": ModelAdapter(engine.model, pool, None)}
-    if not args.splitk_only:
+    if not args.splitk_only and not args.fa3_only:
         adapters["decode_graph"] = GraphModelAdapter(engine.model, pool, None, **common)
         adapters["piecewise"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common,
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
             prefill_buckets=args.prefill_buckets)
-    adapters["piecewise_splitk"] = PiecewiseGraphModelAdapter(
+    if not args.fa3_only:
+        adapters["piecewise_splitk"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common, decode_attention_policy="splitk",
+            max_capture_tokens=args.max_capture_tokens,
+            max_prefill_shapes=args.max_prefill_shapes,
+            prefill_buckets=args.prefill_buckets)
+    if args.include_fa3 or args.fa3_only:
+        adapters["piecewise_fa3"] = PiecewiseGraphModelAdapter(
+            engine.model, pool, None, **common, decode_attention_policy="fa3",
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
             prefill_buckets=args.prefill_buckets)
@@ -395,7 +410,12 @@ def run_case(torch, cpp, engine, case, args, requests):
     # Free generation is measured, with each arm checked against its own
     # untimed output. Numerical agreement above is checked on identical history.
     outputs_by_arm = {"eager": expected_outputs}
-    active_arms = ("piecewise_splitk",) if args.splitk_only else tuple(adapters)
+    if args.splitk_only:
+        active_arms = ("piecewise_splitk",)
+    elif args.fa3_only:
+        active_arms = ("piecewise_fa3",)
+    else:
+        active_arms = tuple(adapters)
     for arm in active_arms:
         print(f"{case['id']}: free-generation preflight {arm}", flush=True)
         result = execute_arm(arm)
@@ -403,11 +423,18 @@ def run_case(torch, cpp, engine, case, args, requests):
             raise AssertionError(f"{arm}: free-generation schedule changed")
         outputs_by_arm[arm] = result["outputs"]
 
-    splitk_executed = any(key != "production" for key in
-                          checks["piecewise_splitk"]["decisions"])
-    if adapters["piecewise_splitk"].action != "production" and not splitk_executed:
-        raise AssertionError("split-K arm did not use split-K; choose a supported context")
-    pieces = {arm: adapters[arm].piecewise_prefill for arm in active_arms if arm in ARMS[2:]}
+    splitk_executed = False
+    if "piecewise_splitk" in adapters:
+        splitk_executed = any(key != "production" for key in
+                              checks["piecewise_splitk"]["decisions"])
+        if adapters["piecewise_splitk"].action != "production" and not splitk_executed:
+            raise AssertionError("split-K arm did not use split-K; choose a supported context")
+    if "piecewise_fa3" in adapters:
+        decisions = checks["piecewise_fa3"]["decisions"]
+        if not decisions or any(key != "FA3-auto" for key in decisions):
+            raise AssertionError(f"FA3 arm did not exclusively use FA3-auto: {decisions}")
+    pieces = {arm: adapters[arm].piecewise_prefill for arm in active_arms
+              if hasattr(adapters[arm], "piecewise_prefill")}
     for arm, piece in pieces.items():
         if piece.captured_calls == 0:
             raise AssertionError(f"{arm}: piecewise capture was never used")
@@ -456,9 +483,10 @@ def run_case(torch, cpp, engine, case, args, requests):
         if capture[arm]["timed_prefill_capture_calls"] == 0:
             raise AssertionError(f"{arm}: no timed prefill used a captured bucket")
     medians, effects = paired_summary(measurements)
-    decision = ({"choice": "separate_run_not_paired"} if args.splitk_only else
+    decision = ({"choice": "separate_run_not_paired"} if (args.splitk_only or args.fa3_only) else
                 splitk_decision(effects, executed=splitk_executed))
-    if not checks["piecewise_splitk"]["numerical_validation_passed"]:
+    if ("piecewise_splitk" in checks and
+            not checks["piecewise_splitk"]["numerical_validation_passed"]):
         decision = {"choice": "timed_with_numerical_warning", "performance_only_decision": decision}
     return {"status": "ok", "case_id": case["id"], "actual_work": actual_work,
             "checks": checks, "capture": capture, "measurements": measurements,
@@ -468,6 +496,7 @@ def run_case(torch, cpp, engine, case, args, requests):
             "correctness_mode": "all-step-same-history-logits",
             "logit_tolerance": {"atol": args.logit_atol, "rtol": .01},
             "splitk_only": args.splitk_only,
+            "fa3_only": args.fa3_only,
             "rejected_arms": rejected_arms,
             "splitk_executed": splitk_executed,
             "splitk_decision": decision}
@@ -480,7 +509,13 @@ def main():
         requests = resolve_requests(args, case)
     except ValueError as error:
         raise SystemExit(f"invalid experiment plan: {error}") from error
-    plan = {"case": case, "arms": ("piecewise_splitk",) if args.splitk_only else ARMS,
+    if args.splitk_only:
+        planned_arms = ("piecewise_splitk",)
+    elif args.fa3_only:
+        planned_arms = ("piecewise_fa3",)
+    else:
+        planned_arms = ARMS if args.include_fa3 else ARMS[:-1]
+    plan = {"case": case, "arms": planned_arms,
             "expected_max_decode_batch": args.expected_max_decode_batch,
             "min_full_decode_steps": args.min_full_decode_steps,
             "expected_prefill_tokens": args.expected_prefill_tokens,

@@ -96,8 +96,8 @@ class GraphModelAdapter(ModelAdapter):
     def __init__(self, model, pool, loop, *, max_running, max_context_length,
                  decode_attention_policy="production", decode_buckets=None):
         super().__init__(model, pool, loop)
-        if decode_attention_policy not in ("production", "splitk"):
-            raise ValueError("graph decode policy must be 'production' or 'splitk'")
+        if decode_attention_policy not in ("production", "splitk", "fa3"):
+            raise ValueError("graph decode policy must be 'production', 'splitk', or 'fa3'")
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))
@@ -115,6 +115,8 @@ class GraphModelAdapter(ModelAdapter):
         if effective == "splitk":
             config = select_splitk_config(max_context_length, page_size=pool.block_size)
             self.action = f"H1-K{config['split_k']}-S{config['num_stages']}"
+        elif effective == "fa3":
+            self.action = "FA3-auto"
         else:
             self.action = "production"
         self.graph_decoder = BucketedGraphDecoder(
