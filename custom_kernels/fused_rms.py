@@ -75,6 +75,66 @@ def rms_norm(x, weight, epsilon=1e-6):
     return out
 
 
+@triton.jit
+def _residual_add_rms_norm_kernel(
+    residual_ptr, branch_ptr, weight_ptr, sum_ptr, norm_ptr,
+    N, residual_row_stride, branch_row_stride, sum_row_stride, norm_row_stride,
+    epsilon, BLOCK_SIZE: tl.constexpr,
+):
+    """Materialize the residual sum once and normalize the rounded model dtype."""
+    row_id = tl.program_id(0)
+    offsets = tl.arange(0, BLOCK_SIZE)
+    mask = offsets < N
+    residual = tl.load(
+        residual_ptr + row_id * residual_row_stride + offsets, mask=mask, other=0.0
+    )
+    branch = tl.load(
+        branch_ptr + row_id * branch_row_stride + offsets, mask=mask, other=0.0
+    )
+    # Match torch's model-dtype residual add before RMSNorm reads the result.
+    summed = (residual + branch).to(sum_ptr.dtype.element_ty)
+    summed_f32 = summed.to(tl.float32)
+    root_mean_square = tl.sqrt(
+        tl.sum(summed_f32 * summed_f32, axis=0) / N + epsilon
+    )
+    weight = tl.load(weight_ptr + offsets, mask=mask, other=0.0)
+    normalized = (weight * summed_f32 / root_mean_square).to(
+        norm_ptr.dtype.element_ty
+    )
+    tl.store(sum_ptr + row_id * sum_row_stride + offsets, summed, mask=mask)
+    tl.store(norm_ptr + row_id * norm_row_stride + offsets, normalized, mask=mask)
+
+
+def residual_add_rms_norm(residual, branch, weight, epsilon=1e-6):
+    """Return ``(residual + branch, RMSNorm(residual + branch))`` in one kernel."""
+    if residual.shape != branch.shape or residual.dtype != branch.dtype:
+        raise ValueError("residual and branch must have matching shapes and dtypes")
+    if residual.ndim < 2 or residual.dtype not in (torch.float16, torch.bfloat16):
+        raise ValueError("expected rank >= 2 FP16 or BF16 residual tensors")
+    if not residual.is_contiguous() or not branch.is_contiguous():
+        raise ValueError("residual and branch must be contiguous")
+    if weight.ndim != 1 or weight.shape[0] != residual.shape[-1]:
+        raise ValueError("RMSNorm weight must match the hidden dimension")
+    if weight.device != residual.device or weight.dtype != residual.dtype:
+        raise ValueError("weight must share the residual device and dtype")
+    rows, hidden = residual.numel() // residual.shape[-1], residual.shape[-1]
+    residual_2d = residual.view(rows, hidden)
+    branch_2d = branch.view(rows, hidden)
+    summed = torch.empty_like(residual)
+    normalized = torch.empty_like(residual)
+    summed_2d = summed.view(rows, hidden)
+    normalized_2d = normalized.view(rows, hidden)
+    block = triton.next_power_of_2(hidden)
+    warps = min(max(block // 256, 1), 8)
+    _residual_add_rms_norm_kernel[(rows,)](
+        residual_2d, branch_2d, weight, summed_2d, normalized_2d,
+        hidden, residual_2d.stride(0), branch_2d.stride(0),
+        summed_2d.stride(0), normalized_2d.stride(0), epsilon,
+        BLOCK_SIZE=block, num_warps=warps,
+    )
+    return summed, normalized
+
+
 def rms_norm_reference(x, weight, epsilon=1e-6):
     x_f32 = x.float()
     rms = torch.sqrt(x_f32.pow(2).mean(dim=-1, keepdim=True) + epsilon)

@@ -23,7 +23,10 @@ def default_buckets(max_running):
 
 class BucketedGraphDecoder:
     def __init__(self, model, cache, max_running, max_blocks, device, dtype, buckets=None,
-                 decode_attention_policy="production", max_decode_context_length=None):
+                 decode_attention_policy="production", max_decode_context_length=None,
+                 enable_residual_rmsnorm=False,
+                 enable_native_decode_qkv_postprocess=False,
+                 enable_fused_qkv_rope_cache=False):
         self.max_blocks = max_blocks
         self.buckets = default_buckets(max_running) if buckets is None else sorted(set(buckets))
         self.decode_attention_policy = decode_attention_policy
@@ -37,7 +40,14 @@ class BucketedGraphDecoder:
             dec = CUDAGraphDecoder(model, cache, batch_size=b, max_blocks=max_blocks,
                                    device=device, dtype=dtype,
                                    decode_attention_policy=decode_attention_policy,
-                                   max_decode_context_length=max_decode_context_length)
+                                   max_decode_context_length=max_decode_context_length,
+                                   enable_residual_rmsnorm=enable_residual_rmsnorm,
+                                   enable_native_decode_qkv_postprocess=(
+                                       enable_native_decode_qkv_postprocess
+                                   ),
+                                   enable_fused_qkv_rope_cache=(
+                                       enable_fused_qkv_rope_cache
+                                   ))
             dec.capture()
             self.decoders[b] = dec
 

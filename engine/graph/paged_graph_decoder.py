@@ -30,7 +30,10 @@ from naive_forward import (
 
 class CUDAGraphDecoder:
     def __init__(self, model, cache, batch_size, max_blocks, device, dtype,
-                 decode_attention_policy="production", max_decode_context_length=None):
+                 decode_attention_policy="production", max_decode_context_length=None,
+                 enable_residual_rmsnorm=False,
+                 enable_native_decode_qkv_postprocess=False,
+                 enable_fused_qkv_rope_cache=False):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -46,6 +49,14 @@ class CUDAGraphDecoder:
         if max_decode_context_length is None and decode_attention_policy != "production":
             max_decode_context_length = max_blocks * cache.block_size
         self.max_decode_context_length = max_decode_context_length
+        self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_native_decode_qkv_postprocess = bool(
+            enable_native_decode_qkv_postprocess
+        )
+        self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
+        if (self.enable_native_decode_qkv_postprocess
+                and self.enable_fused_qkv_rope_cache):
+            raise ValueError("select either QKV postprocessing or full QKV fusion")
 
         # Static input buffers
         self.s_input_ids    = torch.zeros(batch_size, 1, dtype=torch.long,  device=device)
@@ -68,6 +79,11 @@ class CUDAGraphDecoder:
             self.s_block_table, self.s_slot_mapping,
             decode_attention_policy=self.decode_attention_policy,
             max_decode_context_length=self.max_decode_context_length,
+            enable_residual_rmsnorm=self.enable_residual_rmsnorm,
+            enable_native_decode_qkv_postprocess=(
+                self.enable_native_decode_qkv_postprocess
+            ),
+            enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
         )
 
     def capture(self, warmup=3):
@@ -110,6 +126,9 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          max_decode_context_length=None,
                          enable_regime_fusions=False,
                          enable_native_decode_rope_kv=False,
+                         enable_native_decode_qkv_postprocess=False,
+                         enable_fused_qkv_rope_cache=False,
+                         enable_residual_rmsnorm=False,
                          output_head_policy="logits",
                          output_head_config=None,
                          layer_observer=None):
@@ -130,14 +149,36 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
     effective_decode_attention_policy = resolve_decode_attention_policy(
         decode_attention_policy, max_decode_context_length
     )
+    normalized = (apply_rms_norm(x, model.layers[0].input_norm, cfg)
+                  if enable_residual_rmsnorm else None)
     for i, layer in enumerate(model.layers):
         residual = x
-        h = apply_rms_norm(x, layer.input_norm, cfg)
-        q, k, v = layer.project_qkv(h)
-        q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)   # (B, n_heads, 1, d)
-        k = k.view(B, S, n_kv, d_head).transpose(1, 2)          # (B, n_kv,    1, d)
-        v = v.view(B, S, n_kv, d_head).transpose(1, 2)
-        if enable_native_decode_rope_kv:
+        h = (normalized if enable_residual_rmsnorm
+             else apply_rms_norm(x, layer.input_norm, cfg))
+        if enable_fused_qkv_rope_cache:
+            from kernel_dispatch import fused_qkv_rope_cache
+            if layer.qkv_proj is None:
+                raise ValueError("full QKV fusion requires packed QKV weights")
+            q = fused_qkv_rope_cache(
+                h, layer.qkv_proj.weight, layer.qkv_proj.bias,
+                positions, slot_mapping, cache.k_pool[i], cache.v_pool[i],
+                base=cfg.rope_theta,
+            )
+        else:
+            q, k, v = layer.project_qkv(h)
+            q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)
+            k = k.view(B, S, n_kv, d_head).transpose(1, 2)
+            v = v.view(B, S, n_kv, d_head).transpose(1, 2)
+        if enable_fused_qkv_rope_cache:
+            pass
+        elif enable_native_decode_qkv_postprocess:
+            from kernel_dispatch import native_decode_rope_kv_write
+            q = native_decode_rope_kv_write(
+                q, k, v, positions, slot_mapping,
+                cache.k_pool[i], cache.v_pool[i],
+                base=cfg.rope_theta, rotate_q=True,
+            )
+        elif enable_native_decode_rope_kv:
             from kernel_dispatch import native_decode_rope_kv_write
             # The fused Q rotation changed one FP16 value at layer zero in the
             # B=8, L=512 model check; that difference amplified across layers.
@@ -158,20 +199,30 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             v_flat.index_copy_(0, slot_mapping, v[:, :, 0, :].contiguous())
 
         if layer_observer is not None:
-            layer_observer(i, "rope_kv", q,
+            observed_q = q[:, :, None, :] if enable_fused_qkv_rope_cache else q
+            layer_observer(i, "rope_kv", observed_q,
                            cache.k_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping),
                            cache.v_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping))
 
+        query = q if enable_fused_qkv_rope_cache else q[:, :, 0, :]
         out = paged_decode_attention_dispatch(
-            q[:, :, 0, :], cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
+            query, cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
             policy=effective_decode_attention_policy,
             max_context_length=max_decode_context_length,
         )                                                                     # (B, n_heads, d)
         attn = out[:, :, None, :].transpose(1, 2).reshape(B, S, cfg.n_heads * d_head)
-        x = residual + layer.o_proj(attn)
+        projected = layer.o_proj(attn)
+        if enable_residual_rmsnorm:
+            from kernel_dispatch import residual_add_rms_norm
+            x, h = residual_add_rms_norm(
+                residual, projected, layer.post_attn_norm.weight,
+                cfg.rms_norm_eps,
+            )
+        else:
+            x = residual + projected
+            h = apply_rms_norm(x, layer.post_attn_norm, cfg)
 
         residual = x
-        h = apply_rms_norm(x, layer.post_attn_norm, cfg)
         gate, up = layer.project_gate_up(h)
         h = layer.down_proj(
             apply_swiglu(
@@ -181,11 +232,20 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                 enable_regime_fusions=enable_regime_fusions,
             )
         )
-        x = residual + h
+        branch = h
+        if enable_residual_rmsnorm:
+            from kernel_dispatch import residual_add_rms_norm
+            next_norm = (model.layers[i + 1].input_norm
+                         if i + 1 < len(model.layers) else model.norm)
+            x, normalized = residual_add_rms_norm(
+                residual, branch, next_norm.weight, cfg.rms_norm_eps,
+            )
+        else:
+            x = residual + branch
         if layer_observer is not None:
             layer_observer(i, "layer_output", x)
 
-    x = apply_rms_norm(x, model.norm, cfg)
+    x = normalized if enable_residual_rmsnorm else apply_rms_norm(x, model.norm, cfg)
     if output_head_policy == "fused_argmax":
         from kernel_dispatch import fused_lm_head_argmax
         return fused_lm_head_argmax(
