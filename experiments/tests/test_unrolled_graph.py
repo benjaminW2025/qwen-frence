@@ -112,6 +112,38 @@ class UnrolledGraphTests(unittest.TestCase):
         self.assertTrue(torch.equal(validation_tokens, production_tokens))
         self.assertEqual(validation_tokens.tolist(), [[2, 4], [3, 5], [4, 6], [5, 0]])
 
+    def test_current_fusion_flags_reach_every_unrolled_step(self):
+        batch, steps, vocab = 2, 2, 7
+        metadata = tuple(
+            (torch.full((batch,), step, dtype=torch.int32),
+             torch.full((batch,), step + 1, dtype=torch.int32),
+             torch.zeros(batch, 1, dtype=torch.int32),
+             torch.full((batch,), step, dtype=torch.long))
+            for step in range(steps)
+        )
+        seen = []
+
+        def fake_forward(_model, _cache, token, *_metadata, **options):
+            seen.append(options)
+            logits = torch.zeros(batch, 1, vocab)
+            logits.scatter_(2, token.reshape(batch, 1, 1), 1)
+            return logits
+
+        fake_module = types.SimpleNamespace(graph_decode_forward=fake_forward)
+        with mock.patch.dict(sys.modules, {"paged_graph_decoder": fake_module}):
+            decoder = UNROLLED.UnrolledCUDAGraphDecoder(
+                object(), object(), metadata,
+                decode_attention_policy="fa3",
+                enable_residual_rmsnorm=True,
+                enable_native_decode_qkv_postprocess=True,
+            )
+            decoder._forward()
+
+        self.assertEqual(len(seen), steps)
+        self.assertTrue(all(row["decode_attention_policy"] == "fa3" for row in seen))
+        self.assertTrue(all(row["enable_residual_rmsnorm"] for row in seen))
+        self.assertTrue(all(row["enable_native_decode_qkv_postprocess"] for row in seen))
+
 
 if __name__ == "__main__":
     unittest.main()
