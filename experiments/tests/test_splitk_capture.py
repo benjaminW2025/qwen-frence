@@ -52,11 +52,15 @@ class PolicyResolutionTests(unittest.TestCase):
         floor = pda.MIN_SPLITK_DECODE_CONTEXT_LENGTH
         self.assertEqual(pda.resolve_decode_attention_policy("splitk", floor - 1), "production")
         self.assertEqual(pda.resolve_decode_attention_policy("splitk", floor), "splitk")
+        self.assertEqual(pda.resolve_decode_attention_policy("native_grouped", floor - 1),
+                         "production")
+        self.assertEqual(pda.resolve_decode_attention_policy("native_grouped", floor),
+                         "native_grouped")
 
     def test_unknown_policy_and_missing_context_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "must be one of"):
             pda.resolve_decode_attention_policy("bogus", 4096)
-        for policy in ("adaptive", "splitk"):
+        for policy in ("adaptive", "splitk", "native_grouped"):
             with self.assertRaisesRegex(ValueError, "context length"):
                 pda.resolve_decode_attention_policy(policy, None)
 
