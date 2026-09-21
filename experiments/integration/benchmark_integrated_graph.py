@@ -50,7 +50,7 @@ COMPARISONS = (("decode_graph", "eager"),
                ("piecewise_fa3_full_qkv", "piecewise_fa3"),
                ("piecewise_fa3_all_fusions", "piecewise_fa3"),
                ("piecewise_fa3_all_fusions", "piecewise_fa3_residual_rmsnorm"),
-               ("piecewise_fa3_all_fusions", "piecewise_fa3_full_qkv"),
+               ("piecewise_fa3_all_fusions", "piecewise_fa3_qkv_postprocess"),
                ("piecewise", "eager"),
                ("piecewise_splitk", "eager"),
                ("piecewise_fa3", "eager"))
@@ -386,7 +386,7 @@ def run_case(torch, cpp, engine, case, args, requests):
         )
         adapters["piecewise_fa3_all_fusions"] = PiecewiseGraphModelAdapter(
             **fusion_common, enable_residual_rmsnorm=True,
-            enable_fused_qkv_rope_cache=True,
+            enable_native_decode_qkv_postprocess=True,
         )
     torch.cuda.synchronize()
     if any(token >= engine.cfg.vocab for row in requests for token in row["prompt"]):
