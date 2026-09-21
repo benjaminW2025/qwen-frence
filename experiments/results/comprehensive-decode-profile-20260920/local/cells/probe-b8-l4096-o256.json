@@ -1,0 +1,109 @@
+{
+  "status": "complete",
+  "fingerprint": "a9eea7e8668da7e423ca54d30d6f95070f41cdad78749571a125ee4461b2ca93",
+  "shape_id": "probe-b8-l4096-o256",
+  "row": {
+    "shape_id": "probe-b8-l4096-o256",
+    "batch": 8,
+    "prompt": 4096,
+    "prefill_budget": 4096,
+    "arms": [
+      {
+        "policy": "production",
+        "action": "production",
+        "target_step_index": 40,
+        "target_step_calls": [
+          [
+            true,
+            8,
+            8,
+            1
+          ]
+        ],
+        "capture_configuration": {
+          "batch": 8,
+          "max_context_length": 4352,
+          "block_table_width": 272,
+          "decode_buckets": [
+            8
+          ],
+          "prefill_token_buckets": [
+            4096
+          ],
+          "generic_power_of_two_decode_ladder": false
+        },
+        "unprofiled_wall_ms": [
+          14.464044943451881,
+          14.465099200606346,
+          14.489468187093735
+        ],
+        "median_wall_ms": 14.465099200606346,
+        "trace": null,
+        "cuda_activity": null,
+        "context": {
+          "minimum": 4129,
+          "median": 4132.5,
+          "maximum": 4136,
+          "values": [
+            4129,
+            4130,
+            4131,
+            4132,
+            4133,
+            4134,
+            4135,
+            4136
+          ]
+        }
+      },
+      {
+        "policy": "splitk",
+        "action": "H1-K22-S3",
+        "target_step_index": 40,
+        "target_step_calls": [
+          [
+            true,
+            8,
+            8,
+            1
+          ]
+        ],
+        "capture_configuration": {
+          "batch": 8,
+          "max_context_length": 4352,
+          "block_table_width": 272,
+          "decode_buckets": [
+            8
+          ],
+          "prefill_token_buckets": [
+            4096
+          ],
+          "generic_power_of_two_decode_ladder": false
+        },
+        "unprofiled_wall_ms": [
+          5.068991333246231,
+          5.092054605484009,
+          5.076278001070023
+        ],
+        "median_wall_ms": 5.076278001070023,
+        "trace": null,
+        "cuda_activity": null,
+        "context": {
+          "minimum": 4129,
+          "median": 4132.5,
+          "maximum": 4136,
+          "values": [
+            4129,
+            4130,
+            4131,
+            4132,
+            4133,
+            4134,
+            4135,
+            4136
+          ]
+        }
+      }
+    ]
+  }
+}

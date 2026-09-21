@@ -1,0 +1,117 @@
+{
+  "status": "complete",
+  "fingerprint": "a9eea7e8668da7e423ca54d30d6f95070f41cdad78749571a125ee4461b2ca93",
+  "shape_id": "fixed-b64-l256-o128",
+  "row": {
+    "shape_id": "fixed-b64-l256-o128",
+    "batch": 64,
+    "prompt": 256,
+    "prefill_budget": 8192,
+    "arms": [
+      {
+        "policy": "splitk",
+        "action": "production",
+        "target_step_index": 34,
+        "target_step_calls": [
+          [
+            true,
+            64,
+            64,
+            1
+          ]
+        ],
+        "capture_configuration": {
+          "batch": 64,
+          "max_context_length": 384,
+          "block_table_width": 24,
+          "decode_buckets": [
+            64
+          ],
+          "prefill_token_buckets": [
+            8192
+          ],
+          "generic_power_of_two_decode_ladder": false
+        },
+        "unprofiled_wall_ms": [
+          4.861917346715927,
+          4.909107461571693,
+          4.879819229245186
+        ],
+        "median_wall_ms": 4.879819229245186,
+        "trace": null,
+        "cuda_activity": null,
+        "context": {
+          "minimum": 289,
+          "median": 289.5,
+          "maximum": 290,
+          "values": [
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            289,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290,
+            290
+          ]
+        }
+      }
+    ]
+  }
+}

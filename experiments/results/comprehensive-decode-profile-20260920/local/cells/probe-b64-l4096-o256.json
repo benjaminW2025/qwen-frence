@@ -1,0 +1,520 @@
+{
+  "status": "complete",
+  "fingerprint": "a9eea7e8668da7e423ca54d30d6f95070f41cdad78749571a125ee4461b2ca93",
+  "shape_id": "probe-b64-l4096-o256",
+  "row": {
+    "shape_id": "probe-b64-l4096-o256",
+    "batch": 64,
+    "prompt": 4096,
+    "prefill_budget": 8192,
+    "arms": [
+      {
+        "policy": "production",
+        "action": "production",
+        "target_step_index": 64,
+        "target_step_calls": [
+          [
+            true,
+            64,
+            64,
+            1
+          ]
+        ],
+        "capture_configuration": {
+          "batch": 64,
+          "max_context_length": 4352,
+          "block_table_width": 272,
+          "decode_buckets": [
+            64
+          ],
+          "prefill_token_buckets": [
+            8192
+          ],
+          "generic_power_of_two_decode_ladder": false
+        },
+        "unprofiled_wall_ms": [
+          34.33811850845814,
+          34.26327742636204,
+          34.499816596508026
+        ],
+        "median_wall_ms": 34.33811850845814,
+        "trace": null,
+        "cuda_activity": null,
+        "context": {
+          "minimum": 4129,
+          "median": 4144.5,
+          "maximum": 4160,
+          "values": [
+            4129,
+            4129,
+            4130,
+            4130,
+            4131,
+            4131,
+            4132,
+            4132,
+            4133,
+            4133,
+            4134,
+            4134,
+            4135,
+            4135,
+            4136,
+            4136,
+            4137,
+            4137,
+            4138,
+            4138,
+            4139,
+            4139,
+            4140,
+            4140,
+            4141,
+            4141,
+            4142,
+            4142,
+            4143,
+            4143,
+            4144,
+            4144,
+            4145,
+            4145,
+            4146,
+            4146,
+            4147,
+            4147,
+            4148,
+            4148,
+            4149,
+            4149,
+            4150,
+            4150,
+            4151,
+            4151,
+            4152,
+            4152,
+            4153,
+            4153,
+            4154,
+            4154,
+            4155,
+            4155,
+            4156,
+            4156,
+            4157,
+            4157,
+            4158,
+            4158,
+            4159,
+            4159,
+            4160,
+            4160
+          ]
+        }
+      },
+      {
+        "policy": "splitk",
+        "action": "H1-K22-S3",
+        "target_step_index": 64,
+        "target_step_calls": [
+          [
+            true,
+            64,
+            64,
+            1
+          ]
+        ],
+        "capture_configuration": {
+          "batch": 64,
+          "max_context_length": 4352,
+          "block_table_width": 272,
+          "decode_buckets": [
+            64
+          ],
+          "prefill_token_buckets": [
+            8192
+          ],
+          "generic_power_of_two_decode_ladder": false
+        },
+        "unprofiled_wall_ms": [
+          21.425705403089523,
+          21.42489142715931,
+          21.37679047882557
+        ],
+        "median_wall_ms": 21.42489142715931,
+        "trace": "/workspace/qwen-frence/experiments/results/comprehensive-decode-profile-20260920/local/traces/probe-b64-l4096-o256-splitk.json",
+        "cuda_activity": {
+          "summed_cuda_activity_us": 43622.788,
+          "activity_count": 527,
+          "categories": [
+            {
+              "category": "other",
+              "calls": 5,
+              "total_us": 22471.991,
+              "percent_of_cuda_activity": 51.51433924855972
+            },
+            {
+              "category": "attention",
+              "calls": 56,
+              "total_us": 18894.614999999998,
+              "percent_of_cuda_activity": 43.3136346076734
+            },
+            {
+              "category": "gemm",
+              "calls": 141,
+              "total_us": 1556.4009999999785,
+              "percent_of_cuda_activity": 3.5678622833551548
+            },
+            {
+              "category": "elementwise",
+              "calls": 115,
+              "total_us": 236.0990000000104,
+              "percent_of_cuda_activity": 0.5412285890576511
+            },
+            {
+              "category": "kv_write",
+              "calls": 56,
+              "total_us": 149.05499999999847,
+              "percent_of_cuda_activity": 0.3416906778172878
+            },
+            {
+              "category": "normalization",
+              "calls": 57,
+              "total_us": 95.3640000000064,
+              "percent_of_cuda_activity": 0.21861051155191272
+            },
+            {
+              "category": "rope",
+              "calls": 56,
+              "total_us": 94.78100000000177,
+              "percent_of_cuda_activity": 0.2172740541021857
+            },
+            {
+              "category": "activation",
+              "calls": 28,
+              "total_us": 85.53700000000663,
+              "percent_of_cuda_activity": 0.19608329481372586
+            },
+            {
+              "category": "sampling",
+              "calls": 1,
+              "total_us": 23.55199999999968,
+              "percent_of_cuda_activity": 0.05399013011272842
+            },
+            {
+              "category": "memory_copy_or_set",
+              "calls": 12,
+              "total_us": 15.392999999997528,
+              "percent_of_cuda_activity": 0.03528660295622904
+            }
+          ],
+          "kernels": [
+            {
+              "name": "python/model_callback_decode",
+              "category": "other",
+              "calls": 1,
+              "total_us": 22287.573,
+              "mean_us": 22287.573,
+              "percent_of_cuda_activity": 51.09158314227875
+            },
+            {
+              "name": "_grouped_splitk_kernel",
+              "category": "attention",
+              "calls": 28,
+              "total_us": 18603.444999999996,
+              "mean_us": 664.4087499999998,
+              "percent_of_cuda_activity": 42.64616236816408
+            },
+            {
+              "name": "nvjet_hsh_144x64_64x8_2x1_v_bz_TNN",
+              "category": "gemm",
+              "calls": 28,
+              "total_us": 663.1419999999971,
+              "mean_us": 23.683642857142754,
+              "percent_of_cuda_activity": 1.5201733552655943
+            },
+            {
+              "name": "nvjet_hsh_64x64_64x13_4x1_v_bz_splitK_TNT",
+              "category": "gemm",
+              "calls": 28,
+              "total_us": 350.50099999998974,
+              "mean_us": 12.51789285714249,
+              "percent_of_cuda_activity": 0.8034814281012707
+            },
+            {
+              "name": "_splitk_reduce_kernel",
+              "category": "attention",
+              "calls": 28,
+              "total_us": 291.1700000000019,
+              "mean_us": 10.39892857142864,
+              "percent_of_cuda_activity": 0.6674722395093177
+            },
+            {
+              "name": "experiment/target_step",
+              "category": "other",
+              "calls": 2,
+              "total_us": 180.64100000000008,
+              "mean_us": 90.32050000000004,
+              "percent_of_cuda_activity": 0.41409778760587257
+            },
+            {
+              "name": "nvjet_hsh_384x64_64x3_2x1_v_bz_coopB_TNN",
+              "category": "gemm",
+              "calls": 1,
+              "total_us": 175.04100000000108,
+              "mean_us": 175.04100000000108,
+              "percent_of_cuda_activity": 0.40126046047309283
+            },
+            {
+              "name": "nvjet_hsh_64x32_64x16_4x2_v_bz_bias_TNT",
+              "category": "gemm",
+              "calls": 28,
+              "total_us": 171.9689999999996,
+              "mean_us": 6.141749999999986,
+              "percent_of_cuda_activity": 0.39421826958882034
+            },
+            {
+              "name": "void at::native::index_elementwise_kernel<128, 4, at::native::index_copy_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, long, long, long)::{lambda(int)#1}>(long, at::native::index_copy_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, long, long, long)::{lambda(int)#1})",
+              "category": "kv_write",
+              "calls": 56,
+              "total_us": 149.05499999999847,
+              "mean_us": 2.661696428571401,
+              "percent_of_cuda_activity": 0.3416906778172878
+            },
+            {
+              "name": "nvjet_hsh_24x64_64x16_4x1_v_bz_TNN",
+              "category": "gemm",
+              "calls": 28,
+              "total_us": 140.15900000000101,
+              "mean_us": 5.005678571428608,
+              "percent_of_cuda_activity": 0.3212976667149312
+            },
+            {
+              "name": "fused_rms_norm",
+              "category": "normalization",
+              "calls": 57,
+              "total_us": 95.3640000000064,
+              "mean_us": 1.6730526315790597,
+              "percent_of_cuda_activity": 0.21861051155191272
+            },
+            {
+              "name": "rope_kernel",
+              "category": "rope",
+              "calls": 56,
+              "total_us": 94.78100000000177,
+              "mean_us": 1.6925178571428887,
+              "percent_of_cuda_activity": 0.2172740541021857
+            },
+            {
+              "name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::Half>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::Half>, std::array<char*, 3ul>)",
+              "category": "elementwise",
+              "calls": 56,
+              "total_us": 89.02700000000914,
+              "mean_us": 1.5897678571430203,
+              "percent_of_cuda_activity": 0.20408370047326901
+            },
+            {
+              "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#5}::operator()() const::{lambda(c10::Half)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#5}::operator()() const::{lambda(c10::Half)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#5}::operator()() const::{lambda(c10::Half)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#5}::operator()() const::{lambda(c10::Half)#1} const&)::{lambda(int)#1})",
+              "category": "activation",
+              "calls": 28,
+              "total_us": 85.53700000000663,
+              "mean_us": 3.054892857143094,
+              "percent_of_cuda_activity": 0.19608329481372586
+            },
+            {
+              "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::Half, c10::Half, c10::Half, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+              "category": "elementwise",
+              "calls": 28,
+              "total_us": 79.97000000000389,
+              "mean_us": 2.8560714285715676,
+              "percent_of_cuda_activity": 0.18332161621582713
+            },
+            {
+              "name": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#10}::operator()() const::{lambda(c10::Half)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#10}::operator()() const::{lambda(c10::Half)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#10}::operator()() const::{lambda(c10::Half)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#10}::operator()() const::{lambda(c10::Half)#1} const&)::{lambda(int)#1})",
+              "category": "elementwise",
+              "calls": 28,
+              "total_us": 62.49399999999741,
+              "mean_us": 2.231928571428479,
+              "percent_of_cuda_activity": 0.14325998604215168
+            },
+            {
+              "name": "void cublasLt::splitKreduce_kernel<32, 16, int, float, __half, float, __half, false, float, __half, __half, true, false, false>(cublasLt::cublasSplitKParams<float>, float const*, __half const*, float*, __half*, float const*, float const*, __half const*, float const*, __half*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+              "category": "gemm",
+              "calls": 28,
+              "total_us": 55.58899999998994,
+              "mean_us": 1.9853214285710692,
+              "percent_of_cuda_activity": 0.1274311032114452
+            },
+            {
+              "name": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+              "category": "sampling",
+              "calls": 1,
+              "total_us": 23.55199999999968,
+              "mean_us": 23.55199999999968,
+              "percent_of_cuda_activity": 0.05399013011272842
+            },
+            {
+              "name": "Memcpy DtoD (Device -> Device)",
+              "category": "memory_copy_or_set",
+              "calls": 4,
+              "total_us": 4.256000000000313,
+              "mean_us": 1.0640000000000782,
+              "percent_of_cuda_activity": 0.009756368620915088
+            },
+            {
+              "name": "Memcpy HtoD (Pageable -> Device)",
+              "category": "memory_copy_or_set",
+              "calls": 1,
+              "total_us": 3.9680000000000746,
+              "mean_us": 3.9680000000000746,
+              "percent_of_cuda_activity": 0.009096163225514322
+            },
+            {
+              "name": "Memcpy HtoD (Pinned -> Device)",
+              "category": "memory_copy_or_set",
+              "calls": 4,
+              "total_us": 3.0399999999999636,
+              "mean_us": 0.7599999999999909,
+              "percent_of_cuda_activity": 0.006968834729224467
+            },
+            {
+              "name": "Memcpy DtoH (Device -> Pageable)",
+              "category": "memory_copy_or_set",
+              "calls": 1,
+              "total_us": 2.6239999999997963,
+              "mean_us": 2.6239999999997963,
+              "percent_of_cuda_activity": 0.0060152047136459875
+            },
+            {
+              "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})",
+              "category": "elementwise",
+              "calls": 1,
+              "total_us": 2.1440000000000055,
+              "mean_us": 2.1440000000000055,
+              "percent_of_cuda_activity": 0.004914862387979433
+            },
+            {
+              "name": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 64, 64>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+              "category": "other",
+              "calls": 1,
+              "total_us": 1.9529999999999745,
+              "mean_us": 1.9529999999999745,
+              "percent_of_cuda_activity": 0.004477017837557688
+            },
+            {
+              "name": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "category": "other",
+              "calls": 1,
+              "total_us": 1.8240000000000691,
+              "mean_us": 1.8240000000000691,
+              "percent_of_cuda_activity": 0.004181300837534889
+            },
+            {
+              "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+              "category": "elementwise",
+              "calls": 1,
+              "total_us": 1.344000000000051,
+              "mean_us": 1.344000000000051,
+              "percent_of_cuda_activity": 0.003080958511867813
+            },
+            {
+              "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)",
+              "category": "elementwise",
+              "calls": 1,
+              "total_us": 1.1199999999998909,
+              "mean_us": 1.1199999999998909,
+              "percent_of_cuda_activity": 0.0025674654265561633
+            },
+            {
+              "name": "Memset (Device)",
+              "category": "memory_copy_or_set",
+              "calls": 1,
+              "total_us": 0.7680000000000291,
+              "mean_us": 0.7680000000000291,
+              "percent_of_cuda_activity": 0.0017605477210673216
+            },
+            {
+              "name": "Memset (Unknown)",
+              "category": "memory_copy_or_set",
+              "calls": 1,
+              "total_us": 0.7369999999973516,
+              "mean_us": 0.7369999999973516,
+              "percent_of_cuda_activity": 0.0016894839458618544
+            }
+          ]
+        },
+        "context": {
+          "minimum": 4129,
+          "median": 4144.5,
+          "maximum": 4160,
+          "values": [
+            4129,
+            4129,
+            4130,
+            4130,
+            4131,
+            4131,
+            4132,
+            4132,
+            4133,
+            4133,
+            4134,
+            4134,
+            4135,
+            4135,
+            4136,
+            4136,
+            4137,
+            4137,
+            4138,
+            4138,
+            4139,
+            4139,
+            4140,
+            4140,
+            4141,
+            4141,
+            4142,
+            4142,
+            4143,
+            4143,
+            4144,
+            4144,
+            4145,
+            4145,
+            4146,
+            4146,
+            4147,
+            4147,
+            4148,
+            4148,
+            4149,
+            4149,
+            4150,
+            4150,
+            4151,
+            4151,
+            4152,
+            4152,
+            4153,
+            4153,
+            4154,
+            4154,
+            4155,
+            4155,
+            4156,
+            4156,
+            4157,
+            4157,
+            4158,
+            4158,
+            4159,
+            4159,
+            4160,
+            4160
+          ]
+        }
+      }
+    ]
+  }
+}
