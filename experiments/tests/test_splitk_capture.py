@@ -143,7 +143,7 @@ class CaptureBoundTests(unittest.TestCase):
         )
         self.assertTrue(decoder.enable_residual_rmsnorm)
         self.assertTrue(decoder.enable_fused_qkv_rope_cache)
-        with self.assertRaisesRegex(ValueError, "either QKV"):
+        with self.assertRaisesRegex(ValueError, "one QKV"):
             self._decoder(
                 "fa3", enable_native_decode_qkv_postprocess=True,
                 enable_fused_qkv_rope_cache=True,

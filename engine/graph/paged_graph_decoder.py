@@ -33,7 +33,8 @@ class CUDAGraphDecoder:
                  decode_attention_policy="production", max_decode_context_length=None,
                  enable_residual_rmsnorm=False,
                  enable_native_decode_qkv_postprocess=False,
-                 enable_fused_qkv_rope_cache=False):
+                 enable_fused_qkv_rope_cache=False,
+                 enable_packed_qkv_rope_cache=False):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -54,9 +55,13 @@ class CUDAGraphDecoder:
             enable_native_decode_qkv_postprocess
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
+        self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         if (self.enable_native_decode_qkv_postprocess
-                and self.enable_fused_qkv_rope_cache):
-            raise ValueError("select either QKV postprocessing or full QKV fusion")
+                and (self.enable_fused_qkv_rope_cache
+                     or self.enable_packed_qkv_rope_cache)):
+            raise ValueError("select one QKV postprocessing mode")
+        if self.enable_fused_qkv_rope_cache and self.enable_packed_qkv_rope_cache:
+            raise ValueError("select one QKV postprocessing mode")
 
         # Static input buffers
         self.s_input_ids    = torch.zeros(batch_size, 1, dtype=torch.long,  device=device)
@@ -84,6 +89,7 @@ class CUDAGraphDecoder:
                 self.enable_native_decode_qkv_postprocess
             ),
             enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
+            enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
         )
 
     def capture(self, warmup=3):
@@ -128,6 +134,7 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          enable_native_decode_rope_kv=False,
                          enable_native_decode_qkv_postprocess=False,
                          enable_fused_qkv_rope_cache=False,
+                         enable_packed_qkv_rope_cache=False,
                          enable_residual_rmsnorm=False,
                          output_head_policy="logits",
                          output_head_config=None,
@@ -164,12 +171,20 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                 positions, slot_mapping, cache.k_pool[i], cache.v_pool[i],
                 base=cfg.rope_theta,
             )
+        elif enable_packed_qkv_rope_cache:
+            from kernel_dispatch import packed_qkv_rope_cache
+            if layer.qkv_proj is None:
+                raise ValueError("packed QKV epilogue requires packed QKV weights")
+            q = packed_qkv_rope_cache(
+                layer.qkv_proj(h), positions, slot_mapping,
+                cache.k_pool[i], cache.v_pool[i], base=cfg.rope_theta,
+            )
         else:
             q, k, v = layer.project_qkv(h)
             q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)
             k = k.view(B, S, n_kv, d_head).transpose(1, 2)
             v = v.view(B, S, n_kv, d_head).transpose(1, 2)
-        if enable_fused_qkv_rope_cache:
+        if enable_fused_qkv_rope_cache or enable_packed_qkv_rope_cache:
             pass
         elif enable_native_decode_qkv_postprocess:
             from kernel_dispatch import native_decode_rope_kv_write
@@ -199,12 +214,15 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             v_flat.index_copy_(0, slot_mapping, v[:, :, 0, :].contiguous())
 
         if layer_observer is not None:
-            observed_q = q[:, :, None, :] if enable_fused_qkv_rope_cache else q
+            observed_q = (q[:, :, None, :]
+                          if (enable_fused_qkv_rope_cache or
+                              enable_packed_qkv_rope_cache) else q)
             layer_observer(i, "rope_kv", observed_q,
                            cache.k_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping),
                            cache.v_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping))
 
-        query = q if enable_fused_qkv_rope_cache else q[:, :, 0, :]
+        query = (q if (enable_fused_qkv_rope_cache or enable_packed_qkv_rope_cache)
+                 else q[:, :, 0, :])
         out = paged_decode_attention_dispatch(
             query, cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
             policy=effective_decode_attention_policy,

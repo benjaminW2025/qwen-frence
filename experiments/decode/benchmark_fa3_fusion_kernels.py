@@ -56,6 +56,7 @@ def run_batch(torch, batch, warmups, repetitions, seed):
     import torch.nn.functional as F
     from fused_rms import residual_add_rms_norm, rms_norm
     from fused_qkv_rope_cache import fused_qkv_rope_cache
+    from packed_qkv_rope_cache import packed_qkv_rope_cache
     from rope import rope
     from rope_kv_write import native_decode_rope_kv_write
 
@@ -137,6 +138,8 @@ def run_batch(torch, batch, warmups, repetitions, seed):
     full_baseline_v = torch.empty_like(baseline_v)
     full_fused_k = torch.empty_like(fused_k)
     full_fused_v = torch.empty_like(fused_v)
+    packed_epi_k = torch.empty_like(baseline_k)
+    packed_epi_v = torch.empty_like(baseline_v)
 
     def full_qkv_baseline():
         packed = F.linear(hidden, packed_weight, packed_bias)
@@ -179,6 +182,29 @@ def run_batch(torch, batch, warmups, repetitions, seed):
         ),
         warmups, repetitions,
     )
+
+    # Preserve the cuBLAS GEMM and fuse only the packed-output postprocessing.
+    def packed_epilogue():
+        packed = F.linear(hidden, packed_weight, packed_bias)
+        return packed_qkv_rope_cache(
+            packed, positions, slots, packed_epi_k, packed_epi_v,
+        )
+
+    actual_packed_q = packed_epilogue()
+    torch.cuda.synchronize()
+    packed_epilogue_check = {
+        "q": check(torch, actual_packed_q, expected_full_q,
+                   atol=2e-2, rtol=2e-2),
+        "k_cache": check(torch, packed_epi_k.view(-1, 2, 128)[slots],
+                         full_baseline_k.view(-1, 2, 128)[slots],
+                         atol=2e-2, rtol=2e-2),
+        "v_cache": check(torch, packed_epi_v.view(-1, 2, 128)[slots],
+                         full_baseline_v.view(-1, 2, 128)[slots],
+                         atol=2e-2, rtol=2e-2),
+    }
+    packed_epilogue_timing = measure(
+        torch, packed_epilogue, warmups, repetitions,
+    )
     return {
         "batch": batch,
         "residual_rmsnorm": {
@@ -200,6 +226,13 @@ def run_batch(torch, batch, warmups, repetitions, seed):
             "fused": full_fused_timing,
             "speedup": full_baseline_timing["median_ms"] / full_fused_timing["median_ms"],
         },
+        "packed_qkv_epilogue": {
+            "correctness": packed_epilogue_check,
+            "baseline": full_baseline_timing,
+            "fused": packed_epilogue_timing,
+            "speedup": (full_baseline_timing["median_ms"] /
+                        packed_epilogue_timing["median_ms"]),
+        },
     }
 
 
@@ -218,7 +251,7 @@ def main():
         check_row["allclose"]
         for row in rows
         for candidate in ("residual_rmsnorm", "qkv_rope_kv_postprocess",
-                          "full_qkv_rope_kv")
+                          "full_qkv_rope_kv", "packed_qkv_epilogue")
         for check_row in row[candidate]["correctness"].values()
     )
     report = {"schema_version": 1,
@@ -234,7 +267,8 @@ def main():
         print(f"B={row['batch']}: residual+RMSNorm "
               f"{row['residual_rmsnorm']['speedup']:.3f}x; QKV postprocess "
               f"{row['qkv_rope_kv_postprocess']['speedup']:.3f}x; full QKV "
-              f"{row['full_qkv_rope_kv']['speedup']:.3f}x")
+              f"{row['full_qkv_rope_kv']['speedup']:.3f}x; packed epilogue "
+              f"{row['packed_qkv_epilogue']['speedup']:.3f}x")
     print(f"all_correct={passed}; wrote {output}")
     if not passed:
         raise SystemExit("fusion kernel correctness gate failed")
