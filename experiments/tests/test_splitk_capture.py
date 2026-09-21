@@ -56,13 +56,32 @@ class PolicyResolutionTests(unittest.TestCase):
                          "production")
         self.assertEqual(pda.resolve_decode_attention_policy("native_grouped", floor),
                          "native_grouped")
+        self.assertEqual(pda.resolve_decode_attention_policy("fa3", 1), "fa3")
 
     def test_unknown_policy_and_missing_context_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "must be one of"):
             pda.resolve_decode_attention_policy("bogus", 4096)
-        for policy in ("adaptive", "splitk", "native_grouped"):
+        for policy in ("adaptive", "splitk", "native_grouped", "fa3"):
             with self.assertRaisesRegex(ValueError, "context length"):
                 pda.resolve_decode_attention_policy(policy, None)
+
+    def test_fa3_dispatch_uses_automatic_split_scheduler(self):
+        sentinel = object()
+        calls = []
+        dispatch = types.ModuleType("kernel_dispatch")
+
+        def fa3(*args, **kwargs):
+            calls.append((args, kwargs))
+            return sentinel
+
+        dispatch.fa3_paged_decode_attention = fa3
+        tensors = tuple(object() for _ in range(5))
+        with mock.patch.dict(sys.modules, {"kernel_dispatch": dispatch}):
+            result = pda.paged_decode_attention_dispatch(
+                *tensors, policy="fa3", max_context_length=4096, scale=.125,
+            )
+        self.assertIs(result, sentinel)
+        self.assertEqual(calls, [(tensors, {"scale": .125, "num_splits": 0})])
 
     def test_frozen_action_matches_the_studied_page_threshold(self):
         threshold = pda.SPLITK_PAGE_THRESHOLD
@@ -110,6 +129,11 @@ class CaptureBoundTests(unittest.TestCase):
     def test_explicit_bound_is_respected(self):
         decoder = self._decoder("splitk", max_blocks=64, bound=2048)
         self.assertEqual(decoder.max_decode_context_length, 2048)
+
+    def test_capture_metadata_starts_with_one_valid_token(self):
+        decoder = self._decoder("fa3", max_blocks=64, bound=1024)
+        self.assertEqual(decoder.s_seq_lens.tolist(), [1, 1])
+        self.assertFalse(decoder.s_block_table.any())
 
     def test_production_needs_no_bound(self):
         decoder = self._decoder("production", max_blocks=64)

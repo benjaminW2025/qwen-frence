@@ -81,6 +81,11 @@ def native_grouped_splitk_decode_attention(*args, **kwargs):
     )
 
 
+def fa3_paged_decode_attention(*args, **kwargs):
+    """Run the optional FA3 paged-decode backend from the vLLM environment."""
+    return _load("paged_decode_fa3").fa3_paged_decode_attention(*args, **kwargs)
+
+
 def swiglu(*args, **kwargs):
     """Fuse the SiLU activation and gated elementwise product."""
     return _load("swiglu").swiglu(*args, **kwargs)

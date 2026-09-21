@@ -50,7 +50,10 @@ class CUDAGraphDecoder:
         # Static input buffers
         self.s_input_ids    = torch.zeros(batch_size, 1, dtype=torch.long,  device=device)
         self.s_positions    = torch.zeros(batch_size,    dtype=torch.int32, device=device)  # RoPE pos of the current token (= cached len before it)
-        self.s_seq_lens     = torch.zeros(batch_size,    dtype=torch.int32, device=device)  # cached length AFTER this token (kernel reads 0..seq_len-1)
+        # Capture with one valid cached token. Some external attention backends do
+        # not promise a useful launch for an all-empty batch; replay still replaces
+        # this tensor with the live sequence lengths before executing the graph.
+        self.s_seq_lens     = torch.ones(batch_size,     dtype=torch.int32, device=device)  # cached length AFTER this token (kernel reads 0..seq_len-1)
         self.s_block_table  = torch.zeros(batch_size, max_blocks, dtype=torch.int32, device=device)
         self.s_slot_mapping = torch.zeros(batch_size,    dtype=torch.long,  device=device)  # flat pool slot for the current token: pid*block_size + offset
 
@@ -71,8 +74,8 @@ class CUDAGraphDecoder:
         """
         Warm up then record the graph
         """
-        # Warm up on a side stream. The static buffers hold zeros here, so this writes
-        # to pool slot 0 -- harmless as long as capture happens before real decoding.
+        # Warm up on a side stream. Static metadata describes one token in block zero
+        # and writes pool slot zero -- harmless because capture precedes real decoding.
         s = torch.cuda.Stream()
         s.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(s):

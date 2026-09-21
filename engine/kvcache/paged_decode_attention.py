@@ -27,7 +27,9 @@ MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH = 1024
 # which moves the break-even down -- `splitk` is the policy that may be captured.
 MIN_SPLITK_DECODE_CONTEXT_LENGTH = 1024
 
-DECODE_ATTENTION_POLICIES = ("production", "adaptive", "splitk", "native_grouped")
+DECODE_ATTENTION_POLICIES = (
+    "production", "adaptive", "splitk", "native_grouped", "fa3",
+)
 
 # Frozen action from the decode stage study: pages <= 80 selects K=8/stages=2,
 # above it K=22/stages=3, at heads_per_program=1 and four warps. Encoded here as a
@@ -50,6 +52,8 @@ def resolve_decode_attention_policy(policy, max_context_length):
         if max_context_length < MIN_SPLITK_DECODE_CONTEXT_LENGTH:
             return "production"
         return policy
+    if policy == "fa3":
+        return "fa3"
     if max_context_length < MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH:
         return "production"
     return "adaptive"
@@ -227,6 +231,12 @@ def paged_decode_attention_dispatch(
         return native_grouped_splitk_decode_attention(
             q, k_pool, v_pool, block_table, seq_lens,
             scale=scale, partials=splitk_partials, split_k=config["split_k"],
+        )
+    if policy == "fa3":
+        from kernel_dispatch import fa3_paged_decode_attention
+        return fa3_paged_decode_attention(
+            q, k_pool, v_pool, block_table, seq_lens,
+            scale=scale, num_splits=0,
         )
     from kernel_dispatch import (
         paged_decode_attention_candidate,
