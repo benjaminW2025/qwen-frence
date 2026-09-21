@@ -86,3 +86,34 @@ def native_grouped_splitk_decode_attention(
         num_stages=1,
     )
     return out
+
+
+def native_grouped_decode_diagnostics(q, block_table):
+    """Return compiled resources and occupancy without performance counters."""
+    return dict(_extension().grouped_gqa_splitk_diagnostics(q, block_table))
+
+
+def native_grouped_stage_cycles(
+    q, k_pool, v_pool, block_table, seq_lens, *, split_k, scale=None
+):
+    """Run the instrumented partial once and return per-CTA stage cycles."""
+    batch, query_heads, head_dim = q.shape
+    if query_heads != k_pool.shape[2] * 6 or head_dim != 128 or k_pool.shape[1] != 16:
+        raise ValueError("stage profiler requires the native grouped-decode layout")
+    if scale is None:
+        scale = head_dim ** -0.5
+    partial_out = torch.empty(
+        (batch, split_k, query_heads, head_dim), dtype=torch.float32, device=q.device
+    )
+    partial_max = torch.empty(
+        (batch, split_k, query_heads), dtype=torch.float32, device=q.device
+    )
+    partial_sum = torch.empty_like(partial_max)
+    cycles = torch.empty(
+        (batch, k_pool.shape[2], split_k, 4), dtype=torch.int64, device=q.device
+    )
+    _extension().grouped_gqa_splitk_profile_out(
+        q, k_pool, v_pool, block_table, seq_lens,
+        partial_out, partial_max, partial_sum, cycles, split_k, scale,
+    )
+    return cycles

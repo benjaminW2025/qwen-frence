@@ -28,7 +28,7 @@ __device__ __forceinline__ float warp_sum(float value) {
   return __shfl_sync(0xffffffffu, value, 0);
 }
 
-template <typename scalar_t, typename index_t>
+template <typename scalar_t, typename index_t, bool ProfileStages = false>
 __global__ void grouped_gqa_splitk_partial_kernel(
     const scalar_t* __restrict__ q,
     const scalar_t* __restrict__ k_pool,
@@ -38,6 +38,7 @@ __global__ void grouped_gqa_splitk_partial_kernel(
     float* __restrict__ partial_out,
     float* __restrict__ partial_max,
     float* __restrict__ partial_sum,
+    unsigned long long* __restrict__ stage_cycles,
     int64_t q_stride_b,
     int64_t q_stride_h,
     int64_t q_stride_d,
@@ -83,11 +84,20 @@ __global__ void grouped_gqa_splitk_partial_kernel(
   const int end_page = (split + 1) * total_pages / split_k;
   float running_max = -CUDART_INF_F;
   float running_sum = 0.f;
+  unsigned long long load_cycles = 0;
+  unsigned long long qk_cycles = 0;
+  unsigned long long softmax_cycles = 0;
+  unsigned long long pv_cycles = 0;
+  __shared__ unsigned long long stage_start;
 
   for (int logical_page = start_page; logical_page < end_page; ++logical_page) {
     const int page_id = static_cast<int>(
         block_table[sequence * table_stride_b + logical_page * table_stride_page]);
 
+    if constexpr (ProfileStages) {
+      if (threadIdx.x == 0) stage_start = clock64();
+      __syncthreads();
+    }
     // All six warps stage the one K/V page cooperatively. Every staged value is
     // then consumed by all six query-head warps instead of fetched six times.
     for (int linear = threadIdx.x; linear < kPageSize * kHeadDim;
@@ -107,6 +117,13 @@ __global__ void grouped_gqa_splitk_partial_kernel(
       shared_v[linear] = valid ? v_pool[v_offset] : static_cast<scalar_t>(0.f);
     }
     __syncthreads();
+    if constexpr (ProfileStages) {
+      if (threadIdx.x == 0) {
+        load_cycles += clock64() - stage_start;
+        stage_start = clock64();
+      }
+      __syncthreads();
+    }
 
     float scores[kPageSize];
     const int remaining_tokens = seq_len - logical_page * kPageSize;
@@ -122,6 +139,14 @@ __global__ void grouped_gqa_splitk_partial_kernel(
       dot = warp_sum(dot) * scale;
       scores[token] = token < valid_tokens ? dot : -CUDART_INF_F;
     }
+    if constexpr (ProfileStages) {
+      __syncthreads();
+      if (threadIdx.x == 0) {
+        qk_cycles += clock64() - stage_start;
+        stage_start = clock64();
+      }
+      __syncthreads();
+    }
 
     float page_max = -CUDART_INF_F;
 #pragma unroll
@@ -136,21 +161,50 @@ __global__ void grouped_gqa_splitk_partial_kernel(
       accumulator[item] *= correction;
     }
 
+    if constexpr (ProfileStages) {
 #pragma unroll
-    for (int token = 0; token < kPageSize; ++token) {
-      const float probability = token < valid_tokens
-          ? expf(scores[token] - new_max)
-          : 0.f;
-      running_sum += probability;
-#pragma unroll
-      for (int item = 0; item < 4; ++item) {
-        const int dim = lane + item * kWarpSize;
-        accumulator[item] += probability *
-            static_cast<float>(shared_v[token * kHeadDim + dim]);
+      for (int token = 0; token < kPageSize; ++token) {
+        const float probability = token < valid_tokens
+            ? expf(scores[token] - new_max)
+            : 0.f;
+        scores[token] = probability;
+        running_sum += probability;
       }
+      __syncthreads();
+      if (threadIdx.x == 0) {
+        softmax_cycles += clock64() - stage_start;
+        stage_start = clock64();
+      }
+      __syncthreads();
+#pragma unroll
+      for (int token = 0; token < kPageSize; ++token) {
+        const float probability = scores[token];
+#pragma unroll
+        for (int item = 0; item < 4; ++item) {
+          const int dim = lane + item * kWarpSize;
+          accumulator[item] += probability *
+              static_cast<float>(shared_v[token * kHeadDim + dim]);
+        }
+      }
+      __syncthreads();
+      if (threadIdx.x == 0) pv_cycles += clock64() - stage_start;
+    } else {
+#pragma unroll
+      for (int token = 0; token < kPageSize; ++token) {
+        const float probability = token < valid_tokens
+            ? expf(scores[token] - new_max)
+            : 0.f;
+        running_sum += probability;
+#pragma unroll
+        for (int item = 0; item < 4; ++item) {
+          const int dim = lane + item * kWarpSize;
+          accumulator[item] += probability *
+              static_cast<float>(shared_v[token * kHeadDim + dim]);
+        }
+      }
+      __syncthreads();
     }
     running_max = new_max;
-    __syncthreads();
   }
 
   const int64_t partial_head =
@@ -164,9 +218,19 @@ __global__ void grouped_gqa_splitk_partial_kernel(
     partial_max[partial_head] = running_max;
     partial_sum[partial_head] = running_sum;
   }
+  if constexpr (ProfileStages) {
+    if (threadIdx.x == 0) {
+      const int64_t block =
+          (static_cast<int64_t>(sequence) * kv_heads + kv_head) * split_k + split;
+      stage_cycles[block * 4 + 0] = load_cycles;
+      stage_cycles[block * 4 + 1] = qk_cycles;
+      stage_cycles[block * 4 + 2] = softmax_cycles;
+      stage_cycles[block * 4 + 3] = pv_cycles;
+    }
+  }
 }
 
-template <typename scalar_t, typename index_t>
+template <typename scalar_t, typename index_t, bool ProfileStages = false>
 void launch_partial(
     const torch::Tensor& q,
     const torch::Tensor& k_pool,
@@ -177,7 +241,8 @@ void launch_partial(
     torch::Tensor& partial_max,
     torch::Tensor& partial_sum,
     int split_k,
-    double scale) {
+    double scale,
+    torch::Tensor* cycles = nullptr) {
   const int batch = static_cast<int>(q.size(0));
   const int query_heads = static_cast<int>(q.size(1));
   const int kv_heads = static_cast<int>(k_pool.size(2));
@@ -185,7 +250,10 @@ void launch_partial(
   const size_t shared_bytes =
       2 * kPageSize * kHeadDim * sizeof(scalar_t);
   const auto stream = at::cuda::getCurrentCUDAStream(q.get_device());
-  grouped_gqa_splitk_partial_kernel<scalar_t, index_t>
+  auto* cycle_pointer = cycles == nullptr
+      ? nullptr
+      : reinterpret_cast<unsigned long long*>(cycles->data_ptr<int64_t>());
+  grouped_gqa_splitk_partial_kernel<scalar_t, index_t, ProfileStages>
       <<<grid, kThreads, shared_bytes, stream>>>(
           q.data_ptr<scalar_t>(),
           k_pool.data_ptr<scalar_t>(),
@@ -195,6 +263,7 @@ void launch_partial(
           partial_out.data_ptr<float>(),
           partial_max.data_ptr<float>(),
           partial_sum.data_ptr<float>(),
+          cycle_pointer,
           q.stride(0), q.stride(1), q.stride(2),
           k_pool.stride(0), k_pool.stride(1), k_pool.stride(2), k_pool.stride(3),
           v_pool.stride(0), v_pool.stride(1), v_pool.stride(2), v_pool.stride(3),
@@ -204,7 +273,58 @@ void launch_partial(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
+template <typename scalar_t, typename index_t>
+pybind11::dict kernel_diagnostics_impl(int device) {
+  cudaFuncAttributes attributes{};
+  C10_CUDA_CHECK(cudaFuncGetAttributes(
+      &attributes, grouped_gqa_splitk_partial_kernel<scalar_t, index_t, false>));
+  const size_t dynamic_shared_bytes =
+      2 * kPageSize * kHeadDim * sizeof(scalar_t);
+  int active_blocks = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &active_blocks, grouped_gqa_splitk_partial_kernel<scalar_t, index_t, false>,
+      kThreads, dynamic_shared_bytes));
+  cudaDeviceProp properties{};
+  C10_CUDA_CHECK(cudaGetDeviceProperties(&properties, device));
+
+  pybind11::dict result;
+  result["registers_per_thread"] = attributes.numRegs;
+  result["static_shared_bytes"] = attributes.sharedSizeBytes;
+  result["dynamic_shared_bytes"] = dynamic_shared_bytes;
+  result["local_bytes_per_thread"] = attributes.localSizeBytes;
+  result["max_threads_per_block"] = attributes.maxThreadsPerBlock;
+  result["binary_version"] = attributes.binaryVersion;
+  result["ptx_version"] = attributes.ptxVersion;
+  result["threads_per_block"] = kThreads;
+  result["active_blocks_per_sm"] = active_blocks;
+  result["active_warps_per_sm"] = active_blocks * (kThreads / kWarpSize);
+  result["max_warps_per_sm"] = properties.maxThreadsPerMultiProcessor / kWarpSize;
+  result["theoretical_occupancy"] =
+      static_cast<double>(active_blocks * kThreads) /
+      properties.maxThreadsPerMultiProcessor;
+  return result;
+}
+
 }  // namespace
+
+pybind11::dict grouped_gqa_splitk_diagnostics(
+    const torch::Tensor& q, const torch::Tensor& block_table) {
+  TORCH_CHECK(q.is_cuda() && block_table.is_cuda(), "inputs must be CUDA");
+  TORCH_CHECK(q.scalar_type() == at::kHalf || q.scalar_type() == at::kBFloat16,
+              "q must be float16 or bfloat16");
+  TORCH_CHECK(block_table.scalar_type() == at::kInt ||
+              block_table.scalar_type() == at::kLong,
+              "block table must be int32 or int64");
+  c10::cuda::CUDAGuard device_guard(q.device());
+  if (q.scalar_type() == at::kHalf) {
+    return block_table.scalar_type() == at::kInt
+        ? kernel_diagnostics_impl<at::Half, int32_t>(q.get_device())
+        : kernel_diagnostics_impl<at::Half, int64_t>(q.get_device());
+  }
+  return block_table.scalar_type() == at::kInt
+      ? kernel_diagnostics_impl<at::BFloat16, int32_t>(q.get_device())
+      : kernel_diagnostics_impl<at::BFloat16, int64_t>(q.get_device());
+}
 
 void grouped_gqa_splitk_partial_out(
     const torch::Tensor& q,
@@ -282,7 +402,67 @@ void grouped_gqa_splitk_partial_out(
   }
 }
 
+void grouped_gqa_splitk_profile_out(
+    const torch::Tensor& q,
+    const torch::Tensor& k_pool,
+    const torch::Tensor& v_pool,
+    const torch::Tensor& block_table,
+    const torch::Tensor& seq_lens,
+    torch::Tensor partial_out,
+    torch::Tensor partial_max,
+    torch::Tensor partial_sum,
+    torch::Tensor cycles,
+    int64_t split_k,
+    double scale) {
+  TORCH_CHECK(q.is_cuda() && k_pool.is_cuda() && v_pool.is_cuda() &&
+              block_table.is_cuda() && seq_lens.is_cuda() && cycles.is_cuda(),
+              "profile inputs and outputs must be CUDA");
+  TORCH_CHECK(q.scalar_type() == at::kHalf || q.scalar_type() == at::kBFloat16,
+              "Q/K/V must be float16 or bfloat16");
+  TORCH_CHECK(k_pool.scalar_type() == q.scalar_type() &&
+              v_pool.scalar_type() == q.scalar_type(), "Q/K/V dtypes must match");
+  TORCH_CHECK(block_table.scalar_type() == seq_lens.scalar_type() &&
+              (block_table.scalar_type() == at::kInt ||
+               block_table.scalar_type() == at::kLong),
+              "metadata must both be int32 or int64");
+  TORCH_CHECK(q.dim() == 3 && q.size(2) == kHeadDim && k_pool.dim() == 4 &&
+              k_pool.size(1) == kPageSize && k_pool.size(3) == kHeadDim &&
+              q.size(1) == k_pool.size(2) * kGroup,
+              "profile kernel requires the supported page/head/GQA layout");
+  TORCH_CHECK(split_k > 1, "split_k must exceed one");
+  TORCH_CHECK(cycles.scalar_type() == at::kLong && cycles.is_contiguous() &&
+              cycles.dim() == 4 && cycles.size(0) == q.size(0) &&
+              cycles.size(1) == k_pool.size(2) && cycles.size(2) == split_k &&
+              cycles.size(3) == 4,
+              "cycles must be contiguous int64 [batch, kv_heads, split_k, 4]");
+
+  c10::cuda::CUDAGuard device_guard(q.device());
+  if (q.scalar_type() == at::kHalf) {
+    if (block_table.scalar_type() == at::kInt) {
+      launch_partial<at::Half, int32_t, true>(
+          q, k_pool, v_pool, block_table, seq_lens, partial_out, partial_max,
+          partial_sum, static_cast<int>(split_k), scale, &cycles);
+    } else {
+      launch_partial<at::Half, int64_t, true>(
+          q, k_pool, v_pool, block_table, seq_lens, partial_out, partial_max,
+          partial_sum, static_cast<int>(split_k), scale, &cycles);
+    }
+  } else if (block_table.scalar_type() == at::kInt) {
+    launch_partial<at::BFloat16, int32_t, true>(
+        q, k_pool, v_pool, block_table, seq_lens, partial_out, partial_max,
+        partial_sum, static_cast<int>(split_k), scale, &cycles);
+  } else {
+    launch_partial<at::BFloat16, int64_t, true>(
+        q, k_pool, v_pool, block_table, seq_lens, partial_out, partial_max,
+        partial_sum, static_cast<int>(split_k), scale, &cycles);
+  }
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("grouped_gqa_splitk_partial_out", &grouped_gqa_splitk_partial_out,
              "CTA-shared grouped-GQA split-K partial attention (CUDA)");
+  module.def("grouped_gqa_splitk_diagnostics", &grouped_gqa_splitk_diagnostics,
+             "Compiled resource usage and theoretical occupancy");
+  module.def("grouped_gqa_splitk_profile_out", &grouped_gqa_splitk_profile_out,
+             "Instrumented per-CTA stage cycles for grouped GQA decode");
 }
