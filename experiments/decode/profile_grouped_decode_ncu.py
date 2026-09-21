@@ -92,18 +92,14 @@ def main():
 
     label = f"grouped_decode_{args.arm}"
     cudart = torch.cuda.cudart()
-    result = cudart.cudaProfilerStart()
-    if result != 0:
-        raise RuntimeError(f"cudaProfilerStart failed with status {result}")
+    cudart.cudaProfilerStart()
     torch.cuda.nvtx.range_push(label)
     try:
         operation()
     finally:
         torch.cuda.nvtx.range_pop()
     torch.cuda.synchronize()
-    result = cudart.cudaProfilerStop()
-    if result != 0:
-        raise RuntimeError(f"cudaProfilerStop failed with status {result}")
+    cudart.cudaProfilerStop()
 
     print(
         f"profiled arm={args.arm} B={args.batch_size} "
