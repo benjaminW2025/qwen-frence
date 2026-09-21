@@ -49,6 +49,22 @@ OUTPUT_HEAD_CONFIGS = {
     "n256_k64_w8_s3": {"block_n": 256, "block_k": 64, "num_warps": 8, "num_stages": 3},
 }
 
+# Exact source hashes from c54bfe3.  That run could safely complete every
+# component preceding unrolled_decode, but an invalid fused token could poison
+# CUDA while capturing the first K-step component.  Keep this one migration
+# explicit and narrow: it is not a general bypass for protocol mismatches.
+PRE_UNROLLED_HOTFIX_SOURCE_HASHES = {
+    "experiments/integration/profile_decode_comprehensive.py":
+        "21ff5ce722f62cc89b343014c9667c0f25badb5d770964e2bbffcfd022822c17",
+    "custom_kernels/fused_lm_head.py":
+        "01559568ed90dff57dc6326e9ded938260a53492c6a182bf8cab98faa7f377b4",
+    "experiments/decode/benchmark_unrolled_graph.py":
+        "e4fb53f4ffea259e4f1bd25844b9f997718c60d8733d2c71741df78b7acca259",
+}
+PRE_UNROLLED_COMPONENTS = {
+    "attention", "fusion", "gemm", "output_head", "output_head_full_model",
+}
+
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -111,6 +127,27 @@ def protocol_fingerprint(args):
     }
     encoded = json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest(), protocol
+
+
+def pre_unrolled_hotfix_fingerprint(args):
+    """Fingerprint of the sole checkpoint version accepted by this hotfix."""
+    _, protocol = protocol_fingerprint(args)
+    protocol = {**protocol, "sources_sha256": dict(protocol["sources_sha256"])}
+    protocol["sources_sha256"].update(PRE_UNROLLED_HOTFIX_SOURCE_HASHES)
+    encoded = json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def migrate_pre_unrolled_checkpoint(path, saved, current, predecessor):
+    """Upgrade a verified c54bfe3 pre-unrolled checkpoint in place."""
+    if saved.get("fingerprint") == current:
+        return saved
+    if saved.get("fingerprint") != predecessor:
+        raise ValueError(f"checkpoint uses an incompatible protocol: {path}")
+    saved["fingerprint"] = current
+    atomic_json(path, saved)
+    print(f"migrated compatible pre-unrolled checkpoint: {path}", flush=True)
+    return saved
 
 
 def local_budget(shape_id):
@@ -1157,6 +1194,7 @@ def rope_kv_fusion_sweep(torch, engine, args):
 
 def run_local(args, contracts):
     fingerprint, protocol = protocol_fingerprint(args)
+    predecessor_fingerprint = pre_unrolled_hotfix_fingerprint(args)
     output = args.output_dir / "local/report.json"
     if output.is_file():
         if json.loads(output.read_text()).get("fingerprint") != fingerprint:
@@ -1187,9 +1225,10 @@ def run_local(args, contracts):
         cell_path = output.parent / "cells" / f"{shape_id}.json"
         if cell_path.is_file():
             cell = json.loads(cell_path.read_text())
-            if (cell.get("status") != "complete" or cell.get("shape_id") != shape_id
-                    or cell.get("fingerprint") != fingerprint):
+            if cell.get("status") != "complete" or cell.get("shape_id") != shape_id:
                 raise ValueError(f"invalid local cell checkpoint: {cell_path}")
+            cell = migrate_pre_unrolled_checkpoint(
+                cell_path, cell, fingerprint, predecessor_fingerprint)
             slope.append(cell["row"])
             print(f"local slope resumed: {shape_id}", flush=True)
             continue
@@ -1234,9 +1273,14 @@ def run_local(args, contracts):
     for name, path in component_paths.items():
         if path.is_file():
             saved = json.loads(path.read_text())
-            if (saved.get("status") != "complete"
-                    or saved.get("fingerprint") != fingerprint):
+            if saved.get("status") != "complete":
                 raise ValueError(f"invalid local component checkpoint: {path}")
+            if name not in PRE_UNROLLED_COMPONENTS:
+                if saved.get("fingerprint") != fingerprint:
+                    raise ValueError(f"invalid local component checkpoint: {path}")
+            else:
+                saved = migrate_pre_unrolled_checkpoint(
+                    path, saved, fingerprint, predecessor_fingerprint)
             components[name] = saved["rows"]
         else:
             components[name] = builders[name]()

@@ -68,6 +68,24 @@ class ComprehensiveDecodeTests(unittest.TestCase):
         self.assertEqual(MODULE.local_budget("fixed-b8-l2048-o128"), 4096)
         self.assertEqual(MODULE.local_budget("fixed-b64-l2048-o128"), 8192)
 
+    def test_hotfix_migrates_only_the_exact_predecessor_fingerprint(self):
+        args = self.args()
+        current, _ = MODULE.protocol_fingerprint(args)
+        predecessor = MODULE.pre_unrolled_hotfix_fingerprint(args)
+        self.assertNotEqual(current, predecessor)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "attention.json"
+            MODULE.atomic_json(path, {
+                "status": "complete", "fingerprint": predecessor, "rows": [],
+            })
+            saved = MODULE.migrate_pre_unrolled_checkpoint(
+                path, json.loads(path.read_text()), current, predecessor)
+            self.assertEqual(saved["fingerprint"], current)
+            self.assertEqual(json.loads(path.read_text())["fingerprint"], current)
+            with self.assertRaisesRegex(ValueError, "incompatible protocol"):
+                MODULE.migrate_pre_unrolled_checkpoint(
+                    path, {"fingerprint": "unknown"}, current, predecessor)
+
     def test_analyzer_requires_and_combines_complete_surface(self):
         with tempfile.TemporaryDirectory() as directory:
             args = self.args()
