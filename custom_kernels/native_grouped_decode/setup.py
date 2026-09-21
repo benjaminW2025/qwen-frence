@@ -18,7 +18,10 @@ setup(
             sources=[str(HERE / "native_grouped_decode.cu")],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
-                "nvcc": ["-O3", "--use_fast_math", "-lineinfo", "-std=c++17"],
+                "nvcc": [
+                    "-O3", "--use_fast_math", "-lineinfo", "-std=c++17",
+                    "-Xptxas=-v",
+                ],
             },
         )
     ],
