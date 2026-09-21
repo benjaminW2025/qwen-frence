@@ -121,6 +121,8 @@ def build_parser():
                       help="validate against eager, then time only the split-K arm")
     mode.add_argument("--fa3-only", action="store_true",
                       help="validate against eager, then time only the FA3 arm")
+    mode.add_argument("--fa3-compare", action="store_true",
+                      help="validate against eager, then pair only split-K and FA3")
     parser.add_argument("--include-fa3", action="store_true",
                         help="add piecewise capture with FA3-auto to the paired ablation")
     parser.add_argument("--logit-atol", type=float, default=.05,
@@ -330,7 +332,7 @@ def run_case(torch, cpp, engine, case, args, requests):
     common = dict(max_running=config.max_batch_size,
                   max_context_length=config.max_context_length)
     adapters = {"eager": ModelAdapter(engine.model, pool, None)}
-    if not args.splitk_only and not args.fa3_only:
+    if not args.splitk_only and not args.fa3_only and not args.fa3_compare:
         adapters["decode_graph"] = GraphModelAdapter(engine.model, pool, None, **common)
         adapters["piecewise"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common,
@@ -343,7 +345,7 @@ def run_case(torch, cpp, engine, case, args, requests):
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
             prefill_buckets=args.prefill_buckets)
-    if args.include_fa3 or args.fa3_only:
+    if args.include_fa3 or args.fa3_only or args.fa3_compare:
         adapters["piecewise_fa3"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common, decode_attention_policy="fa3",
             max_capture_tokens=args.max_capture_tokens,
@@ -414,6 +416,8 @@ def run_case(torch, cpp, engine, case, args, requests):
         active_arms = ("piecewise_splitk",)
     elif args.fa3_only:
         active_arms = ("piecewise_fa3",)
+    elif args.fa3_compare:
+        active_arms = ("piecewise_splitk", "piecewise_fa3")
     else:
         active_arms = tuple(adapters)
     for arm in active_arms:
@@ -483,7 +487,8 @@ def run_case(torch, cpp, engine, case, args, requests):
         if capture[arm]["timed_prefill_capture_calls"] == 0:
             raise AssertionError(f"{arm}: no timed prefill used a captured bucket")
     medians, effects = paired_summary(measurements)
-    decision = ({"choice": "separate_run_not_paired"} if (args.splitk_only or args.fa3_only) else
+    decision = ({"choice": "separate_run_not_paired"}
+                if (args.splitk_only or args.fa3_only or args.fa3_compare) else
                 splitk_decision(effects, executed=splitk_executed))
     if ("piecewise_splitk" in checks and
             not checks["piecewise_splitk"]["numerical_validation_passed"]):
@@ -497,6 +502,7 @@ def run_case(torch, cpp, engine, case, args, requests):
             "logit_tolerance": {"atol": args.logit_atol, "rtol": .01},
             "splitk_only": args.splitk_only,
             "fa3_only": args.fa3_only,
+            "fa3_compare": args.fa3_compare,
             "rejected_arms": rejected_arms,
             "splitk_executed": splitk_executed,
             "splitk_decision": decision}
@@ -513,6 +519,8 @@ def main():
         planned_arms = ("piecewise_splitk",)
     elif args.fa3_only:
         planned_arms = ("piecewise_fa3",)
+    elif args.fa3_compare:
+        planned_arms = ("piecewise_splitk", "piecewise_fa3")
     else:
         planned_arms = ARMS if args.include_fa3 else ARMS[:-1]
     plan = {"case": case, "arms": planned_arms,
