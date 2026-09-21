@@ -118,6 +118,11 @@ def fused_qkv_rope_cache(*args, **kwargs):
     return _load("fused_qkv_rope_cache").fused_qkv_rope_cache(*args, **kwargs)
 
 
+def packed_qkv_rope_cache(*args, **kwargs):
+    """Run a post-cuBLAS packed-QKV RoPE/cache epilogue."""
+    return _load("packed_qkv_rope_cache").packed_qkv_rope_cache(*args, **kwargs)
+
+
 def fused_lm_head_argmax(*args, **kwargs):
     """Project to vocabulary tiles and return exact greedy token IDs."""
     return _load("fused_lm_head").fused_lm_head_argmax(*args, **kwargs)

@@ -97,7 +97,8 @@ class GraphModelAdapter(ModelAdapter):
                  decode_attention_policy="production", decode_buckets=None,
                  enable_residual_rmsnorm=False,
                  enable_native_decode_qkv_postprocess=False,
-                 enable_fused_qkv_rope_cache=False):
+                 enable_fused_qkv_rope_cache=False,
+                 enable_packed_qkv_rope_cache=False):
         super().__init__(model, pool, loop)
         if decode_attention_policy not in ("production", "splitk", "fa3"):
             raise ValueError("graph decode policy must be 'production', 'splitk', or 'fa3'")
@@ -112,6 +113,7 @@ class GraphModelAdapter(ModelAdapter):
             enable_native_decode_qkv_postprocess
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
+        self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.max_context_length = max_context_length
         self.max_blocks = (max_context_length + pool.block_size - 1) // pool.block_size
         if self.max_blocks < 1:
@@ -138,6 +140,7 @@ class GraphModelAdapter(ModelAdapter):
                 self.enable_native_decode_qkv_postprocess
             ),
             enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
+            enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
         )
 
     @torch.no_grad()
@@ -170,7 +173,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  max_prefill_shapes=8, prefill_buckets=None, decode_buckets=None,
                  enable_residual_rmsnorm=False,
                  enable_native_decode_qkv_postprocess=False,
-                 enable_fused_qkv_rope_cache=False):
+                 enable_fused_qkv_rope_cache=False,
+                 enable_packed_qkv_rope_cache=False):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -179,7 +183,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          enable_native_decode_qkv_postprocess=(
                              enable_native_decode_qkv_postprocess
                          ),
-                         enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache)
+                         enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache,
+                         enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache)
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))
