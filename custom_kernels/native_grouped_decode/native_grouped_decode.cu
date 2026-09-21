@@ -6,6 +6,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <math_constants.h>
 
 #include <cmath>
 #include <cstdint>
