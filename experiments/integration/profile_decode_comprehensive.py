@@ -695,6 +695,8 @@ def unrolled_decode_sweep(torch, engine, args, output_head_rows):
             captures = {"repeated_k1": single_capture}
             for steps in UNROLL_STEPS:
                 selected = metadata[:steps]
+                print(f"capturing unrolled validation B={batch} C={context} K={steps}",
+                      flush=True)
                 validation, validation_capture = capture_with_memory(
                     torch,
                     lambda selected=selected: UnrolledCUDAGraphDecoder(
@@ -704,6 +706,8 @@ def unrolled_decode_sweep(torch, engine, args, output_head_rows):
                         retain_logits=True, output_head_policy="logits",
                     ).capture(),
                 )
+                print(f"capturing unrolled production B={batch} C={context} K={steps}",
+                      flush=True)
                 production, production_capture = capture_with_memory(
                     torch,
                     lambda selected=selected: UnrolledCUDAGraphDecoder(
@@ -716,6 +720,8 @@ def unrolled_decode_sweep(torch, engine, args, output_head_rows):
                 fused = fused_capture = None
                 if batch in best_head_config:
                     try:
+                        print(f"capturing unrolled fused-head B={batch} "
+                              f"C={context} K={steps}", flush=True)
                         fused, fused_capture = capture_with_memory(
                             torch,
                             lambda selected=selected: UnrolledCUDAGraphDecoder(

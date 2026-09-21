@@ -31,6 +31,10 @@ class FusedOutputHeadSourceTests(unittest.TestCase):
         self.assertIn("accumulator.to(hidden_ptr.dtype.element_ty)", SOURCE)
         self.assertIn("tl.min(winning_indices", SOURCE)
 
+    def test_reduction_sentinel_cannot_escape_as_token(self):
+        self.assertIn("token = tl.where(token < vocab, token, 0)", SOURCE)
+        self.assertIn("vocab_blocks, weight.shape[0]", SOURCE)
+
     def test_global_correctness_suite_covers_b8_and_b64(self):
         source = (ROOT / "correctness/checks/check_custom_kernels.py").read_text()
         self.assertIn("check_fused_lm_head", source)
