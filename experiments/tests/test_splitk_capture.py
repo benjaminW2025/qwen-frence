@@ -110,7 +110,7 @@ class PolicyResolutionTests(unittest.TestCase):
 class CaptureBoundTests(unittest.TestCase):
     """A graph cannot re-decide on replay, so its committed bound must be the widest."""
 
-    def _decoder(self, policy, max_blocks=64, block_size=16, bound=None):
+    def _decoder(self, policy, max_blocks=64, block_size=16, bound=None, **kwargs):
         import torch
         from paged_graph_decoder import CUDAGraphDecoder
         cache = types.SimpleNamespace(block_size=block_size, k_pool=[], v_pool=[])
@@ -118,6 +118,7 @@ class CaptureBoundTests(unittest.TestCase):
             model=types.SimpleNamespace(cfg=None), cache=cache, batch_size=2,
             max_blocks=max_blocks, device=torch.device("cpu"), dtype=torch.float32,
             decode_attention_policy=policy, max_decode_context_length=bound,
+            **kwargs,
         )
 
     def test_bound_defaults_to_the_whole_captured_block_table(self):
@@ -134,6 +135,19 @@ class CaptureBoundTests(unittest.TestCase):
         decoder = self._decoder("fa3", max_blocks=64, bound=1024)
         self.assertEqual(decoder.s_seq_lens.tolist(), [1, 1])
         self.assertFalse(decoder.s_block_table.any())
+
+    def test_fusion_flags_are_explicit_and_mutually_exclusive(self):
+        decoder = self._decoder(
+            "fa3", enable_residual_rmsnorm=True,
+            enable_fused_qkv_rope_cache=True,
+        )
+        self.assertTrue(decoder.enable_residual_rmsnorm)
+        self.assertTrue(decoder.enable_fused_qkv_rope_cache)
+        with self.assertRaisesRegex(ValueError, "either QKV"):
+            self._decoder(
+                "fa3", enable_native_decode_qkv_postprocess=True,
+                enable_fused_qkv_rope_cache=True,
+            )
 
     def test_production_needs_no_bound(self):
         decoder = self._decoder("production", max_blocks=64)

@@ -32,6 +32,13 @@ def rms_norm(x, weight, epsilon=1e-6):
     return _load("fused_rms").rms_norm(rows, weight, epsilon).view(shape)
 
 
+def residual_add_rms_norm(residual, branch, weight, epsilon=1e-6):
+    """Fuse a residual update with normalization of the updated stream."""
+    return _load("fused_rms").residual_add_rms_norm(
+        residual, branch, weight, epsilon
+    )
+
+
 def rope(x, positions, theta):
     """Apply Qwen rotate-half RoPE using explicit per-sequence positions."""
     if positions.ndim == 1:
@@ -104,6 +111,11 @@ def masked_kv_write(*args, **kwargs):
 def native_decode_rope_kv_write(*args, **kwargs):
     """Experimental native-layout decode RoPE and cache placement."""
     return _load("rope_kv_write").native_decode_rope_kv_write(*args, **kwargs)
+
+
+def fused_qkv_rope_cache(*args, **kwargs):
+    """Project packed QKV, rotate Q/K, and place K/V without intermediates."""
+    return _load("fused_qkv_rope_cache").fused_qkv_rope_cache(*args, **kwargs)
 
 
 def fused_lm_head_argmax(*args, **kwargs):
