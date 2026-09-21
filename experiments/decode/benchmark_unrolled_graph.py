@@ -51,18 +51,33 @@ def future_slots(metadata):
 def snapshot_slots(cache, slots):
     """Copy only K future positions instead of duplicating the multi-GiB cache."""
     flat_slots = slots.reshape(-1)
+    _validate_slots(cache, flat_slots)
     return tuple(tensor.view(-1, tensor.shape[2], tensor.shape[3]).index_select(
         0, flat_slots).clone() for tensor in (*cache.k_pool, *cache.v_pool))
 
 
 def restore_slots(cache, slots, snapshot):
     flat_slots = slots.reshape(-1)
+    _validate_slots(cache, flat_slots)
     tensors = (*cache.k_pool, *cache.v_pool)
     if len(snapshot) != len(tensors):
         raise ValueError("KV snapshot does not match the cache")
     for tensor, values in zip(tensors, snapshot):
         tensor.view(-1, tensor.shape[2], tensor.shape[3]).index_copy_(
             0, flat_slots, values)
+
+
+def _validate_slots(cache, flat_slots):
+    """Turn an asynchronous device assertion into an actionable host error."""
+    if flat_slots.numel() == 0:
+        return
+    lower = int(flat_slots.min())
+    upper = int(flat_slots.max())
+    capacity = cache.num_blocks * cache.block_size
+    if lower < 0 or upper >= capacity:
+        raise ValueError(
+            f"KV slot range [{lower}, {upper}] exceeds cache capacity {capacity}"
+        )
 
 
 def eager_trajectory(model, cache, first_ids, metadata, *, attention_policy="splitk"):

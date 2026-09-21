@@ -71,6 +71,7 @@ def _reduce_partial_argmax(
     token_ids_ptr,
     maximum_values_ptr,
     vocab_blocks,
+    vocab,
     BLOCKS: tl.constexpr,
 ):
     row = tl.program_id(0)
@@ -84,6 +85,11 @@ def _reduce_partial_argmax(
     # Prefer the lowest vocabulary ID on an exact tie, matching torch.argmax.
     winning_indices = tl.where(values == maximum, indices, 0x7FFFFFFF)
     token = tl.min(winning_indices, axis=0)
+    # When every comparison is false (most notably for a NaN maximum), do not
+    # let the reduction sentinel escape as the next embedding index. Correctness
+    # checks still report the fallback token as a mismatch instead of allowing
+    # an asynchronous device assertion to poison the whole CUDA process.
+    token = tl.where(token < vocab, token, 0)
     tl.store(token_ids_ptr + row, token)
     tl.store(maximum_values_ptr + row, maximum)
 
@@ -171,7 +177,8 @@ def fused_lm_head_argmax(
         num_warps=num_warps, num_stages=num_stages,
     )
     _reduce_partial_argmax[(rows,)](
-        partial_values, partial_indices, tokens, maximum_values, vocab_blocks,
+        partial_values, partial_indices, tokens, maximum_values,
+        vocab_blocks, weight.shape[0],
         BLOCKS=triton.next_power_of_2(vocab_blocks), num_warps=8,
     )
     return tokens.view(leading_shape)

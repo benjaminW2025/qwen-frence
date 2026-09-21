@@ -54,6 +54,11 @@ class UnrolledGraphTests(unittest.TestCase):
         self.assertEqual(slots[:, 1].tolist(), [47, 48, 49, 50])
         self.assertEqual(cache.num_blocks, 4)
 
+    def test_slot_snapshot_rejects_out_of_range_indices_before_index_select(self):
+        cache = SimpleNamespace(num_blocks=2, block_size=16)
+        with self.assertRaisesRegex(ValueError, "exceeds cache capacity 32"):
+            CONTROL._validate_slots(cache, torch.tensor([0, 31, 32]))
+
     def test_comprehensive_logit_accuracy_retains_step_details(self):
         reference = (torch.zeros(2, 1, 4), torch.zeros(2, 1, 4))
         candidate = (reference[0].clone(), reference[1].clone())
