@@ -42,6 +42,9 @@ class UnrolledCUDAGraphDecoder:
         retain_logits=False,
         output_head_policy="logits",
         output_head_config=None,
+        enable_residual_rmsnorm=False,
+        enable_native_decode_qkv_postprocess=False,
+        enable_packed_qkv_rope_cache=False,
     ):
         if not step_inputs:
             raise ValueError("unrolled decode requires at least one step")
@@ -64,6 +67,14 @@ class UnrolledCUDAGraphDecoder:
         self.retain_logits = retain_logits
         self.output_head_policy = output_head_policy
         self.output_head_config = output_head_config
+        self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_native_decode_qkv_postprocess = bool(
+            enable_native_decode_qkv_postprocess
+        )
+        self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        if (self.enable_native_decode_qkv_postprocess
+                and self.enable_packed_qkv_rope_cache):
+            raise ValueError("select one QKV postprocessing mode")
         self.s_first_ids = torch.zeros((batch, 1), device=normalized[0][0].device,
                                        dtype=torch.long)
         # Clone metadata into graph-owned, fixed-address buffers.
@@ -86,6 +97,11 @@ class UnrolledCUDAGraphDecoder:
                 max_decode_context_length=self.max_decode_context_length,
                 output_head_policy=self.output_head_policy,
                 output_head_config=self.output_head_config,
+                enable_residual_rmsnorm=self.enable_residual_rmsnorm,
+                enable_native_decode_qkv_postprocess=(
+                    self.enable_native_decode_qkv_postprocess
+                ),
+                enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
             )
             if self.output_head_policy == "logits":
                 if self.retain_logits:
