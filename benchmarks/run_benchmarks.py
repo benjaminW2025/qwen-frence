@@ -489,7 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--decode-attention-policy",
-        choices=("production", "adaptive"),
+        choices=("production", "adaptive", "splitk", "native_grouped"),
         default="production",
         help="paged-decode kernel dispatch policy for eager scheduler backends",
     )

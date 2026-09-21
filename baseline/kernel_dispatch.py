@@ -74,6 +74,13 @@ def grouped_splitk_decode_attention(*args, **kwargs):
     )
 
 
+def native_grouped_splitk_decode_attention(*args, **kwargs):
+    """Run the native CTA-shared grouped-GQA split-K candidate."""
+    return _load("paged_decode_native_grouped").native_grouped_splitk_decode_attention(
+        *args, **kwargs
+    )
+
+
 def swiglu(*args, **kwargs):
     """Fuse the SiLU activation and gated elementwise product."""
     return _load("swiglu").swiglu(*args, **kwargs)

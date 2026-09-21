@@ -27,7 +27,7 @@ MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH = 1024
 # which moves the break-even down -- `splitk` is the policy that may be captured.
 MIN_SPLITK_DECODE_CONTEXT_LENGTH = 1024
 
-DECODE_ATTENTION_POLICIES = ("production", "adaptive", "splitk")
+DECODE_ATTENTION_POLICIES = ("production", "adaptive", "splitk", "native_grouped")
 
 # Frozen action from the decode stage study: pages <= 80 selects K=8/stages=2,
 # above it K=22/stages=3, at heads_per_program=1 and four warps. Encoded here as a
@@ -46,10 +46,10 @@ def resolve_decode_attention_policy(policy, max_context_length):
         raise ValueError(f"decode attention policy must be one of {DECODE_ATTENTION_POLICIES}")
     if max_context_length is None:
         raise ValueError(f"{policy} decode attention requires a host context length")
-    if policy == "splitk":
+    if policy in ("splitk", "native_grouped"):
         if max_context_length < MIN_SPLITK_DECODE_CONTEXT_LENGTH:
             return "production"
-        return "splitk"
+        return policy
     if max_context_length < MIN_ADAPTIVE_DECODE_CONTEXT_LENGTH:
         return "production"
     return "adaptive"
@@ -220,6 +220,13 @@ def paged_decode_attention_dispatch(
         return grouped_splitk_decode_attention(
             q, k_pool, v_pool, block_table, seq_lens,
             scale=scale, partials=splitk_partials, **config,
+        )
+    if policy == "native_grouped":
+        from kernel_dispatch import native_grouped_splitk_decode_attention
+        config = select_splitk_config(max_context_length, page_size=k_pool.shape[1])
+        return native_grouped_splitk_decode_attention(
+            q, k_pool, v_pool, block_table, seq_lens,
+            scale=scale, partials=splitk_partials, split_k=config["split_k"],
         )
     from kernel_dispatch import (
         paged_decode_attention_candidate,
