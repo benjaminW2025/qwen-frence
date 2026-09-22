@@ -34,6 +34,7 @@ ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk", "piecewise_fa3
 FA3_FUSION_ARMS = (
     "piecewise_fa3",
     "piecewise_fa3_residual_rmsnorm",
+    "piecewise_fa3_k_rope_kv",
     "piecewise_fa3_qkv_postprocess",
     "piecewise_fa3_packed_epilogue",
     "piecewise_fa3_full_qkv",
@@ -47,6 +48,7 @@ COMPARISONS = (("decode_graph", "eager"),
                ("piecewise_fa3", "piecewise_splitk"),
                ("piecewise_fa3", "piecewise"),
                ("piecewise_fa3_residual_rmsnorm", "piecewise_fa3"),
+               ("piecewise_fa3_k_rope_kv", "piecewise_fa3"),
                ("piecewise_fa3_qkv_postprocess", "piecewise_fa3"),
                ("piecewise_fa3_packed_epilogue", "piecewise_fa3"),
                ("piecewise_fa3_full_qkv", "piecewise_fa3"),
@@ -380,6 +382,9 @@ def run_case(torch, cpp, engine, case, args, requests):
         adapters["piecewise_fa3_residual_rmsnorm"] = PiecewiseGraphModelAdapter(
             **fusion_common, enable_residual_rmsnorm=True,
         )
+        adapters["piecewise_fa3_k_rope_kv"] = PiecewiseGraphModelAdapter(
+            **fusion_common, enable_native_decode_rope_kv=True,
+        )
         adapters["piecewise_fa3_qkv_postprocess"] = PiecewiseGraphModelAdapter(
             **fusion_common, enable_native_decode_qkv_postprocess=True,
         )
@@ -553,6 +558,8 @@ def run_case(torch, cpp, engine, case, args, requests):
                 arm: {
                     "residual_rmsnorm": bool(getattr(
                         adapter, "enable_residual_rmsnorm", False)),
+                    "native_k_rope_kv_write": bool(getattr(
+                        adapter, "enable_native_decode_rope_kv", False)),
                     "qkv_rope_kv_postprocess": bool(getattr(
                         adapter, "enable_native_decode_qkv_postprocess", False)),
                     "full_qkv_rope_kv": bool(getattr(

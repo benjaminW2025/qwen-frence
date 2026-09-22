@@ -148,6 +148,11 @@ class CaptureBoundTests(unittest.TestCase):
                 "fa3", enable_native_decode_qkv_postprocess=True,
                 enable_fused_qkv_rope_cache=True,
             )
+        with self.assertRaisesRegex(ValueError, "one QKV"):
+            self._decoder(
+                "fa3", enable_native_decode_rope_kv=True,
+                enable_native_decode_qkv_postprocess=True,
+            )
 
     def test_production_needs_no_bound(self):
         decoder = self._decoder("production", max_blocks=64)

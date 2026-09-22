@@ -96,6 +96,7 @@ class GraphModelAdapter(ModelAdapter):
     def __init__(self, model, pool, loop, *, max_running, max_context_length,
                  decode_attention_policy="production", decode_buckets=None,
                  enable_residual_rmsnorm=False,
+                 enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False):
@@ -109,6 +110,7 @@ class GraphModelAdapter(ModelAdapter):
 
         self.decode_attention_policy = decode_attention_policy
         self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_native_decode_rope_kv = bool(enable_native_decode_rope_kv)
         self.enable_native_decode_qkv_postprocess = bool(
             enable_native_decode_qkv_postprocess
         )
@@ -136,6 +138,7 @@ class GraphModelAdapter(ModelAdapter):
             decode_attention_policy=decode_attention_policy,
             max_decode_context_length=max_context_length,
             enable_residual_rmsnorm=self.enable_residual_rmsnorm,
+            enable_native_decode_rope_kv=self.enable_native_decode_rope_kv,
             enable_native_decode_qkv_postprocess=(
                 self.enable_native_decode_qkv_postprocess
             ),
@@ -172,6 +175,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  decode_attention_policy="production", max_capture_tokens=2048,
                  max_prefill_shapes=8, prefill_buckets=None, decode_buckets=None,
                  enable_residual_rmsnorm=False,
+                 enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False):
@@ -180,6 +184,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          decode_attention_policy=decode_attention_policy,
                          decode_buckets=decode_buckets,
                          enable_residual_rmsnorm=enable_residual_rmsnorm,
+                         enable_native_decode_rope_kv=enable_native_decode_rope_kv,
                          enable_native_decode_qkv_postprocess=(
                              enable_native_decode_qkv_postprocess
                          ),

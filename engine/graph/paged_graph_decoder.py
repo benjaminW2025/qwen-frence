@@ -32,6 +32,7 @@ class CUDAGraphDecoder:
     def __init__(self, model, cache, batch_size, max_blocks, device, dtype,
                  decode_attention_policy="production", max_decode_context_length=None,
                  enable_residual_rmsnorm=False,
+                 enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False):
@@ -51,16 +52,17 @@ class CUDAGraphDecoder:
             max_decode_context_length = max_blocks * cache.block_size
         self.max_decode_context_length = max_decode_context_length
         self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_native_decode_rope_kv = bool(enable_native_decode_rope_kv)
         self.enable_native_decode_qkv_postprocess = bool(
             enable_native_decode_qkv_postprocess
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
-        if (self.enable_native_decode_qkv_postprocess
-                and (self.enable_fused_qkv_rope_cache
-                     or self.enable_packed_qkv_rope_cache)):
-            raise ValueError("select one QKV postprocessing mode")
-        if self.enable_fused_qkv_rope_cache and self.enable_packed_qkv_rope_cache:
+        postprocess_modes = sum((self.enable_native_decode_rope_kv,
+                                 self.enable_native_decode_qkv_postprocess,
+                                 self.enable_fused_qkv_rope_cache,
+                                 self.enable_packed_qkv_rope_cache))
+        if postprocess_modes > 1:
             raise ValueError("select one QKV postprocessing mode")
 
         # Static input buffers
@@ -85,6 +87,7 @@ class CUDAGraphDecoder:
             decode_attention_policy=self.decode_attention_policy,
             max_decode_context_length=self.max_decode_context_length,
             enable_residual_rmsnorm=self.enable_residual_rmsnorm,
+            enable_native_decode_rope_kv=self.enable_native_decode_rope_kv,
             enable_native_decode_qkv_postprocess=(
                 self.enable_native_decode_qkv_postprocess
             ),
