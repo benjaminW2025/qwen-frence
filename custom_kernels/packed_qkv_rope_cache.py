@@ -30,7 +30,14 @@ def _packed_qkv_rope_cache_kernel(
     is_value = segment >= 14
     is_query = segment < 12
     is_kv = ~is_query
-    head = tl.where(is_query, segment, segment - 12)
+    # Packed columns are [Q0..Q11, K0..K1, V0..V1]. K and V each restart
+    # their cache-head index at zero; treating V14/V15 as segment-12 writes
+    # heads 2/3 past the two-head cache and leaves the real V heads untouched.
+    head = tl.where(
+        is_query,
+        segment,
+        tl.where(is_value, segment - 14, segment - 12),
+    )
     position = tl.load(positions_ptr + row * position_stride,
                        mask=row < rows, other=0).to(tl.float32)
     half = 64
