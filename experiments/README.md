@@ -5,6 +5,11 @@ CPU control-plane tests, and the measurements collected from them. The stable
 cross-backend benchmark harness remains in `benchmarks/`; numerical and state-machine
 gates remain in `correctness/`.
 
+The canonical status of every attempted and proposed model-operation fusion is tracked
+in [`FUSION_CHECKLIST.md`](FUSION_CHECKLIST.md). Consult that ledger before proposing
+or rerunning a fusion so completed, rejected, and genuinely untested ideas remain
+distinct.
+
 ## Pages per program and stage dispatch study
 
 The controlled follow-up to the joint sweep is
