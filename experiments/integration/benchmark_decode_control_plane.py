@@ -42,7 +42,7 @@ def build_parser():
     parser.add_argument("--repetitions", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--eos-token-id", type=int, default=151645)
-    parser.add_argument("--qkv-mode", choices=("none", "native", "packed"),
+    parser.add_argument("--qkv-mode", choices=("none", "native-k", "native", "packed"),
                         default="native")
     parser.add_argument("--residual-rmsnorm", action=argparse.BooleanOptionalAction,
                         default=True)
@@ -188,6 +188,7 @@ def run_micro(args):
 def fusion_options(args):
     return {
         "enable_residual_rmsnorm": args.residual_rmsnorm,
+        "enable_native_decode_rope_kv": args.qkv_mode == "native-k",
         "enable_native_decode_qkv_postprocess": args.qkv_mode == "native",
         "enable_packed_qkv_rope_cache": args.qkv_mode == "packed",
     }

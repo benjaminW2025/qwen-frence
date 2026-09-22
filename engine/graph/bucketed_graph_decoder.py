@@ -25,6 +25,7 @@ class BucketedGraphDecoder:
     def __init__(self, model, cache, max_running, max_blocks, device, dtype, buckets=None,
                  decode_attention_policy="production", max_decode_context_length=None,
                  enable_residual_rmsnorm=False,
+                 enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False):
@@ -43,6 +44,9 @@ class BucketedGraphDecoder:
                                    decode_attention_policy=decode_attention_policy,
                                    max_decode_context_length=max_decode_context_length,
                                    enable_residual_rmsnorm=enable_residual_rmsnorm,
+                                   enable_native_decode_rope_kv=(
+                                       enable_native_decode_rope_kv
+                                   ),
                                    enable_native_decode_qkv_postprocess=(
                                        enable_native_decode_qkv_postprocess
                                    ),
