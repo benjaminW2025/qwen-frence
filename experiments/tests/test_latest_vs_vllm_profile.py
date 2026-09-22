@@ -144,6 +144,21 @@ class MatchedProfileTests(unittest.TestCase):
             self.assertTrue(target.is_dir())
             self.assertEqual(len(list(Path(directory).glob("vllm-failed-*"))), 1)
 
+    def test_local_completion_is_bound_to_requested_arm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            trace = target / "trace.json"
+            trace.write_text("{}")
+            (target / "one-report.json").write_text(json.dumps({
+                "schema_version": 1, "trace": str(trace),
+                "decode_attention_policy": "fa3", "qkv_mode": "native",
+                "enable_residual_rmsnorm": False,
+            }))
+            self.assertTrue(MODULE.complete_local(
+                target, policy="fa3", qkv_mode="native", residual_rmsnorm=False))
+            self.assertFalse(MODULE.complete_local(
+                target, policy="splitk", qkv_mode="native", residual_rmsnorm=False))
+
 
 if __name__ == "__main__":
     unittest.main()
