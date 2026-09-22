@@ -22,7 +22,7 @@ import time
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for directory in (HERE, ROOT / "benchmarks"):
+for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline"):
     sys.path.insert(0, str(directory))
 
 from benchmark_backends import _matched_kv_cache_bytes
@@ -50,6 +50,14 @@ def build_parser():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--prefill-budget", type=int,
                         help="local piecewise bucket; defaults to 4096 for B8 and 8192 for B64")
+    parser.add_argument("--local-policy", choices=("splitk", "fa3"), default="fa3",
+                        help="local decode attention implementation (default: current FA3 path)")
+    parser.add_argument("--qkv-mode",
+                        choices=("none", "native-k", "native", "packed", "full"),
+                        default="native",
+                        help="local decode QKV/RoPE/KV-write fusion arm")
+    parser.add_argument("--enable-residual-rmsnorm", action="store_true",
+                        help="enable local fused residual-add plus RMSNorm")
     parser.add_argument("--retry-failed", action="store_true")
     return parser
 
@@ -93,21 +101,43 @@ def verify_external_setup(args):
         raise ValueError("installed vLLM LLM API lacks worker profiling controls")
     SamplingParams(max_tokens=1, temperature=0.0,
                    output_kind=RequestOutputKind.CUMULATIVE)
+    local_components = []
+    if args.local_policy == "fa3":
+        from kernel_dispatch import _load
+        _load("paged_decode_fa3")._load_fa3()
+        local_components.append("vllm_bundled_fa3")
+    qkv_module = {
+        "native-k": "rope_kv_write", "native": "rope_kv_write",
+        "packed": "packed_qkv_rope_cache", "full": "fused_qkv_rope_cache",
+    }.get(args.qkv_mode)
+    if qkv_module is not None:
+        from kernel_dispatch import _load
+        _load(qkv_module)
+        local_components.append(qkv_module)
     return {"vllm_version": version, "model": model,
-            "profile_api": "LLM.start_profile/stop_profile"}
+            "profile_api": "LLM.start_profile/stop_profile",
+            "local_components": local_components}
 
 
 def json_files(directory):
     return sorted(directory.glob("*-report.json"))
 
 
-def complete_local(directory):
+def complete_local(directory, *, policy=None, qkv_mode=None, residual_rmsnorm=None):
     files = json_files(directory)
     if len(files) != 1:
         return False
     report = json.loads(files[0].read_text())
-    return (report.get("schema_version") == 1
-            and Path(report.get("trace", "missing")).is_file())
+    complete = (report.get("schema_version") == 1
+                and Path(report.get("trace", "missing")).is_file())
+    if policy is not None:
+        complete = complete and report.get("decode_attention_policy") == policy
+    if qkv_mode is not None:
+        complete = complete and report.get("qkv_mode") == qkv_mode
+    if residual_rmsnorm is not None:
+        complete = (complete and
+                    report.get("enable_residual_rmsnorm") is residual_rmsnorm)
+    return complete
 
 
 def complete_vllm(directory):
@@ -135,19 +165,26 @@ def prepare_destination(directory, complete, retry_failed):
 
 def run_local(args):
     output = args.output_dir / "local"
-    if not prepare_destination(output, complete_local, args.retry_failed):
+    expected = lambda directory: complete_local(
+        directory, policy=args.local_policy, qkv_mode=args.qkv_mode,
+        residual_rmsnorm=args.enable_residual_rmsnorm)
+    if not prepare_destination(output, expected, args.retry_failed):
         print("local profile already complete; skipping", flush=True)
         return
     model = resolve_model_source(args)
     command = [sys.executable, str(HERE / "profile_cpp_control.py"),
                "--preset", "fixed", "--case-id", args.shape_id,
                "--kind", "decode", "--occurrence", str(args.occurrence),
-               "--adapter", "piecewise-prefill", "--decode-attention-policy", "splitk",
+               "--adapter", "piecewise-prefill",
+               "--decode-attention-policy", args.local_policy,
+               "--qkv-mode", args.qkv_mode,
                "--prefill-budget", str(args.prefill_budget),
                "--model", model, "--device", args.device, "--seed", str(args.seed),
                "--workload-in", str(args.workload_in),
                "--warmups", str(args.warmups), "--repetitions", str(args.repetitions),
                "--output-dir", str(output)]
+    if args.enable_residual_rmsnorm:
+        command.append("--enable-residual-rmsnorm")
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -417,7 +454,9 @@ def analyze(args, num_blocks):
             or vllm["occurrence"] != args.occurrence
             or local["kind"] != "decode"
             or local["adapter"] != "piecewise-prefill"
-            or local["decode_attention_policy"] != "splitk"
+            or local["decode_attention_policy"] != args.local_policy
+            or local.get("qkv_mode") != args.qkv_mode
+            or local.get("enable_residual_rmsnorm") is not args.enable_residual_rmsnorm
             or local["prefill_budget"] != args.prefill_budget
             or vllm["prefill_token_budget"] != PREFILL_TOKENS_PER_STEP
             or vllm["matched_num_blocks"] != num_blocks
@@ -432,6 +471,8 @@ def analyze(args, num_blocks):
     summary = {
         "schema_version": 1, "status": "complete", "shape_id": args.shape_id,
         "occurrence": args.occurrence,
+        "local_policy": args.local_policy, "qkv_mode": args.qkv_mode,
+        "enable_residual_rmsnorm": args.enable_residual_rmsnorm,
         "local": {"median_wall_ms": local["unprofiled_median_wall_ms"],
                   "cuda_activity": local["cuda_activity"],
                   "target_callback_calls": local_callbacks,
@@ -476,7 +517,10 @@ def run_all(args, case, blocks):
               "--device", args.device, "--seed", str(args.seed),
               "--occurrence", str(args.occurrence), "--warmups", str(args.warmups),
               "--repetitions", str(args.repetitions),
-              "--prefill-budget", str(args.prefill_budget)]
+              "--prefill-budget", str(args.prefill_budget),
+              "--local-policy", args.local_policy, "--qkv-mode", args.qkv_mode]
+    if args.enable_residual_rmsnorm:
+        common.append("--enable-residual-rmsnorm")
     if args.retry_failed:
         common.append("--retry-failed")
     for action in ("run-local", "run-vllm", "analyze"):
@@ -490,9 +534,13 @@ def main():
         setup = verify_external_setup(args)
         result = {"workload": str(args.workload_in), "shape": shape_summary(get_fixed_shape(args.shape_id)),
                   "local_prefill_budget": args.prefill_budget,
+                  "local_policy": args.local_policy,
+                  "local_qkv_mode": args.qkv_mode,
+                  "local_residual_rmsnorm": args.enable_residual_rmsnorm,
                   "vllm_prefill_budget": PREFILL_TOKENS_PER_STEP,
                   "vllm_installed": setup["vllm_version"],
                   "vllm_required": PINNED_VLLM,
+                  "local_components": setup["local_components"],
                   "model": setup["model"], "status": "ready"}
         print(json.dumps(result, indent=2))
     elif args.action == "run-local":

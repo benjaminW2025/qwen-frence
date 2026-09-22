@@ -61,6 +61,12 @@ class ProfileDesignTests(unittest.TestCase):
         self.assertEqual(categories["attention"]["percent_of_cuda_activity"], 60.0)
         self.assertEqual(categories["gemm"]["total_us"], 60.0)
 
+    def test_flash_attention_is_not_misbucketed_as_gemm(self):
+        self.assertEqual(MODULE.cuda_kernel_category(
+            "void cutlass::device_kernel<flash::FlashAttnFwdSm90>()"), "attention")
+        self.assertEqual(MODULE.cuda_kernel_category(
+            "vllm::reshape_and_cache_flash_kernel"), "kv_write")
+
     def test_profile_callback_defers_context_device_copy(self):
         class Adapter:
             def __call__(self, *args):
@@ -79,7 +85,7 @@ class ProfileDesignTests(unittest.TestCase):
         case = get_fixed_case("probe-b64-l4096-o256")
         args = MODULE.build_parser().parse_args(
             ["--preset", "fixed", "--case-id", case["id"],
-             "--decode-attention-policy", "splitk"])
+             "--decode-attention-policy", "fa3", "--qkv-mode", "native"])
         MODULE.validate_args(args)
         steps = [{"kind": "prefill", "calls": [(False, 2048, 1, 2048)]},
                  {"kind": "decode", "calls": [(True, 1, 1, 1)]},

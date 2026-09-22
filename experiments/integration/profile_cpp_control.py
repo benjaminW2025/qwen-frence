@@ -42,8 +42,13 @@ def build_parser():
     parser.add_argument("--adapter", choices=("eager-prefill", "piecewise-prefill"),
                         default="piecewise-prefill")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
-    parser.add_argument("--decode-attention-policy", choices=("production", "splitk"),
+    parser.add_argument("--decode-attention-policy", choices=("production", "splitk", "fa3"),
                         default="production")
+    parser.add_argument("--qkv-mode",
+                        choices=("none", "native-k", "native", "packed", "full"),
+                        default="none", help="decode QKV/RoPE/KV-write fusion arm")
+    parser.add_argument("--enable-residual-rmsnorm", action="store_true",
+                        help="enable the fused residual-add plus RMSNorm decode path")
     parser.add_argument("--prefill-budget", type=int,
                         help="override the case budget and matching piecewise graph bucket")
     parser.add_argument("--device", default="cuda:0")
@@ -199,8 +204,12 @@ def cuda_kernel_category(name):
     lower = name.lower()
     if "memcpy" in lower or "memset" in lower:
         return "memory_copy_or_set"
+    if ("index_elementwise" in lower or "scatter" in lower
+            or "reshape_and_cache" in lower or "concat_and_cache" in lower):
+        return "kv_write"
     if any(token in lower for token in
-           ("attention", "grouped_gqa", "grouped_splitk", "splitk_reduce")):
+           ("attention", "grouped_gqa", "grouped_splitk", "splitk_reduce",
+            "flashattn", "flash_attn", "fmha", "paged_attention")):
         return "attention"
     if "rope" in lower:
         return "rope"
@@ -208,9 +217,6 @@ def cuda_kernel_category(name):
         return "normalization"
     if any(token in lower for token in ("swiglu", "silu", "sigmoid")):
         return "activation"
-    if ("index_elementwise" in lower or "scatter" in lower
-            or "reshape_and_cache" in lower or "concat_and_cache" in lower):
-        return "kv_write"
     if any(token in lower for token in
            ("nvjet", "gemm", "cublas", "cutlass", "matmul")):
         return "gemm"
@@ -279,7 +285,12 @@ def main():
                    else GraphModelAdapter)
     adapter_options = dict(max_running=config.max_batch_size,
                            max_context_length=config.max_context_length,
-                           decode_attention_policy=args.decode_attention_policy)
+                           decode_attention_policy=args.decode_attention_policy,
+                           enable_residual_rmsnorm=args.enable_residual_rmsnorm,
+                           enable_native_decode_rope_kv=args.qkv_mode == "native-k",
+                           enable_native_decode_qkv_postprocess=args.qkv_mode == "native",
+                           enable_packed_qkv_rope_cache=args.qkv_mode == "packed",
+                           enable_fused_qkv_rope_cache=args.qkv_mode == "full")
     if adapter_cls is PiecewiseGraphModelAdapter and args.prefill_budget is not None:
         adapter_options.update(max_capture_tokens=args.prefill_budget,
                                max_prefill_shapes=1,
@@ -340,6 +351,8 @@ def main():
         "adapter": args.adapter, "model": model_source,
         "decode_attention_policy": args.decode_attention_policy,
         "decode_attention_action": adapter.action,
+        "qkv_mode": args.qkv_mode,
+        "enable_residual_rmsnorm": args.enable_residual_rmsnorm,
         "prefill_budget": case["prefill_budget"],
         "target_step_index": target_index,
         "target_step_calls": expected_steps[target_index][1],
