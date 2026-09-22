@@ -1,0 +1,111 @@
+{
+  "schema_version": 2,
+  "status": "complete",
+  "created_at": "2026-09-22T04:18:29.945466+00:00",
+  "micro_d2h_speedups": {
+    "chunked_vs_per_step_d2h": 4.194551213062329,
+    "pinned_async_vs_per_step_d2h": 6.207836534085738
+  },
+  "full_model_speedups": [
+    {
+      "steps": 1,
+      "logit_status": "pass",
+      "max_logit_error": 0.0,
+      "materialized_matching_tokens": 64,
+      "fused_matching_tokens": 64,
+      "total_tokens": 64,
+      "fused_head_speedup_vs_materialized_chunk": {
+        "gpu_resident": 1.0077101030411337,
+        "one_blocking_d2h": 1.0100762091154405,
+        "one_pinned_async_d2h": 1.0094919269900755
+      },
+      "repeated_k1_gpu_chain": 1.0079930995698054,
+      "repeated_k1_cpu_sync_each_step": 1.0,
+      "repeated_fused_k1_gpu_chain": 1.017113663285303,
+      "repeated_fused_k1_cpu_sync_each_step": 1.0109010929083488,
+      "chunk_gpu_resident": 1.010520303037109,
+      "chunk_one_blocking_d2h": 1.005546302143252,
+      "chunk_one_pinned_async_d2h": 1.008749434017187,
+      "fused_head_chunk_gpu_resident": 1.018311518698683,
+      "fused_head_chunk_one_blocking_d2h": 1.0156783969589052,
+      "fused_head_chunk_one_pinned_async_d2h": 1.0183244099961581
+    },
+    {
+      "steps": 2,
+      "logit_status": "pass",
+      "max_logit_error": 0.0,
+      "materialized_matching_tokens": 128,
+      "fused_matching_tokens": 128,
+      "total_tokens": 128,
+      "fused_head_speedup_vs_materialized_chunk": {
+        "gpu_resident": 1.007315969571268,
+        "one_blocking_d2h": 1.0086009743169904,
+        "one_pinned_async_d2h": 1.008936241162107
+      },
+      "repeated_k1_gpu_chain": 1.0056651724326757,
+      "repeated_k1_cpu_sync_each_step": 1.0,
+      "repeated_fused_k1_gpu_chain": 1.0170050676016718,
+      "repeated_fused_k1_cpu_sync_each_step": 1.01100621642542,
+      "chunk_gpu_resident": 1.008626040711388,
+      "chunk_one_blocking_d2h": 1.0053198601936522,
+      "chunk_one_pinned_async_d2h": 1.006969805316083,
+      "fused_head_chunk_gpu_resident": 1.016005118134021,
+      "fused_head_chunk_one_blocking_d2h": 1.013966590491538,
+      "fused_head_chunk_one_pinned_async_d2h": 1.0159683303393474
+    },
+    {
+      "steps": 4,
+      "logit_status": "pass",
+      "max_logit_error": 0.0,
+      "materialized_matching_tokens": 256,
+      "fused_matching_tokens": 256,
+      "total_tokens": 256,
+      "fused_head_speedup_vs_materialized_chunk": {
+        "gpu_resident": 1.004872129632454,
+        "one_blocking_d2h": 1.0054296072787605,
+        "one_pinned_async_d2h": 1.005543343885416
+      },
+      "repeated_k1_gpu_chain": 1.0058108786253823,
+      "repeated_k1_cpu_sync_each_step": 1.0,
+      "repeated_fused_k1_gpu_chain": 1.016805562442441,
+      "repeated_fused_k1_cpu_sync_each_step": 1.0109764828901944,
+      "chunk_gpu_resident": 1.0113330064253647,
+      "chunk_one_blocking_d2h": 1.0100135540336543,
+      "chunk_one_pinned_async_d2h": 1.010675968925479,
+      "fused_head_chunk_gpu_resident": 1.0162603519342488,
+      "fused_head_chunk_one_blocking_d2h": 1.0154975309782823,
+      "fused_head_chunk_one_pinned_async_d2h": 1.016278493377959
+    },
+    {
+      "steps": 8,
+      "logit_status": "pass",
+      "max_logit_error": 0.0,
+      "materialized_matching_tokens": 512,
+      "fused_matching_tokens": 512,
+      "total_tokens": 512,
+      "fused_head_speedup_vs_materialized_chunk": {
+        "gpu_resident": 1.0079223302563747,
+        "one_blocking_d2h": 1.0071864235279926,
+        "one_pinned_async_d2h": 1.0078949767214402
+      },
+      "repeated_k1_gpu_chain": 1.0061438847497488,
+      "repeated_k1_cpu_sync_each_step": 1.0,
+      "repeated_fused_k1_gpu_chain": 1.0165405450448184,
+      "repeated_fused_k1_cpu_sync_each_step": 1.0110799653334879,
+      "chunk_gpu_resident": 1.0103832843109386,
+      "chunk_one_blocking_d2h": 1.0102025486734323,
+      "chunk_one_pinned_async_d2h": 1.010155356222447,
+      "fused_head_chunk_gpu_resident": 1.0183878743747703,
+      "fused_head_chunk_one_blocking_d2h": 1.0174622920372571,
+      "fused_head_chunk_one_pinned_async_d2h": 1.0181305092448614
+    }
+  ],
+  "cuda_graph_capabilities": {
+    "torch_cuda_graph": true,
+    "torch_graph_debug_mode": true,
+    "torch_device_graph_launch": false,
+    "torch_conditional_graph_nodes": false,
+    "decision": "unsupported by the installed PyTorch API; requires a CUDA C++ prototype"
+  },
+  "production_decision": "Report every measured fused-head and K-step effect, including sub-percent wins. Promote only correctness-passing arms whose paired samples establish that the effect exceeds run-to-run noise; then add C++ chunk commit and EOS truncation."
+}
