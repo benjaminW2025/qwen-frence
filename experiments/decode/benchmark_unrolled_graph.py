@@ -80,7 +80,8 @@ def _validate_slots(cache, flat_slots):
         )
 
 
-def eager_trajectory(model, cache, first_ids, metadata, *, attention_policy="splitk"):
+def eager_trajectory(model, cache, first_ids, metadata, *, attention_policy="splitk",
+                     forward_options=None):
     """Authoritative repeated-forward trajectory retaining every logit tensor."""
     from paged_graph_decoder import graph_decode_forward
 
@@ -88,11 +89,13 @@ def eager_trajectory(model, cache, first_ids, metadata, *, attention_policy="spl
     logits = []
     tokens = []
     max_context = int(metadata[-1][1][0])
+    forward_options = {} if forward_options is None else dict(forward_options)
     for positions, lengths, table, slots in metadata:
         output = graph_decode_forward(
             model, cache, token, positions, lengths, table, slots,
             decode_attention_policy=attention_policy,
             max_decode_context_length=max_context,
+            **forward_options,
         )
         logits.append(output)
         token = output.argmax(-1).reshape(first_ids.shape)

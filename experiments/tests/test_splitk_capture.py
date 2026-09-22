@@ -154,6 +154,18 @@ class CaptureBoundTests(unittest.TestCase):
                 enable_native_decode_qkv_postprocess=True,
             )
 
+    def test_single_step_graph_accepts_fused_output_head(self):
+        config = {"block_m": 64, "block_n": 64, "block_k": 64,
+                  "num_warps": 4, "num_stages": 3}
+        decoder = self._decoder(
+            "fa3", output_head_policy="fused_argmax",
+            output_head_config=config,
+        )
+        self.assertEqual(decoder.output_head_policy, "fused_argmax")
+        self.assertEqual(decoder.output_head_config, config)
+        with self.assertRaisesRegex(ValueError, "output-head policy"):
+            self._decoder("fa3", output_head_policy="unknown")
+
     def test_production_needs_no_bound(self):
         decoder = self._decoder("production", max_blocks=64)
         self.assertIsNone(decoder.max_decode_context_length)

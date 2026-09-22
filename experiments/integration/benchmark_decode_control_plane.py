@@ -2,9 +2,10 @@
 """Measure decode CPU/GPU handoffs and fixed-regime GPU-resident execution.
 
 The cheap microbenchmarks isolate sampling, token copies, state updates, and
-metadata staging.  The model arm compares repeated K=1 FA3 graph replay with
-K=2/4/8 graphs using the current accepted decode fusions.  Unsupported CUDA
-graph control-flow features are reported explicitly instead of being skipped.
+metadata staging. The model arm compares materialized-logit and fused-argmax
+FA3 graphs at K=1/2/4/8 using the current accepted decode fusions. Validation
+graphs retain every logit. Unsupported CUDA graph control-flow features are
+reported explicitly instead of being skipped.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "engine/kvcache",
 
 
 STEPS = (2, 4, 8)
+GRAPH_STEPS = (1, *STEPS)
 
 
 def build_parser():
@@ -194,11 +196,58 @@ def fusion_options(args):
     }
 
 
+def output_head_config(batch):
+    """Reuse the best correctness-passing fixed-regime configurations.
+
+    The B8/B64 choices come from the checked-in isolated output-head sweep.  The
+    fallback keeps ad-hoc smoke batches runnable without pretending they were tuned.
+    """
+    if batch < 1:
+        raise ValueError("output-head batch must be positive")
+    block_m = 16 if batch <= 16 else 32 if batch <= 32 else 64
+    if batch <= 16:
+        return {"block_m": block_m, "block_n": 256, "block_k": 64,
+                "num_warps": 8, "num_stages": 3,
+                "source": "checked-in B8 graph-warm winner"}
+    return {"block_m": block_m, "block_n": 64, "block_k": 64,
+            "num_warps": 4, "num_stages": 3,
+            "source": ("checked-in B64 graph-warm winner" if batch == 64
+                       else "untuned smoke fallback")}
+
+
+def check_experiment_setup(args):
+    """Fail before model allocation if any selected experimental path is unavailable."""
+    from kernel_dispatch import _load
+    from model_setup import check_startup
+
+    startup = check_startup(args.device)
+    _load("paged_decode_fa3")._load_fa3()
+    _load("fused_lm_head")
+    components = ["vllm_bundled_fa3", "fused_lm_head"]
+    qkv_module = {
+        "native-k": "rope_kv_write", "native": "rope_kv_write",
+        "packed": "packed_qkv_rope_cache",
+    }.get(args.qkv_mode)
+    if qkv_module is not None:
+        _load(qkv_module)
+        components.append(qkv_module)
+    startup["experiment_components"] = components
+    startup["configuration"] = {
+        "attention": "fa3", "qkv_mode": args.qkv_mode,
+        "residual_rmsnorm": args.residual_rmsnorm,
+        "output_heads": ["materialized_logits_argmax", "fused_projection_argmax"],
+        "steps": list(GRAPH_STEPS),
+    }
+    return startup
+
+
 def run_model(args):
     import torch
-    from benchmark_unrolled_graph import (future_slots, initialize_cache,
-                                           kv_accuracy, restore_slots,
-                                           snapshot_slots, stage_unrolled_case)
+    from benchmark_unrolled_graph import (eager_trajectory, future_slots,
+                                           initialize_cache, kv_accuracy,
+                                           restore_slots, snapshot_slots,
+                                           stage_unrolled_case,
+                                           trajectory_accuracy)
     from model_setup import load_model_only, prepare_hub_transfer
     from paged_graph_decoder import CUDAGraphDecoder
     from unrolled_graph_decoder import UnrolledCUDAGraphDecoder, first_eos_positions
@@ -213,25 +262,52 @@ def run_model(args):
         args.seed, args.device,
     )
     options = fusion_options(args)
+    head_config = output_head_config(args.batch)
+    kernel_head_config = {key: value for key, value in head_config.items()
+                          if key != "source"}
     single = CUDAGraphDecoder(
         engine.model, cache, args.batch, metadata[0][2].shape[1], args.device,
         torch.float16, decode_attention_policy="fa3",
         max_decode_context_length=args.context + max(STEPS), **options,
     ).capture()
-    chunks = {
+    fused_single = CUDAGraphDecoder(
+        engine.model, cache, args.batch, metadata[0][2].shape[1], args.device,
+        torch.float16, decode_attention_policy="fa3",
+        max_decode_context_length=args.context + max(STEPS),
+        output_head_policy="fused_argmax",
+        output_head_config=kernel_head_config, **options,
+    ).capture()
+    validation_chunks = {
+        steps: UnrolledCUDAGraphDecoder(
+            engine.model, cache, metadata[:steps], decode_attention_policy="fa3",
+            max_decode_context_length=args.context + steps,
+            retain_logits=True, output_head_policy="logits", **options,
+        ).capture()
+        for steps in GRAPH_STEPS
+    }
+    materialized_chunks = {
         steps: UnrolledCUDAGraphDecoder(
             engine.model, cache, metadata[:steps], decode_attention_policy="fa3",
             max_decode_context_length=args.context + steps,
             retain_logits=False, output_head_policy="logits", **options,
         ).capture()
-        for steps in STEPS
+        for steps in GRAPH_STEPS
+    }
+    fused_head_chunks = {
+        steps: UnrolledCUDAGraphDecoder(
+            engine.model, cache, metadata[:steps], decode_attention_policy="fa3",
+            max_decode_context_length=args.context + steps,
+            retain_logits=False, output_head_policy="fused_argmax",
+            output_head_config=kernel_head_config, **options,
+        ).capture()
+        for steps in GRAPH_STEPS
     }
     initialize_cache(torch, cache, generator)
     pinned = {steps: torch.empty((steps, args.batch), dtype=torch.int64,
                                  device="cpu", pin_memory=True)
-              for steps in STEPS}
+              for steps in GRAPH_STEPS}
     rows = []
-    for steps in STEPS:
+    for steps in GRAPH_STEPS:
         selected = metadata[:steps]
         slots = future_slots(selected)
         initial = snapshot_slots(cache, slots)
@@ -249,48 +325,125 @@ def run_model(args):
                     token.cpu()
             return torch.stack(emitted)
 
-        reference = repeated_k1()
+        def repeated_fused_k1(copy_each_step=False):
+            token = first_ids
+            emitted = []
+            for positions, lengths, table, step_slots in selected:
+                token = fused_single.decode(
+                    token, positions, lengths, table, step_slots,
+                ).reshape(args.batch, 1)
+                emitted.append(token.reshape(-1))
+                if copy_each_step:
+                    token.cpu()
+            return torch.stack(emitted)
+
+        reference, reference_logits = eager_trajectory(
+            engine.model, cache, first_ids, selected, attention_policy="fa3",
+            forward_options=options)
         torch.cuda.synchronize()
         reference_kv = snapshot_slots(cache, slots)
         restore_slots(cache, slots, initial)
-        actual, retained = chunks[steps].replay(first_ids)
+
+        validation_tokens, validation_logits = validation_chunks[steps].replay(first_ids)
+        torch.cuda.synchronize()
+        validation_kv = snapshot_slots(cache, slots)
+        logit_correctness = trajectory_accuracy(
+            torch, validation_tokens, validation_logits,
+            reference, reference_logits, atol=.05,
+        )
+        restore_slots(cache, slots, initial)
+
+        materialized_tokens, retained = materialized_chunks[steps].replay(first_ids)
         torch.cuda.synchronize()
         if retained:
-            raise AssertionError("production chunk unexpectedly retained logits")
-        actual_kv = snapshot_slots(cache, slots)
+            raise AssertionError("materialized production chunk retained validation logits")
+        materialized_kv = snapshot_slots(cache, slots)
+        restore_slots(cache, slots, initial)
+
+        fused_tokens, fused_logits = fused_head_chunks[steps].replay(first_ids)
+        torch.cuda.synchronize()
+        if fused_logits:
+            raise AssertionError("fused-head production chunk retained validation logits")
+        fused_kv = snapshot_slots(cache, slots)
         correctness = {
-            "matching_tokens": int((actual == reference).sum()),
+            "validation_logits": logit_correctness,
+            "retained_validation_logits_bytes": sum(
+                tensor.numel() * tensor.element_size()
+                for tensor in validation_logits
+            ),
+            "validation_kv": kv_accuracy(torch, validation_kv, reference_kv, atol=.05),
+            "materialized_head": {
+                "matching_tokens": int((materialized_tokens == reference).sum()),
+                "total_tokens": reference.numel(),
+                "kv": kv_accuracy(torch, materialized_kv, reference_kv, atol=.05),
+            },
+            "fused_head": {
+                "matching_tokens": int((fused_tokens == reference).sum()),
+                "total_tokens": reference.numel(),
+                "first_divergence_step": next(
+                    (index for index in range(steps)
+                     if not torch.equal(fused_tokens[index], reference[index])), None),
+                "kv": kv_accuracy(torch, fused_kv, reference_kv, atol=.05),
+            },
+            "matching_tokens": int((materialized_tokens == reference).sum()),
             "total_tokens": reference.numel(),
-            "kv": kv_accuracy(torch, actual_kv, reference_kv, atol=.05),
+            "kv": kv_accuracy(torch, materialized_kv, reference_kv, atol=.05),
             "first_eos_positions": [int(x) for x in
-                                    first_eos_positions(actual, args.eos_token_id).cpu()],
+                                    first_eos_positions(
+                                        materialized_tokens, args.eos_token_id).cpu()],
         }
         restore_slots(cache, slots, initial)
 
         def chunk_blocking():
-            chunks[steps].replay(first_ids)
-            return chunks[steps].s_tokens.cpu()
+            materialized_chunks[steps].replay(first_ids)
+            return materialized_chunks[steps].s_tokens.cpu()
 
         def chunk_pinned():
-            chunks[steps].replay(first_ids)
-            pinned[steps].copy_(chunks[steps].s_tokens, non_blocking=True)
+            materialized_chunks[steps].replay(first_ids)
+            pinned[steps].copy_(materialized_chunks[steps].s_tokens, non_blocking=True)
+
+        def fused_chunk_blocking():
+            fused_head_chunks[steps].replay(first_ids)
+            return fused_head_chunks[steps].s_tokens.cpu()
+
+        def fused_chunk_pinned():
+            fused_head_chunks[steps].replay(first_ids)
+            pinned[steps].copy_(fused_head_chunks[steps].s_tokens, non_blocking=True)
 
         timings = {
             "repeated_k1_gpu_chain": measure(
                 torch, repeated_k1, args.warmups, args.repetitions),
             "repeated_k1_cpu_sync_each_step": measure(
                 torch, lambda: repeated_k1(True), args.warmups, args.repetitions),
+            "repeated_fused_k1_gpu_chain": measure(
+                torch, repeated_fused_k1, args.warmups, args.repetitions),
+            "repeated_fused_k1_cpu_sync_each_step": measure(
+                torch, lambda: repeated_fused_k1(True),
+                args.warmups, args.repetitions),
             "chunk_gpu_resident": measure(
-                torch, lambda: chunks[steps].replay(first_ids),
+                torch, lambda: materialized_chunks[steps].replay(first_ids),
                 args.warmups, args.repetitions),
             "chunk_one_blocking_d2h": measure(
                 torch, chunk_blocking, args.warmups, args.repetitions),
             "chunk_one_pinned_async_d2h": measure(
                 torch, chunk_pinned, args.warmups, args.repetitions),
+            "fused_head_chunk_gpu_resident": measure(
+                torch, lambda: fused_head_chunks[steps].replay(first_ids),
+                args.warmups, args.repetitions),
+            "fused_head_chunk_one_blocking_d2h": measure(
+                torch, fused_chunk_blocking, args.warmups, args.repetitions),
+            "fused_head_chunk_one_pinned_async_d2h": measure(
+                torch, fused_chunk_pinned, args.warmups, args.repetitions),
         }
         baseline = timings["repeated_k1_cpu_sync_each_step"]["wall_median_ms"]
         rows.append({
             "steps": steps, "correctness": correctness, "timings": timings,
+            "fused_head_speedup_vs_materialized_chunk": {
+                suffix: (timings[f"chunk_{suffix}"]["wall_median_ms"] /
+                         timings[f"fused_head_chunk_{suffix}"]["wall_median_ms"])
+                for suffix in ("gpu_resident", "one_blocking_d2h",
+                               "one_pinned_async_d2h")
+            },
             "speedup_vs_current_cpu_sync": {
                 name: baseline / value["wall_median_ms"]
                 for name, value in timings.items()
@@ -299,21 +452,26 @@ def run_model(args):
         restore_slots(cache, slots, initial)
 
     report = {
-        "schema_version": 1, "status": "complete", "kind": "full_model",
+        "schema_version": 2, "status": "complete", "kind": "full_model",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "model": args.model, "model_load_seconds": load_seconds,
         "hub_transfer": hub_transfer,
         "configuration": {"batch": args.batch, "context": args.context,
-                          "steps": list(STEPS), "attention": "fa3",
+                          "steps": list(GRAPH_STEPS), "attention": "fa3",
                           "qkv_mode": args.qkv_mode,
                           "residual_rmsnorm": args.residual_rmsnorm,
+                          "output_heads": ["materialized_logits_argmax",
+                                           "fused_projection_argmax"],
+                          "fused_output_head_config": head_config,
                           "warmups": args.warmups,
                           "repetitions": args.repetitions,
                           "eos_token_id": args.eos_token_id},
         "rows": rows,
         "scope": (
             "full 28-layer fixed-regime FA3 decode with real weights and KV cache; "
-            "flexible scheduler chunk commit is not enabled by this experiment"
+            "validation graphs retain and compare every logit while production "
+            "graphs compare materialized and fused output heads; flexible scheduler "
+            "chunk commit is not enabled by this experiment"
         ),
     }
     atomic_json(args.output_dir / "full-model.json", report)
@@ -330,18 +488,28 @@ def analyze(args):
     rows = []
     for row in model["rows"]:
         rows.append({"steps": row["steps"],
-                     "matching_tokens": row["correctness"]["matching_tokens"],
+                     "logit_status": row["correctness"]["validation_logits"]["status"],
+                     "max_logit_error": row["correctness"]["validation_logits"][
+                         "max_absolute_error"],
+                     "materialized_matching_tokens": row["correctness"][
+                         "materialized_head"]["matching_tokens"],
+                     "fused_matching_tokens": row["correctness"]["fused_head"][
+                         "matching_tokens"],
                      "total_tokens": row["correctness"]["total_tokens"],
+                     "fused_head_speedup_vs_materialized_chunk": row[
+                         "fused_head_speedup_vs_materialized_chunk"],
                      **row["speedup_vs_current_cpu_sync"]})
     report = {
-        "schema_version": 1, "status": "complete",
+        "schema_version": 2, "status": "complete",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "micro_d2h_speedups": micro["measurements"]["derived"],
         "full_model_speedups": rows,
         "cuda_graph_capabilities": micro["cuda_graph_capabilities"],
         "production_decision": (
-            "Use the fastest correct K arm only after its speedup exceeds run-to-run noise; "
-            "then add C++ chunk commit and EOS truncation."
+            "Report every measured fused-head and K-step effect, including sub-percent "
+            "wins. Promote only correctness-passing arms whose paired samples establish "
+            "that the effect exceeds run-to-run noise; then add C++ chunk commit and "
+            "EOS truncation."
         ),
     }
     atomic_json(args.output_dir / "report.json", report)
@@ -352,11 +520,16 @@ def analyze(args):
 def main():
     args = build_parser().parse_args()
     validate(args)
+    setup = (check_experiment_setup(args)
+             if args.action in ("check-setup", "run-model", "run") else None)
     if args.action == "plan":
         print(json.dumps({"batch": args.batch, "context": args.context,
-                          "steps": list(STEPS), "attention": "fa3",
+                          "steps": list(GRAPH_STEPS), "attention": "fa3",
                           "qkv_mode": args.qkv_mode,
                           "residual_rmsnorm": args.residual_rmsnorm,
+                          "output_heads": ["materialized_logits_argmax",
+                                           "fused_projection_argmax"],
+                          "fused_output_head_config": output_head_config(args.batch),
                           "experiments": [
                               "gpu sampling", "per-step vs chunked token D2H",
                               "GPU state update", "K-step graph", "pinned output ring",
@@ -365,8 +538,7 @@ def main():
                           ]}, indent=2))
         return
     if args.action == "check-setup":
-        from model_setup import check_startup
-        print(json.dumps(check_startup(args.device), indent=2))
+        print(json.dumps(setup, indent=2))
         return
     if args.action in ("run-micro", "run"):
         run_micro(args)

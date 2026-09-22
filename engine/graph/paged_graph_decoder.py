@@ -35,7 +35,8 @@ class CUDAGraphDecoder:
                  enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
-                 enable_packed_qkv_rope_cache=False):
+                 enable_packed_qkv_rope_cache=False,
+                 output_head_policy="logits", output_head_config=None):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -58,6 +59,10 @@ class CUDAGraphDecoder:
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.output_head_policy = output_head_policy
+        self.output_head_config = output_head_config
+        if output_head_policy not in ("logits", "fused_argmax"):
+            raise ValueError(f"unknown output-head policy: {output_head_policy}")
         postprocess_modes = sum((self.enable_native_decode_rope_kv,
                                  self.enable_native_decode_qkv_postprocess,
                                  self.enable_fused_qkv_rope_cache,
@@ -93,6 +98,8 @@ class CUDAGraphDecoder:
             ),
             enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
+            output_head_policy=self.output_head_policy,
+            output_head_config=self.output_head_config,
         )
 
     def capture(self, warmup=3):
@@ -126,7 +133,7 @@ class CUDAGraphDecoder:
         self.s_block_table.copy_(block_table)
         self.s_slot_mapping.copy_(slot_mapping)
         self.graph.replay()
-        return self.s_logits        # (B, 1, vocab)
+        return self.s_logits
 
 
 # Graph safe decode forwrad
