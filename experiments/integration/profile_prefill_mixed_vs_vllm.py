@@ -54,7 +54,7 @@ def configure_vllm_step_mode():
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("plan", "check-setup", "run", "run-local",
-                                           "run-vllm", "analyze"))
+                                           "run-vllm", "analyze", "run-ladder"))
     parser.add_argument("--kind", choices=("prefill", "mixed"), required=True)
     parser.add_argument("--shape-id", choices=("fixed-b8-l256-o128", "fixed-b64-l256-o128"),
                         default="fixed-b8-l256-o128")
@@ -71,9 +71,11 @@ def build_parser():
                         help="shared local/vLLM token budget: B8=2048, B64=8192")
     parser.add_argument("--local-policy", choices=("fa3", "splitk"), default="fa3")
     parser.add_argument("--local-mixed-policy",
-                        choices=("separate", "packed", "packed-fa3"),
+                        choices=("separate", "packed", "packed-fa3",
+                                 "packed-exact", "packed-exact-qkv"),
                         default="separate", help="packed shares projections; packed-fa3 "
-                        "uses FA3 for its decode rows")
+                        "uses FA3 for its decode rows; exact variants specialize the "
+                        "graph bucket to this mixed cohort")
     parser.add_argument("--vllm-reference-dir", type=Path,
                         help="reuse an already validated vLLM arm instead of loading it again")
     parser.add_argument("--warmups", type=int, default=1)
@@ -135,7 +137,18 @@ def validate(args):
     return case, requests, first, second, target_index
 
 
+def capture_configuration(args, case, first, second):
+    """Keep the scheduler token budget fixed while changing only graph work."""
+    exact = args.local_mixed_policy in ("packed-exact", "packed-exact-qkv")
+    bucket = second * case["lengths"][0] + first if exact else args.prefill_budget
+    if bucket < (second or first) * case["lengths"][0] or bucket > args.prefill_budget:
+        raise ValueError("capture bucket does not fit the selected cohort and budget")
+    return bucket, args.local_mixed_policy == "packed-exact-qkv"
+
+
 def plan(args, case, first, second, target_index):
+    bucket, qkv_fusion = capture_configuration(args, case, first, second)
+    target_tokens = (second or first) * case["lengths"][0] + (first if second else 0)
     return {"kind": args.kind, "shape_id": args.shape_id,
             "first_wave": first, "second_wave": second,
             "prompt_length": case["lengths"][0], "output_tokens": args.output_tokens,
@@ -143,6 +156,9 @@ def plan(args, case, first, second, target_index):
             "target_decode_tokens": first if second else 0,
             "target_prefill_tokens": (second or first) * case["lengths"][0],
             "shared_prefill_budget": args.prefill_budget,
+            "capture_bucket_tokens": bucket,
+            "capture_padding_tokens": bucket - target_tokens,
+            "prefill_qkv_rope_cache": qkv_fusion,
             "local_model_passes": (2 if second and args.local_mixed_policy == "separate"
                                    else 1),
             "local_mixed_policy": args.local_mixed_policy,
@@ -201,12 +217,44 @@ def compare_target_logits(torch, baseline, candidate):
             else "numerical_difference", "atol": .05, "rtol": .01, "rows": rows}
 
 
+def snapshot_target_kv(torch, pool, slots):
+    """Read only target-token cache entries, not the whole reserved KV pool."""
+    indices = slots.to(device=pool.k_pool[0].device, dtype=torch.long)
+    tensors = pool.k_pool + pool.v_pool
+    return [tensor.view(-1, tensor.shape[-2], tensor.shape[-1])
+            .index_select(0, indices).detach().cpu() for tensor in tensors]
+
+
+def compare_target_kv(torch, baseline, candidate):
+    if len(baseline) != len(candidate):
+        raise AssertionError("KV layer count differs")
+    elements = outside = 0
+    max_abs = 0.0
+    for expected, actual in zip(baseline, candidate):
+        if expected.shape != actual.shape:
+            raise AssertionError("KV target shape differs")
+        reference, observed = expected.float(), actual.float()
+        finite = torch.isfinite(reference) & torch.isfinite(observed)
+        difference = (observed - reference).abs()
+        outside += int((~finite | (difference > .05 + .01 * reference.abs())).sum())
+        elements += difference.numel()
+        max_abs = max(max_abs, float(difference[finite].max()) if finite.any() else 0.0)
+    return {"status": "pass" if outside == 0 else "numerical_difference",
+            "elements": elements, "outside_tolerance": outside, "max_abs": max_abs,
+            "atol": .05, "rtol": .01}
+
+
 def complete_local(directory, args):
     reports = list(directory.glob("*-report.json"))
     if len(reports) != 1:
         return False
     report = json.loads(reports[0].read_text())
     trace = Path(report.get("trace", "missing"))
+    shape = get_fixed_shape(args.shape_id)
+    first = (shape["batch"] // 2 if shape["batch"] == 8 else shape["batch"] // 4)
+    second = first if args.kind == "mixed" else 0
+    bucket, qkv_fusion = capture_configuration(
+        args, {"lengths": [shape["prompt_length"]]}, first, second)
     return (report.get("kind") == args.kind and
             report.get("shape_id") == args.shape_id and
             report.get("prefill_budget") == args.prefill_budget and
@@ -214,6 +262,10 @@ def complete_local(directory, args):
             report.get("output_tokens") == args.output_tokens and
             report.get("local_policy") == args.local_policy and
             report.get("local_mixed_policy", "separate") == args.local_mixed_policy and
+            report.get("capture_bucket_tokens", args.prefill_budget) == bucket and
+            report.get("prefill_qkv_rope_cache", False) == qkv_fusion and
+            (not qkv_fusion or (report.get("same_history_exact_control_correctness") or {})
+             .get("target_kv") is not None) and
             (trace.is_file() or len(list(directory.rglob(trace.name))) == 1))
 
 
@@ -255,15 +307,17 @@ def run_local(args, case, requests, first, second, target_index):
     adapter_class = (PackedMixedPiecewiseGraphModelAdapter
                      if args.local_mixed_policy != "separate"
                      else PiecewiseGraphModelAdapter)
+    capture_bucket, qkv_fusion = capture_configuration(args, case, first, second)
     adapter_options = dict(
         max_running=config.max_batch_size,
         max_context_length=config.max_context_length,
         decode_attention_policy=args.local_policy,
         max_capture_tokens=args.prefill_budget, max_prefill_shapes=1,
-        prefill_buckets=[args.prefill_budget],
+        prefill_buckets=[capture_bucket],
         enable_residual_rmsnorm=True,
         enable_native_decode_qkv_postprocess=True,
-        enable_prefill_swiglu_fusion=True)
+        enable_prefill_swiglu_fusion=True,
+        enable_prefill_packed_qkv_rope_cache=qkv_fusion)
     if args.local_mixed_policy == "packed-fa3":
         adapter_options["mixed_attention_policy"] = "fa3_hybrid"
     adapter = adapter_class(engine.model, pool, None, **adapter_options)
@@ -275,6 +329,9 @@ def run_local(args, case, requests, first, second, target_index):
     poison()
     preflight = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                         adapter, requests)
+    if (set(adapter.piecewise_prefill.shapes) != {capture_bucket}
+            or adapter.piecewise_prefill.eager_calls):
+        raise AssertionError("piecewise prefill missed the selected graph bucket")
     expected_steps = [(row["kind"], row["calls"], row["completed"])
                       for row in preflight["steps"]]
     if target_index >= len(expected_steps):
@@ -286,6 +343,9 @@ def run_local(args, case, requests, first, second, target_index):
     output_hash = hashlib.sha256(json.dumps(
         preflight["outputs"], sort_keys=True).encode()).hexdigest()
     correctness = None
+    exact_control_correctness = None
+    candidate_kv = None
+    candidate_slots = None
     if args.local_mixed_policy != "separate":
         first_call = sum(len(row["calls"]) for row in preflight["steps"][:target_index])
         reference = TargetLogits(first_call, len(calls))
@@ -296,6 +356,10 @@ def run_local(args, case, requests, first, second, target_index):
             poison()
             execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                     adapter, requests)
+            if qkv_fusion:
+                candidate_slots = torch.cat(
+                    [row["metadata"][2] for row in candidate.rows])
+                candidate_kv = snapshot_target_kv(torch, pool, candidate_slots)
             adapter.enable_packed_mixed = True
             adapter.observer = candidate
             poison()
@@ -304,7 +368,44 @@ def run_local(args, case, requests, first, second, target_index):
         finally:
             adapter.enable_packed_mixed = True
             adapter.observer = None
+        if len(reference.rows) != len(calls) or len(candidate.rows) != len(calls):
+            raise AssertionError("target logit observer missed a mixed callback")
         correctness = compare_target_logits(torch, reference.rows, candidate.rows)
+        if qkv_fusion:
+            # The packed-vs-separate check above holds the fusion constant.
+            # Compare against the exact-bucket unfused model as a second,
+            # untimed numerical gate so the fusion itself is not hidden.
+            control_options = {**adapter_options,
+                               "enable_prefill_packed_qkv_rope_cache": False}
+            control_adapter = PackedMixedPiecewiseGraphModelAdapter(
+                engine.model, pool, None, **control_options)
+            control = TargetLogits(first_call, len(calls))
+            control_adapter.observer = control
+            try:
+                poison()
+                control_run = execute(
+                    torch, cpp.IterationLoop(config, torch.device(args.device)),
+                    control_adapter, requests)
+                if len(control.rows) != len(calls):
+                    raise AssertionError("exact control missed a target callback")
+                exact_control_correctness = compare_target_logits(
+                    torch, control.rows, candidate.rows)
+                control_kv = snapshot_target_kv(torch, pool, candidate_slots)
+                kv_check = compare_target_kv(torch, candidate_kv, control_kv)
+                exact_control_correctness["target_kv"] = kv_check
+                if kv_check["status"] != "pass":
+                    exact_control_correctness["status"] = "numerical_difference"
+                tokens_equal = control_run["outputs"] == preflight["outputs"]
+                exact_control_correctness["whole_workload_tokens_equal"] = tokens_equal
+                if not tokens_equal:
+                    exact_control_correctness["status"] = "numerical_difference"
+            except AssertionError as error:
+                exact_control_correctness = {
+                    "status": "history_diverged", "reason": str(error),
+                    "whole_workload_tokens_equal": False}
+            finally:
+                control_adapter.observer = None
+                del control_adapter
 
     def checked_run(*, trace=False):
         poison()
@@ -326,10 +427,13 @@ def run_local(args, case, requests, first, second, target_index):
               "arrival_step": args.arrival_step, "output_tokens": args.output_tokens,
               "local_policy": args.local_policy,
               "local_mixed_policy": args.local_mixed_policy, "first_wave": first,
+              "capture_bucket_tokens": capture_bucket,
+              "prefill_qkv_rope_cache": qkv_fusion,
               "second_wave": second, "target_step_index": target_index,
               "target_step_calls": target[1], "target_callback_calls": traced["target_calls"],
               "outputs_sha256": output_hash, "model_load_seconds": load_seconds,
               "same_history_target_correctness": correctness,
+              "same_history_exact_control_correctness": exact_control_correctness,
               "unprofiled_target_wall_ms": baseline,
               "unprofiled_median_wall_ms": statistics.median(baseline),
               "trace": str(trace_path)}
@@ -529,6 +633,8 @@ def analyze(args, case, first, second, target_index):
               "work": plan(args, case, first, second, target_index),
               "vllm_reference_dir": str(vllm_dir),
               "same_history_target_correctness": local.get("same_history_target_correctness"),
+              "same_history_exact_control_correctness": local.get(
+                  "same_history_exact_control_correctness"),
               "separate_local_baseline": separate_baseline,
               "local_wall_ms": local["unprofiled_median_wall_ms"],
               "vllm_wall_ms": vllm["unprofiled_median_wall_ms"],
@@ -545,13 +651,105 @@ def analyze(args, case, first, second, target_index):
     if report["same_history_target_correctness"] is not None:
         print("same-history target correctness: "
               f"{report['same_history_target_correctness']['status']}")
+    if report["same_history_exact_control_correctness"] is not None:
+        print("vs exact unfused correctness: "
+              f"{report['same_history_exact_control_correctness']['status']}")
     if separate_baseline is not None:
         print(f"vs prior separate local: {separate_baseline['speedup']:.3f}x")
     print(f"comparison: {path}")
 
 
+def run_ladder(args, case, first, second):
+    """Run/reuse broad, exact, and exact-plus-QKV arms against one vLLM trace."""
+    if args.kind != "mixed" or args.vllm_reference_dir is None:
+        raise ValueError("run-ladder requires --kind mixed and --vllm-reference-dir")
+    vllm_dir = args.vllm_reference_dir / "vllm"
+    if not complete_vllm(vllm_dir, args):
+        raise ValueError("saved vLLM reference is incomplete or has different settings")
+    saved_vllm = json.loads((vllm_dir / "report.json").read_text())
+    if saved_vllm["model"] != resolve_model_source(args):
+        raise ValueError("saved vLLM model does not match selected model snapshot")
+    verify_vllm_target(saved_vllm, first, second, "mixed")
+    arms = ("packed", "packed-exact", "packed-exact-qkv")
+    common = ["--kind", "mixed", "--shape-id", args.shape_id,
+              "--suite-dir", str(args.suite_dir), "--model", args.model,
+              "--device", args.device, "--seed", str(args.seed),
+              "--arrival-step", str(args.arrival_step),
+              "--output-tokens", str(args.output_tokens),
+              "--prefill-budget", str(args.prefill_budget),
+              "--local-policy", args.local_policy,
+              "--warmups", str(args.warmups),
+              "--repetitions", str(args.repetitions),
+              "--vllm-reference-dir", str(args.vllm_reference_dir)]
+    if args.retry_failed:
+        common.append("--retry-failed")
+    rows = []
+    for arm in arms:
+        directory = ROOT / "experiments/results/matched-phase-profile" / f"mixed-{arm}" / args.shape_id
+        arm_args = argparse.Namespace(**{**vars(args), "local_mixed_policy": arm,
+                                         "output_dir": directory})
+        comparison = directory / "comparison.json"
+        if not (complete_local(directory / "local", arm_args) and comparison.is_file()):
+            print(f"running {arm}", flush=True)
+            subprocess.run([sys.executable, str(Path(__file__)), "run", *common,
+                            "--local-mixed-policy", arm], cwd=ROOT, check=True)
+        else:
+            print(f"reusing {arm}", flush=True)
+        result = json.loads(comparison.read_text())
+        work = result["work"]
+        if (result.get("status") != "complete" or work["shape_id"] != args.shape_id
+                or work["local_mixed_policy"] != arm
+                or work["shared_prefill_budget"] != args.prefill_budget
+                or result["vllm_wall_ms"] != saved_vllm["unprofiled_median_wall_ms"]):
+            raise ValueError(f"{arm} comparison has mismatched work or vLLM reference")
+        bucket, qkv = capture_configuration(arm_args, case, first, second)
+        categories = {row["category"]: row["total_us"]
+                      for row in result["local_cuda_activity"]["categories"]}
+        rows.append({"arm": arm, "capture_bucket_tokens": bucket,
+                     "prefill_qkv_rope_cache": qkv,
+                     "local_wall_ms": result["local_wall_ms"],
+                     "local_over_vllm": result["local_over_vllm"],
+                     "profiled_gemm_us": categories.get("gemm", 0.0),
+                     "profiled_attention_us": categories.get("attention", 0.0),
+                     "profiled_rope_us": categories.get("rope", 0.0),
+                     "target_correctness": result.get("same_history_target_correctness"),
+                     "exact_control_correctness": result.get(
+                         "same_history_exact_control_correctness"),
+                     "comparison": str(comparison)})
+    broad = rows[0]["local_wall_ms"]
+    exact = rows[1]["local_wall_ms"]
+    for row in rows:
+        row["speedup_vs_broad"] = broad / row["local_wall_ms"]
+        row["speedup_vs_exact"] = exact / row["local_wall_ms"]
+    valid = all(row["target_correctness"] is not None and
+                row["target_correctness"]["status"] == "pass" for row in rows)
+    valid = valid and rows[-1]["exact_control_correctness"] is not None and \
+        rows[-1]["exact_control_correctness"]["status"] == "pass"
+    report = {"status": "complete" if valid else "numerical_difference",
+              "shape_id": args.shape_id, "vllm_wall_ms": saved_vllm["unprofiled_median_wall_ms"],
+              "notes": ["Existing arm reports are reused; wall medians may be from "
+                        "different runs and should be reconfirmed if close.",
+                        "Numerical differences are reported without suppressing timings."],
+              "rows": rows}
+    destination = (ROOT / "experiments/results/matched-phase-profile/mixed-ladder"
+                   / args.shape_id)
+    destination.mkdir(parents=True, exist_ok=True)
+    path = destination / "ladder.json"
+    path.write_text(json.dumps(report, indent=2) + "\n")
+    print("arm                 bucket   local ms   GEMM us   vs broad   vs vLLM   logits")
+    for row in rows:
+        checks = row["target_correctness"] or {}
+        print(f"{row['arm']:<19} {row['capture_bucket_tokens']:>6} "
+              f"{row['local_wall_ms']:>10.3f} {row['profiled_gemm_us']:>9.0f} "
+              f"{row['speedup_vs_broad']:>10.3f}x "
+              f"{row['local_over_vllm']:>10.3f}x {checks.get('status', 'missing')}")
+    print(f"ladder: {path} ({report['status']})")
+
+
 def main():
     args = build_parser().parse_args()
+    if args.action == "run-ladder" and args.output_dir is not None:
+        raise ValueError("run-ladder uses fixed per-arm output directories; omit --output-dir")
     case, requests, first, second, target_index = validate(args)
     if args.action == "plan":
         print(json.dumps(plan(args, case, first, second, target_index), indent=2))
@@ -565,6 +763,8 @@ def main():
         run_vllm(args, case, requests, first, second, target_index)
     elif args.action == "analyze":
         analyze(args, case, first, second, target_index)
+    elif args.action == "run-ladder":
+        run_ladder(args, case, first, second)
     else:
         configure_vllm_step_mode()
         verify_external_setup(args)
