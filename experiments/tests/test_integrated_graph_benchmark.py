@@ -26,6 +26,23 @@ except ImportError:
 
 
 class IntegratedGraphDesignTests(unittest.TestCase):
+    def test_prefill_fusion_mode_is_a_four_arm_factorial(self):
+        args = MODULE.build_parser().parse_args(["--prefill-fusions"])
+        self.assertTrue(args.prefill_fusions)
+        self.assertEqual(MODULE.PREFILL_FUSION_ARMS, (
+            "piecewise_fa3_prefill_control",
+            "piecewise_fa3_prefill_qkv_epilogue",
+            "piecewise_fa3_prefill_residual_rmsnorm",
+            "piecewise_fa3_prefill_both",
+        ))
+        comparisons = set(MODULE.COMPARISONS)
+        self.assertIn(("piecewise_fa3_prefill_qkv_epilogue",
+                       "piecewise_fa3_prefill_control"), comparisons)
+        self.assertIn(("piecewise_fa3_prefill_residual_rmsnorm",
+                       "piecewise_fa3_prefill_control"), comparisons)
+        self.assertIn(("piecewise_fa3_prefill_both",
+                       "piecewise_fa3_prefill_control"), comparisons)
+
     @unittest.skipIf(cpp is None, "build C++ extension first")
     def test_long_cell_runs_full_ablation_with_close_but_different_tokens(self):
         args = MODULE.build_parser().parse_args([
@@ -35,10 +52,11 @@ class IntegratedGraphDesignTests(unittest.TestCase):
 
         class Adapter:
             corrupt_splitk = False
-            def __init__(self, candidate=False, pieces=False, splitk=False):
+            def __init__(self, candidate=False, pieces=False, splitk=False, fa3=False):
                 self.decisions, self.step_calls, self.observer = {}, [], None
                 self.candidate, self.pieces = candidate, pieces
-                self.action = "H1-K22-S3" if splitk else "production"
+                self.action = ("H1-K22-S3" if splitk else
+                               "FA3-auto" if fa3 else "production")
                 if pieces:
                     self.piecewise_prefill = SimpleNamespace(
                         shapes={2048: []}, buckets=[2048], captured_calls=0,
@@ -69,7 +87,9 @@ class IntegratedGraphDesignTests(unittest.TestCase):
               patch.object(MODULE, "ModelAdapter", side_effect=lambda *a: Adapter()),
               patch.object(MODULE, "GraphModelAdapter", side_effect=lambda *a, **k: Adapter(True)),
               patch.object(MODULE, "PiecewiseGraphModelAdapter", side_effect=lambda *a, **k:
-                           Adapter(True, True, k.get("decode_attention_policy") == "splitk")),
+                           Adapter(True, True,
+                                   k.get("decode_attention_policy") == "splitk",
+                                   k.get("decode_attention_policy") == "fa3")),
               redirect_stdout(io.StringIO())):
             row = MODULE.run_case(torch, cpp, engine, case, args,
                                   MODULE.make_requests(case, args.seed, 16))
@@ -79,6 +99,11 @@ class IntegratedGraphDesignTests(unittest.TestCase):
             args.splitk_only = True
             retry_row = MODULE.run_case(torch, cpp, engine, case, args,
                                        MODULE.make_requests(case, args.seed, 16))
+            Adapter.corrupt_splitk = False
+            args.splitk_only = False
+            args.prefill_fusions = True
+            prefill_row = MODULE.run_case(torch, cpp, engine, case, args,
+                                         MODULE.make_requests(case, args.seed, 16))
         self.assertEqual(row["status"], "ok")
         self.assertTrue(row["splitk_executed"])
         self.assertNotEqual(row["output_ids_by_arm"]["eager"],
@@ -98,6 +123,10 @@ class IntegratedGraphDesignTests(unittest.TestCase):
         self.assertTrue(retry_row["splitk_only"])
         self.assertEqual(retry_row["effects"], {})
         self.assertEqual(retry_row["splitk_decision"]["choice"], "timed_with_numerical_warning")
+        self.assertEqual(set(prefill_row["measurements"]), set(MODULE.PREFILL_FUSION_ARMS))
+        self.assertTrue(prefill_row["prefill_fusions"])
+        self.assertIn("piecewise_fa3_prefill_both_vs_piecewise_fa3_prefill_control",
+                      prefill_row["effects"])
 
     def test_teacher_forced_preflight_and_free_generation_use_distinct_histories(self):
         from python_control import PythonControl

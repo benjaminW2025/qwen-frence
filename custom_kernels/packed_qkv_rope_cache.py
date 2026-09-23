@@ -11,20 +11,23 @@ import triton.language as tl
 
 @triton.jit
 def _packed_qkv_rope_cache_kernel(
-    packed_ptr, positions_ptr, slots_ptr, q_ptr, k_pool_ptr, v_pool_ptr,
+    packed_ptr, positions_ptr, slots_ptr, valid_tokens_ptr,
+    q_ptr, k_pool_ptr, v_pool_ptr,
     stride_pm, stride_pn, stride_qm, stride_qh, stride_qd,
     stride_km, stride_kh, stride_kd, stride_vm, stride_vh, stride_vd,
     position_stride, slot_stride, log_theta,
-    rows, BLOCK: tl.constexpr,
+    rows, HAS_VALID_TOKENS: tl.constexpr, BLOCK: tl.constexpr,
 ):
     row = tl.program_id(0)
     segment = tl.program_id(1)  # Q0..11, K0..1, V0..1.
     offsets = tl.arange(0, BLOCK)
     valid = offsets < 64
+    live_rows = tl.load(valid_tokens_ptr) if HAS_VALID_TOKENS else rows
+    live_row = (row < rows) & (row < live_rows)
     source = segment * 128 + offsets
     values = tl.load(
         packed_ptr + row * stride_pm + source * stride_pn,
-        mask=(row < rows) & valid,
+        mask=live_row & valid,
         other=0.0,
     )
     is_value = segment >= 14
@@ -39,7 +42,7 @@ def _packed_qkv_rope_cache_kernel(
         tl.where(is_value, segment - 14, segment - 12),
     )
     position = tl.load(positions_ptr + row * position_stride,
-                       mask=row < rows, other=0).to(tl.float32)
+                       mask=live_row, other=0).to(tl.float32)
     half = 64
     first = offsets
     second = offsets + half
@@ -50,41 +53,44 @@ def _packed_qkv_rope_cache_kernel(
     cosine, sine = tl.cos(angle), tl.sin(angle)
     rotated_first = values * cosine - tl.load(
         packed_ptr + row * stride_pm + (segment * 128 + second) * stride_pn,
-        mask=(row < rows) & (second < 128), other=0.0,
+        mask=live_row & (second < 128), other=0.0,
     ) * sine
     rotated_second = values * sine + tl.load(
         packed_ptr + row * stride_pm + (segment * 128 + second) * stride_pn,
-        mask=(row < rows) & (second < 128), other=0.0,
+        mask=live_row & (second < 128), other=0.0,
     ) * cosine
     # V segments are copied without RoPE; Q/K use the rotate-half result.
     raw_second = tl.load(
         packed_ptr + row * stride_pm + (segment * 128 + second) * stride_pn,
-        mask=(row < rows) & (second < 128), other=0.0,
+        mask=live_row & (second < 128), other=0.0,
     )
     out_first = tl.where(is_value, values, rotated_first)
     out_second = tl.where(is_value, raw_second, rotated_second)
+    # Write deterministic zeros to padded Q rows, but never let a padded row
+    # touch the KV cache. This is required by token-bucket CUDA graphs, whose
+    # captured row count can exceed the live packed-token count on replay.
     row_mask = (row < rows) & valid
     q_base = row * stride_qm + head * stride_qh
     tl.store(q_ptr + q_base + first * stride_qd, out_first,
              mask=row_mask & is_query)
     tl.store(q_ptr + q_base + second * stride_qd, out_second,
              mask=(row < rows) & (second < 128) & is_query)
-    slot = tl.load(slots_ptr + row * slot_stride, mask=row < rows, other=0)
+    slot = tl.load(slots_ptr + row * slot_stride, mask=live_row, other=0)
     cache_base = slot * stride_km + head * stride_kh
     tl.store(k_pool_ptr + cache_base + first * stride_kd, out_first,
-             mask=row_mask & is_kv & ~is_value)
+             mask=row_mask & live_row & is_kv & ~is_value)
     tl.store(k_pool_ptr + cache_base + second * stride_kd, out_second,
-             mask=(row < rows) & (second < 128) & is_kv & ~is_value)
+             mask=live_row & (second < 128) & is_kv & ~is_value)
     v_base = slot * stride_vm + head * stride_vh
     tl.store(v_pool_ptr + v_base + first * stride_vd, out_first,
-             mask=row_mask & is_value)
+             mask=row_mask & live_row & is_value)
     tl.store(v_pool_ptr + v_base + second * stride_vd, out_second,
-             mask=(row < rows) & (second < 128) & is_value)
+             mask=live_row & (second < 128) & is_value)
 
 
 def packed_qkv_rope_cache(
     packed, positions, slot_mapping, k_pool, v_pool,
-    *, base=1_000_000.0, num_warps=4,
+    *, base=1_000_000.0, num_warps=4, valid_tokens=None,
 ):
     """Consume packed QKV GEMM output without split/transpose/materialization."""
     if packed.ndim == 3:
@@ -98,6 +104,10 @@ def packed_qkv_rope_cache(
         raise ValueError("positions and slots must contain one value per row")
     if k_pool.shape != v_pool.shape or k_pool.shape[1:] != (16, 2, 128):
         raise ValueError("expected matching page-16 Qwen K/V pools")
+    if valid_tokens is not None:
+        if (valid_tokens.ndim != 0 or valid_tokens.dtype != torch.int32 or
+                not valid_tokens.is_cuda or valid_tokens.device != packed.device):
+            raise ValueError("valid_tokens must be a CUDA int32 scalar")
     tensors = (packed, positions, slot_mapping, k_pool, v_pool)
     if not all(t.is_cuda and t.device == packed.device for t in tensors):
         raise ValueError("packed QKV epilogue tensors must share one CUDA device")
@@ -109,12 +119,15 @@ def packed_qkv_rope_cache(
     flat_k = k_pool.view(-1, 2, 128)
     flat_v = v_pool.view(-1, 2, 128)
     _packed_qkv_rope_cache_kernel[(rows, 16)](
-        packed, positions, slot_mapping, q, flat_k, flat_v,
+        packed, positions, slot_mapping,
+        positions if valid_tokens is None else valid_tokens,
+        q, flat_k, flat_v,
         packed.stride(0), packed.stride(1),
         q.stride(0), q.stride(1), q.stride(2),
         flat_k.stride(0), flat_k.stride(1), flat_k.stride(2),
         flat_v.stride(0), flat_v.stride(1), flat_v.stride(2),
         positions.stride(0), slot_mapping.stride(0), math.log(base), rows,
+        HAS_VALID_TOKENS=valid_tokens is not None,
         BLOCK=64, num_warps=num_warps,
     )
     return q
