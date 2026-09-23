@@ -225,6 +225,13 @@ def snapshot_target_kv(torch, pool, slots):
             .index_select(0, indices).detach().cpu() for tensor in tensors]
 
 
+def snapshot_observed_target_kv(torch, pool, observer, expected_callbacks):
+    if len(observer.rows) != expected_callbacks:
+        raise AssertionError("target KV observer missed a mixed callback")
+    slots = torch.cat([row["metadata"][2] for row in observer.rows])
+    return slots, snapshot_target_kv(torch, pool, slots)
+
+
 def compare_target_kv(torch, baseline, candidate):
     if len(baseline) != len(candidate):
         raise AssertionError("KV layer count differs")
@@ -356,15 +363,14 @@ def run_local(args, case, requests, first, second, target_index):
             poison()
             execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                     adapter, requests)
-            if qkv_fusion:
-                candidate_slots = torch.cat(
-                    [row["metadata"][2] for row in candidate.rows])
-                candidate_kv = snapshot_target_kv(torch, pool, candidate_slots)
             adapter.enable_packed_mixed = True
             adapter.observer = candidate
             poison()
             execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                     adapter, requests)
+            if qkv_fusion:
+                candidate_slots, candidate_kv = snapshot_observed_target_kv(
+                    torch, pool, candidate, len(calls))
         finally:
             adapter.enable_packed_mixed = True
             adapter.observer = None

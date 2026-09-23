@@ -78,6 +78,21 @@ def fake_vllm_modules():
 
 
 class PhaseProfileTests(unittest.TestCase):
+    def test_target_kv_snapshot_waits_for_candidate_observer(self):
+        pool = SimpleNamespace(
+            k_pool=[torch.arange(8.).reshape(2, 2, 1, 2)],
+            v_pool=[torch.arange(8., 16.).reshape(2, 2, 1, 2)])
+        observer = SimpleNamespace(rows=[])
+        with self.assertRaisesRegex(AssertionError, "observer missed"):
+            MODULE.snapshot_observed_target_kv(torch, pool, observer, 2)
+        observer.rows = [
+            {"metadata": (None, None, torch.tensor([1]))},
+            {"metadata": (None, None, torch.tensor([3]))}]
+        slots, values = MODULE.snapshot_observed_target_kv(torch, pool, observer, 2)
+        self.assertEqual(slots.tolist(), [1, 3])
+        self.assertEqual(values[0].flatten().tolist(), [2., 3., 6., 7.])
+        self.assertEqual(values[1].flatten().tolist(), [10., 11., 14., 15.])
+
     def test_target_kv_check_reports_corruption(self):
         baseline = [torch.tensor([[[1., 2.]]])]
         close = [torch.tensor([[[1.001, 2.]]])]
