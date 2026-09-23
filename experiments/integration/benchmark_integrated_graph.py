@@ -30,7 +30,7 @@ from model_adapter import (GraphModelAdapter, ModelAdapter, PiecewiseGraphModelA
                            allocate_pool)
 from model_setup import check_startup, load_model_only
 
-ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk", "piecewise_fa3")
+ARMS = ("eager", "decode_graph", "piecewise", "piecewise_splitk")
 FA3_FUSION_ARMS = (
     "piecewise_fa3",
     "piecewise_fa3_residual_rmsnorm",
@@ -39,6 +39,12 @@ FA3_FUSION_ARMS = (
     "piecewise_fa3_packed_epilogue",
     "piecewise_fa3_full_qkv",
     "piecewise_fa3_all_fusions",
+)
+PREFILL_FUSION_ARMS = (
+    "piecewise_fa3_prefill_control",
+    "piecewise_fa3_prefill_qkv_epilogue",
+    "piecewise_fa3_prefill_residual_rmsnorm",
+    "piecewise_fa3_prefill_both",
 )
 PHASES = ("wall_ms", "decode_wall_ms", "prefill_wall_ms", "mixed_wall_ms",
           "prefill_plus_mixed_ms")
@@ -55,6 +61,11 @@ COMPARISONS = (("decode_graph", "eager"),
                ("piecewise_fa3_all_fusions", "piecewise_fa3"),
                ("piecewise_fa3_all_fusions", "piecewise_fa3_residual_rmsnorm"),
                ("piecewise_fa3_all_fusions", "piecewise_fa3_qkv_postprocess"),
+               ("piecewise_fa3_prefill_qkv_epilogue", "piecewise_fa3_prefill_control"),
+               ("piecewise_fa3_prefill_residual_rmsnorm", "piecewise_fa3_prefill_control"),
+               ("piecewise_fa3_prefill_both", "piecewise_fa3_prefill_control"),
+               ("piecewise_fa3_prefill_both", "piecewise_fa3_prefill_qkv_epilogue"),
+               ("piecewise_fa3_prefill_both", "piecewise_fa3_prefill_residual_rmsnorm"),
                ("piecewise", "eager"),
                ("piecewise_splitk", "eager"),
                ("piecewise_fa3", "eager"))
@@ -142,6 +153,8 @@ def build_parser():
                       help="validate against eager, then pair only split-K and FA3")
     mode.add_argument("--fa3-fusions", action="store_true",
                       help="ablate FA3 residual/RMSNorm and QKV postprocessing fusions")
+    mode.add_argument("--prefill-fusions", action="store_true",
+                      help="ablate packed-prefill QKV and residual/RMSNorm fusions")
     parser.add_argument("--include-fa3", action="store_true",
                         help="add piecewise capture with FA3-auto to the paired ablation")
     parser.add_argument("--logit-atol", type=float, default=.05,
@@ -352,20 +365,20 @@ def run_case(torch, cpp, engine, case, args, requests):
                   max_context_length=config.max_context_length)
     adapters = {"eager": ModelAdapter(engine.model, pool, None)}
     if (not args.splitk_only and not args.fa3_only and not args.fa3_compare
-            and not args.fa3_fusions):
+            and not args.fa3_fusions and not args.prefill_fusions):
         adapters["decode_graph"] = GraphModelAdapter(engine.model, pool, None, **common)
         adapters["piecewise"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common,
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
             prefill_buckets=args.prefill_buckets)
-    if not args.fa3_only and not args.fa3_fusions:
+    if not args.fa3_only and not args.fa3_fusions and not args.prefill_fusions:
         adapters["piecewise_splitk"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common, decode_attention_policy="splitk",
             max_capture_tokens=args.max_capture_tokens,
             max_prefill_shapes=args.max_prefill_shapes,
             prefill_buckets=args.prefill_buckets)
-    if args.include_fa3 or args.fa3_only or args.fa3_compare or args.fa3_fusions:
+    if (args.include_fa3 or args.fa3_only or args.fa3_compare or args.fa3_fusions):
         adapters["piecewise_fa3"] = PiecewiseGraphModelAdapter(
             engine.model, pool, None, **common, decode_attention_policy="fa3",
             max_capture_tokens=args.max_capture_tokens,
@@ -397,6 +410,32 @@ def run_case(torch, cpp, engine, case, args, requests):
         adapters["piecewise_fa3_all_fusions"] = PiecewiseGraphModelAdapter(
             **fusion_common, enable_residual_rmsnorm=True,
             enable_native_decode_qkv_postprocess=True,
+        )
+    if args.prefill_fusions:
+        # Decode is deliberately identical across these arms. The accepted FA3
+        # residual/QKV decode path remains enabled so this measures the prefill
+        # changes on top of the current engine rather than an obsolete baseline.
+        prefill_common = dict(
+            model=engine.model, pool=pool, loop=None, **common,
+            decode_attention_policy="fa3",
+            max_capture_tokens=args.max_capture_tokens,
+            max_prefill_shapes=args.max_prefill_shapes,
+            prefill_buckets=args.prefill_buckets,
+            enable_residual_rmsnorm=True,
+            enable_native_decode_qkv_postprocess=True,
+        )
+        adapters["piecewise_fa3_prefill_control"] = PiecewiseGraphModelAdapter(
+            **prefill_common,
+        )
+        adapters["piecewise_fa3_prefill_qkv_epilogue"] = PiecewiseGraphModelAdapter(
+            **prefill_common, enable_prefill_packed_qkv_rope_cache=True,
+        )
+        adapters["piecewise_fa3_prefill_residual_rmsnorm"] = PiecewiseGraphModelAdapter(
+            **prefill_common, enable_prefill_residual_rmsnorm=True,
+        )
+        adapters["piecewise_fa3_prefill_both"] = PiecewiseGraphModelAdapter(
+            **prefill_common, enable_prefill_packed_qkv_rope_cache=True,
+            enable_prefill_residual_rmsnorm=True,
         )
     torch.cuda.synchronize()
     if any(token >= engine.cfg.vocab for row in requests for token in row["prompt"]):
@@ -467,6 +506,8 @@ def run_case(torch, cpp, engine, case, args, requests):
         active_arms = ("piecewise_splitk", "piecewise_fa3")
     elif args.fa3_fusions:
         active_arms = FA3_FUSION_ARMS
+    elif args.prefill_fusions:
+        active_arms = PREFILL_FUSION_ARMS
     else:
         active_arms = tuple(adapters)
     for arm in active_arms:
@@ -538,7 +579,7 @@ def run_case(torch, cpp, engine, case, args, requests):
     medians, effects = paired_summary(measurements)
     decision = ({"choice": "separate_run_not_paired"}
                 if (args.splitk_only or args.fa3_only or args.fa3_compare
-                    or args.fa3_fusions) else
+                    or args.fa3_fusions or args.prefill_fusions) else
                 splitk_decision(effects, executed=splitk_executed))
     if ("piecewise_splitk" in checks and
             not checks["piecewise_splitk"]["numerical_validation_passed"]):
@@ -554,6 +595,7 @@ def run_case(torch, cpp, engine, case, args, requests):
             "fa3_only": args.fa3_only,
             "fa3_compare": args.fa3_compare,
             "fa3_fusions": args.fa3_fusions,
+            "prefill_fusions": args.prefill_fusions,
             "fusion_features": {
                 arm: {
                     "residual_rmsnorm": bool(getattr(
@@ -566,6 +608,10 @@ def run_case(torch, cpp, engine, case, args, requests):
                         adapter, "enable_fused_qkv_rope_cache", False)),
                     "packed_qkv_epilogue": bool(getattr(
                         adapter, "enable_packed_qkv_rope_cache", False)),
+                    "prefill_packed_qkv_epilogue": bool(getattr(
+                        adapter, "enable_prefill_packed_qkv_rope_cache", False)),
+                    "prefill_residual_rmsnorm": bool(getattr(
+                        adapter, "enable_prefill_residual_rmsnorm", False)),
                 }
                 for arm, adapter in adapters.items()
             },
@@ -589,8 +635,10 @@ def main():
         planned_arms = ("piecewise_splitk", "piecewise_fa3")
     elif args.fa3_fusions:
         planned_arms = FA3_FUSION_ARMS
+    elif args.prefill_fusions:
+        planned_arms = PREFILL_FUSION_ARMS
     else:
-        planned_arms = ARMS if args.include_fa3 else ARMS[:-1]
+        planned_arms = ARMS + (("piecewise_fa3",) if args.include_fa3 else ())
     plan = {"case": case, "arms": planned_arms,
             "expected_max_decode_batch": args.expected_max_decode_batch,
             "min_full_decode_steps": args.min_full_decode_steps,
@@ -604,7 +652,12 @@ def main():
         print(json.dumps(plan, indent=2))
         return
     if args.check_setup:
-        print(json.dumps(check_startup(args.device), indent=2))
+        startup = check_startup(args.device)
+        if any("fa3" in arm for arm in planned_arms):
+            from kernel_dispatch import _load
+            _load("paged_decode_fa3")._load_fa3()
+            startup["fa3_interface_available"] = True
+        print(json.dumps(startup, indent=2))
         return
     if not args.dry_schedule:
         for name in ("manifest.json", "report.json"):
@@ -622,6 +675,9 @@ def main():
     if args.dry_schedule:
         return
     startup = check_startup(args.device)
+    if any("fa3" in arm for arm in planned_arms):
+        from kernel_dispatch import _load
+        _load("paged_decode_fa3")._load_fa3()
     from run_benchmarks import system_metadata
 
     engine, load_seconds, hub_transfer = load_model_only(

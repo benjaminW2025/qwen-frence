@@ -178,7 +178,9 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
-                 enable_packed_qkv_rope_cache=False):
+                 enable_packed_qkv_rope_cache=False,
+                 enable_prefill_packed_qkv_rope_cache=False,
+                 enable_prefill_residual_rmsnorm=False):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -194,9 +196,15 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))
         from piecewise_prefill import PiecewisePrefill
+        self.enable_prefill_packed_qkv_rope_cache = bool(
+            enable_prefill_packed_qkv_rope_cache
+        )
+        self.enable_prefill_residual_rmsnorm = bool(enable_prefill_residual_rmsnorm)
         self.piecewise_prefill = PiecewisePrefill(
             model, pool, max_capture_tokens=max_capture_tokens,
-            max_shapes=max_prefill_shapes, token_buckets=prefill_buckets)
+            max_shapes=max_prefill_shapes, token_buckets=prefill_buckets,
+            enable_packed_qkv_rope_cache=self.enable_prefill_packed_qkv_rope_cache,
+            enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm)
 
     @torch.no_grad()
     def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):

@@ -72,6 +72,30 @@ class GraphAdapterTests(unittest.TestCase):
         self.assertEqual(sorted(prefill.shapes), [128, 256])
         self.assertEqual((prefill.captured_calls, prefill.eager_calls), (4, 2))
 
+    def test_prefill_fusion_flags_reach_every_captured_boundary(self):
+        import piecewise_prefill
+
+        captured = []
+
+        class FakePiece:
+            def __init__(self, *args):
+                captured.append(args)
+
+        prefill = piecewise_prefill.PiecewisePrefill.__new__(
+            piecewise_prefill.PiecewisePrefill
+        )
+        prefill.model = SimpleNamespace(layers=[object(), object()])
+        prefill.pool = SimpleNamespace(k_pool=[torch.zeros(1), torch.zeros(1)])
+        prefill.buckets, prefill.max_shapes = (64,), 1
+        prefill.shapes = {}
+        prefill.captured_calls = prefill.eager_calls = 0
+        prefill.enable_packed_qkv_rope_cache = True
+        prefill.enable_residual_rmsnorm = True
+        with mock.patch.object(piecewise_prefill, "_AttentionBoundary", FakePiece):
+            prefill.pieces(63)
+        self.assertEqual(len(captured), 3)
+        self.assertTrue(all(args[7:] == (True, True) for args in captured))
+
     def test_piecewise_adapter_prefill_dispatch_records_once(self):
         from model_adapter import PiecewiseGraphModelAdapter
 
@@ -384,6 +408,54 @@ class MatchedSchedulerTests(unittest.TestCase):
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA/Triton")
 class AdapterCudaTests(unittest.TestCase):
+    def test_prefill_fusions_replay_padded_bucket_with_matching_logits_and_kv(self):
+        from model_adapter import ModelAdapter, allocate_pool
+        from piecewise_prefill import PiecewisePrefill
+        from naive_forward import Qwen2Config, Model
+
+        torch.manual_seed(43)
+        cfg = Qwen2Config(vocab=128, n_layers=1, d_ff=256,
+                          use_custom_kernels=True)
+        model = Model(cfg).to("cuda", torch.float16).eval().pack_projections_()
+        cases = [
+            ([5, 6, 7], [0, 1, 2], [16, 17, 18], [0, 3], [3], [[1, 0]], 3),
+            ([8, 9, 10], [3, 4, 5], [19, 20, 21], [0, 3], [6], [[1, 0]], 3),
+        ]
+        for qkv, residual in ((True, False), (False, True), (True, True)):
+            eager_pool = allocate_pool(cfg, 4, "cuda")
+            graph_pool = allocate_pool(cfg, 4, "cuda")
+            for pool in (eager_pool, graph_pool):
+                for tensor in pool.k_pool + pool.v_pool:
+                    tensor.fill_(float("nan"))
+            eager = ModelAdapter(model, eager_pool, None)
+            graph = PiecewisePrefill(
+                model, graph_pool, max_capture_tokens=4,
+                enable_packed_qkv_rope_cache=qkv,
+                enable_residual_rmsnorm=residual,
+            )
+            with torch.no_grad():
+                for raw_ids, raw_pos, raw_slots, raw_cu, raw_ctx, raw_table, max_query in cases:
+                    ids = torch.tensor(raw_ids, device="cuda")
+                    positions = torch.tensor(raw_pos, device="cuda")
+                    slots = torch.tensor(raw_slots, device="cuda")
+                    cu = torch.tensor(raw_cu, device="cuda", dtype=torch.int32)
+                    context = torch.tensor(raw_ctx, device="cuda", dtype=torch.int32)
+                    table = torch.tensor(raw_table, device="cuda", dtype=torch.int32)
+                    expected = eager(ids, positions, slots, cu, context, table,
+                                     max_query, False)
+                    actual = graph.forward(ids, positions, slots, cu, context, table,
+                                           max_query)
+                    torch.testing.assert_close(actual, expected, atol=.05, rtol=.01)
+                    for eager_cache, graph_cache in zip(
+                            eager_pool.k_pool + eager_pool.v_pool,
+                            graph_pool.k_pool + graph_pool.v_pool):
+                        flat_a = eager_cache.view(-1, cfg.n_kv_heads, cfg.d_head)
+                        flat_b = graph_cache.view(-1, cfg.n_kv_heads, cfg.d_head)
+                        torch.testing.assert_close(flat_b[slots], flat_a[slots],
+                                                   atol=.05, rtol=.01)
+            for tensor in graph_pool.k_pool + graph_pool.v_pool:
+                self.assertTrue(torch.isnan(tensor[0]).all())
+
     def test_piecewise_prefill_replays_new_positions_slots_and_ragged_layout(self):
         from model_adapter import ModelAdapter, allocate_pool
         from piecewise_prefill import PiecewisePrefill

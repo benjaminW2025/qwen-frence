@@ -18,12 +18,16 @@ from ragged_prefill import _rope_factors
 class _AttentionBoundary:
     """One captured segment ending at (or starting just after) an attention call."""
 
-    def __init__(self, model, pool, index, tokens, positions, slots, valid_tokens):
+    def __init__(self, model, pool, index, tokens, positions, slots, valid_tokens,
+                 enable_packed_qkv_rope_cache=False,
+                 enable_residual_rmsnorm=False):
         cfg = model.cfg
         device, dtype = pool.k_pool[0].device, pool.k_pool[0].dtype
         layers = model.layers
         self.index = index
         self.last = index == len(layers)
+        self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
         if index == 0:
             self.ids = torch.zeros(tokens, device=device, dtype=torch.long)
         else:
@@ -38,28 +42,58 @@ class _AttentionBoundary:
         def run_segment():
             if index == 0:
                 x = model.embed(self.ids)
+                next_h = None
             else:
                 previous = layers[index - 1]
-                x = self.residual + previous.o_proj(self.attention)
-                h = apply_rms_norm(x, previous.post_attn_norm, cfg)
+                projected = previous.o_proj(self.attention)
+                if self.enable_residual_rmsnorm:
+                    from kernel_dispatch import residual_add_rms_norm
+                    x, h = residual_add_rms_norm(
+                        self.residual, projected,
+                        previous.post_attn_norm.weight, cfg.rms_norm_eps,
+                    )
+                else:
+                    x = self.residual + projected
+                    h = apply_rms_norm(x, previous.post_attn_norm, cfg)
                 gate, up = previous.project_gate_up(h)
-                x = x + previous.down_proj(apply_swiglu(gate, up, cfg))
+                branch = previous.down_proj(apply_swiglu(gate, up, cfg))
+                if self.enable_residual_rmsnorm:
+                    next_norm = model.norm if self.last else layers[index].input_norm
+                    x, next_h = residual_add_rms_norm(
+                        x, branch, next_norm.weight, cfg.rms_norm_eps,
+                    )
+                else:
+                    x = x + branch
+                    next_h = None
             if self.last:
-                return x
+                # The fused path has already applied the final model RMSNorm.
+                return next_h if self.enable_residual_rmsnorm else x
 
             layer = layers[index]
-            h = apply_rms_norm(x, layer.input_norm, cfg)
-            q, k, v = layer.project_qkv(h)
-            q = q.view(tokens, cfg.n_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
-            k = k.view(tokens, cfg.n_kv_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
-            v = v.view(tokens, cfg.n_kv_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
-            cos, sin = ((None, None) if cfg.use_custom_kernels else
-                        _rope_factors(cfg, self.positions, x.dtype))
-            q = apply_rope(q, cos, sin, cfg, self.positions[None, :])
-            k = apply_rope(k, cos, sin, cfg, self.positions[None, :])
-            from kernel_dispatch import masked_kv_write
-            masked_kv_write(k, v, self.slots, self.valid_tokens,
-                            pool.k_pool[index], pool.v_pool[index])
+            h = (next_h if self.enable_residual_rmsnorm and index > 0 else
+                 apply_rms_norm(x, layer.input_norm, cfg))
+            if self.enable_packed_qkv_rope_cache:
+                from kernel_dispatch import packed_qkv_rope_cache
+                if layer.qkv_proj is None:
+                    raise ValueError("packed prefill QKV epilogue requires packed QKV weights")
+                q_rows = packed_qkv_rope_cache(
+                    layer.qkv_proj(h), self.positions, self.slots,
+                    pool.k_pool[index], pool.v_pool[index],
+                    base=cfg.rope_theta, valid_tokens=self.valid_tokens,
+                )
+                q = q_rows.transpose(0, 1).unsqueeze(0)
+            else:
+                q, k, v = layer.project_qkv(h)
+                q = q.view(tokens, cfg.n_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
+                k = k.view(tokens, cfg.n_kv_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
+                v = v.view(tokens, cfg.n_kv_heads, cfg.d_head).transpose(0, 1).unsqueeze(0)
+                cos, sin = ((None, None) if cfg.use_custom_kernels else
+                            _rope_factors(cfg, self.positions, x.dtype))
+                q = apply_rope(q, cos, sin, cfg, self.positions[None, :])
+                k = apply_rope(k, cos, sin, cfg, self.positions[None, :])
+                from kernel_dispatch import masked_kv_write
+                masked_kv_write(k, v, self.slots, self.valid_tokens,
+                                pool.k_pool[index], pool.v_pool[index])
             return q, x
 
         # Warm up on a side stream for allocator setup and Triton JIT, then
@@ -91,12 +125,15 @@ class PiecewisePrefill:
     """Capture a bounded set of packed-token buckets; report eager misses."""
 
     def __init__(self, model, pool, *, max_capture_tokens=2048, max_shapes=8,
-                 token_buckets=None):
+                 token_buckets=None, enable_packed_qkv_rope_cache=False,
+                 enable_residual_rmsnorm=False):
         if max_capture_tokens < 1 or max_shapes < 1:
             raise ValueError("capture token and shape limits must be positive")
         if pool.k_pool[0].device.type != "cuda":
             raise ValueError("piecewise prefill requires CUDA")
         self.model, self.pool = model, pool
+        self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
         self.max_capture_tokens, self.max_shapes = max_capture_tokens, max_shapes
         if token_buckets is None:
             buckets = [b for b in (128, 256, 512, 1024, 2048) if b <= max_capture_tokens]
@@ -125,7 +162,9 @@ class PiecewisePrefill:
             valid_tokens = torch.zeros((), device=device, dtype=torch.int32)
             self.shapes[bucket] = [
                 _AttentionBoundary(self.model, self.pool, i, bucket,
-                                   positions, slots, valid_tokens)
+                                   positions, slots, valid_tokens,
+                                   getattr(self, "enable_packed_qkv_rope_cache", False),
+                                   getattr(self, "enable_residual_rmsnorm", False))
                 for i in range(len(self.model.layers) + 1)
             ]
         self.captured_calls += 1
@@ -157,5 +196,6 @@ class PiecewisePrefill:
                 q, residual = result
             else:
                 x = result
-        x = apply_rms_norm(x, model.norm, cfg)
+        if not self.enable_residual_rmsnorm:
+            x = apply_rms_norm(x, model.norm, cfg)
         return model.lm_head(x.index_select(0, cu[1:].to(torch.long) - 1))
