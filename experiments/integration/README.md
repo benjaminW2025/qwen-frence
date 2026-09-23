@@ -190,6 +190,43 @@ selection runs. A 16384-token bucket is supported when passed explicitly, but
 its 29 captured graph segments require substantially more memory than the
 default sweep.
 
+### FA3 and prefill-fusion interaction
+
+The same sweep now accepts `--decode-attention-policy fa3` and sequential
+`--fusion-modes control qkv residual both`. FA3 uses the accepted decode
+residual/RMSNorm and QKV postprocessing fusions in every mode. The modes vary
+only the piecewise-prefill QKV epilogue and residual/RMSNorm fusion. The runner
+releases each captured prefill graph before creating the next, so four 8192-row
+graph sets are never resident together. Each report row identifies its budget
+and fusion mode, and compares timing both to the same mode at the smallest
+budget and to the control at the same budget. Full-logit numerical differences
+are recorded even when a timing run completes.
+
+First run the setup and CPU schedule gates, then a B8 one-sample gate in a
+fresh result directory:
+
+```bash
+python3 experiments/integration/benchmark_prefill_budget.py \
+  --shape-id fixed-b8-l2048-o128 --budgets 2048 8192 \
+  --fusion-modes control qkv residual both \
+  --decode-attention-policy fa3 --check-setup
+python3 experiments/integration/benchmark_prefill_budget.py \
+  --shape-id fixed-b8-l2048-o128 --budgets 2048 8192 \
+  --fusion-modes control qkv residual both \
+  --decode-attention-policy fa3 --dry-schedule
+python3 experiments/integration/benchmark_prefill_budget.py \
+  --shape-id fixed-b8-l2048-o128 --budgets 2048 8192 \
+  --fusion-modes control qkv residual both \
+  --decode-attention-policy fa3 --trials 1 --samples 1 --warmups 0 \
+  --output-dir experiments/results/prefill-fa3-fusions-b8-smoke
+```
+
+Repeat at B64 only after the B8 numerical gate passes. Use a new output
+directory and start with `--budgets 8192` to limit graph capture and GPU time.
+The earlier 2048/4096/8192 split-K measurements establish a scheduling lead,
+but they do not establish an FA3/fusion winner. Treat 16384 as a separate
+memory-gated probe after reviewing the 8192 result, not part of the default run.
+
 ## Detailed long-context decode profile
 
 `profile_cpp_control.py` profiles one steady full-batch token step from the same
