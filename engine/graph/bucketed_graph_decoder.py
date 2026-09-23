@@ -28,7 +28,8 @@ class BucketedGraphDecoder:
                  enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
-                 enable_packed_qkv_rope_cache=False):
+                 enable_packed_qkv_rope_cache=False,
+                 enable_stable_decode_table_cache=False):
         self.max_blocks = max_blocks
         self.buckets = default_buckets(max_running) if buckets is None else sorted(set(buckets))
         self.decode_attention_policy = decode_attention_policy
@@ -55,6 +56,9 @@ class BucketedGraphDecoder:
                                    ),
                                    enable_packed_qkv_rope_cache=(
                                        enable_packed_qkv_rope_cache
+                                   ),
+                                   enable_stable_decode_table_cache=(
+                                       enable_stable_decode_table_cache
                                    ))
             dec.capture()
             self.decoders[b] = dec

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import statistics
@@ -25,6 +26,7 @@ for directory in (HERE, ROOT / "benchmarks", ROOT / "baseline", ROOT / "engine/k
 from benchmark_scheduler_decode import execute, make_config
 from benchmark_integrated_graph import resolve_requests, verify_actual_work
 from benchmark_latest_vs_vllm import resolve_model_source
+from benchmark_prefill_budget import FUSION_MODES
 from design import make_plan, make_requests
 from fixed_regime import PREFILL_TOKENS_PER_STEP, verify_fixed_result
 from model_adapter import GraphModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
@@ -49,8 +51,12 @@ def build_parser():
                         default="none", help="decode QKV/RoPE/KV-write fusion arm")
     parser.add_argument("--enable-residual-rmsnorm", action="store_true",
                         help="enable the fused residual-add plus RMSNorm decode path")
+    parser.add_argument("--reuse-stable-decode-metadata", action="store_true",
+                        help="reuse GPU decode metadata for an unchanged pure-decode cohort")
     parser.add_argument("--prefill-budget", type=int,
                         help="override the case budget and matching piecewise graph bucket")
+    parser.add_argument("--prefill-fusion-mode", choices=FUSION_MODES,
+                        default="control", help="piecewise prefill fusion arm to profile")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=5)
@@ -73,6 +79,8 @@ def validate_args(args):
         raise ValueError("case ID is not in the selected preset")
     if args.prefill_budget is not None and args.prefill_budget < 1:
         raise ValueError("prefill-budget must be positive")
+    if args.adapter != "piecewise-prefill" and args.prefill_fusion_mode != "control":
+        raise ValueError("prefill fusion modes require the piecewise-prefill adapter")
 
 
 def select_target(steps, kind, occurrence):
@@ -139,6 +147,7 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
                        + max(r["arrival"] for r in requests) + 1)
     target_ms = None
     target_calls = None
+    target_device_decode_state_replayed = False
     prof = None
     torch.cuda.synchronize()
     while cursor < len(pending) or loop.num_pending() or loop.num_running():
@@ -151,6 +160,7 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
         adapter.step_calls = []
         is_target = len(steps) == target_index
         if is_target:
+            replays_before = loop.num_device_decode_state_replays()
             start = time.perf_counter()
             if profile_target:
                 callback = ProfileCallback(adapter)
@@ -170,6 +180,8 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
                 target_ms = (time.perf_counter() - start) * 1000
                 if collect_target_metadata:
                     target_calls = callback.materialize()
+            target_device_decode_state_replayed = (
+                loop.num_device_decode_state_replays() > replays_before)
         else:
             completed = loop.step(adapter)
         if not adapter.step_calls:
@@ -186,7 +198,9 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
     if target_ms is None:
         raise AssertionError("selected target step was not reached")
     return {"target_wall_ms": target_ms, "steps": steps, "outputs": outputs,
-            "profiler": prof, "target_calls": target_calls}
+            "profiler": prof, "target_calls": target_calls,
+            "device_decode_state_replays": loop.num_device_decode_state_replays(),
+            "target_device_decode_state_replayed": target_device_decode_state_replayed}
 
 
 def stage_summary(prof):
@@ -209,7 +223,8 @@ def cuda_kernel_category(name):
         return "kv_write"
     if any(token in lower for token in
            ("attention", "grouped_gqa", "grouped_splitk", "splitk_reduce",
-            "flashattn", "flash_attn", "fmha", "paged_attention")):
+            "flashattn", "flash_attn", "flash::flash_", "fmha",
+            "paged_attention")):
         return "attention"
     if "rope" in lower:
         return "rope"
@@ -233,12 +248,17 @@ def cuda_activity_summary(events):
     for event in events:
         if "cuda" not in str(getattr(event, "device_type", "")).lower():
             continue
+        # torch.profiler assigns device totals to enclosing record_function
+        # ranges as well as to their child kernels.  Those ranges are not CUDA
+        # activities; counting them here double-counts an entire graph replay.
+        name = str(event.name)
+        if name.startswith(("cpp/", "python/", "experiment/")):
+            continue
         duration = float(getattr(event, "self_device_time_total", 0.0))
         if duration <= 0:
             duration = float(getattr(event, "device_time_total", 0.0))
         if duration <= 0:
             continue
-        name = str(event.name)
         row = kernels.setdefault(name, {"name": name, "category": cuda_kernel_category(name),
                                         "calls": 0, "total_us": 0.0})
         row["calls"] += 1
@@ -265,9 +285,17 @@ def main():
     args = build_parser().parse_args()
     validate_args(args)
     if args.check_setup:
-        print(json.dumps(check_startup(args.device), indent=2))
+        startup = check_startup(args.device)
+        if args.decode_attention_policy == "fa3":
+            from kernel_dispatch import _load
+            _load("paged_decode_fa3")._load_fa3()
+            startup["fa3_interface_available"] = True
+        print(json.dumps(startup, indent=2))
         return
     startup = check_startup(args.device)
+    if args.decode_attention_policy == "fa3":
+        from kernel_dispatch import _load
+        _load("paged_decode_fa3")._load_fa3()
     import torch
     import inference_engine_cpp as cpp
     from run_benchmarks import system_metadata
@@ -276,6 +304,7 @@ def main():
     if args.prefill_budget is not None:
         case = {**case, "prefill_budget": args.prefill_budget}
     config = make_config(cpp, case)
+    config.reuse_stable_decode_metadata = args.reuse_stable_decode_metadata
     blocks = config.max_batch_size * (((config.max_context_length + 15) // 16) + 1)
     model_source = resolve_model_source(args)
     engine, load_seconds, hub_transfer = load_model_only(
@@ -290,11 +319,22 @@ def main():
                            enable_native_decode_rope_kv=args.qkv_mode == "native-k",
                            enable_native_decode_qkv_postprocess=args.qkv_mode == "native",
                            enable_packed_qkv_rope_cache=args.qkv_mode == "packed",
-                           enable_fused_qkv_rope_cache=args.qkv_mode == "full")
+                           enable_fused_qkv_rope_cache=args.qkv_mode == "full",
+                           enable_stable_decode_table_cache=(
+                               args.reuse_stable_decode_metadata))
     if adapter_cls is PiecewiseGraphModelAdapter and args.prefill_budget is not None:
         adapter_options.update(max_capture_tokens=args.prefill_budget,
                                max_prefill_shapes=1,
                                prefill_buckets=[args.prefill_budget])
+    if adapter_cls is PiecewiseGraphModelAdapter:
+        adapter_options.update(
+            enable_prefill_packed_qkv_rope_cache=(
+                args.prefill_fusion_mode in ("qkv", "both", "all")),
+            enable_prefill_residual_rmsnorm=(
+                args.prefill_fusion_mode in ("residual", "both", "all")),
+            enable_prefill_swiglu_fusion=(
+                args.prefill_fusion_mode in ("swiglu", "all")),
+        )
     adapter = adapter_cls(engine.model, pool, None, **adapter_options)
     requests = (resolve_requests(args, case) if args.workload_in is not None
                 else make_requests(case, args.seed, engine.cfg.vocab))
@@ -306,6 +346,8 @@ def main():
     poison()
     preflight = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                         adapter, requests)
+    outputs_sha256 = hashlib.sha256(json.dumps(
+        preflight["outputs"], sort_keys=True).encode()).hexdigest()
     expected_steps = [(step["kind"], step["calls"], step["completed"])
                       for step in preflight["steps"]]
     if args.preset == "fixed":
@@ -353,7 +395,12 @@ def main():
         "decode_attention_action": adapter.action,
         "qkv_mode": args.qkv_mode,
         "enable_residual_rmsnorm": args.enable_residual_rmsnorm,
+        "reuse_stable_decode_metadata": args.reuse_stable_decode_metadata,
+        "device_decode_state_replays": traced["device_decode_state_replays"],
+        "target_device_decode_state_replayed": traced["target_device_decode_state_replayed"],
+        "outputs_sha256": outputs_sha256,
         "prefill_budget": case["prefill_budget"],
+        "prefill_fusion_mode": args.prefill_fusion_mode,
         "target_step_index": target_index,
         "target_step_calls": expected_steps[target_index][1],
         "target_callback_calls": traced["target_calls"],

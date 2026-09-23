@@ -352,16 +352,21 @@ IterationPlan IterationLoop::schedule() {
 // Batch building - THE KEY OPTIMIZATION
 // =============================================================================
 
-void IterationLoop::build_decode_batch(const IterationPlan& plan) {
+void IterationLoop::build_decode_batch(
+    const IterationPlan& plan,
+    bool include_reserved_blocks
+) {
     RECORD_FUNCTION("cpp/build_decode_batch", {});
     // CPU writes are synchronous. Finish all writes before copying this phase.
     if (!plan.decode_requests.empty()) {
         int64_t n = plan.decode_requests.size();
         host_metadata_.num_decode_tokens = n;
         for (const Request* req : plan.decode_requests) {
+            const int64_t blocks = include_reserved_blocks
+                ? static_cast<int64_t>(req->block_ids.size())
+                : (req->total_tokens() + config_.block_size - 1) / config_.block_size;
             host_metadata_.num_decode_blocks = std::max(
-                host_metadata_.num_decode_blocks,
-                (req->total_tokens() + config_.block_size - 1) / config_.block_size
+                host_metadata_.num_decode_blocks, blocks
             );
         }
 
@@ -409,14 +414,70 @@ void IterationLoop::build_decode_batch(const IterationPlan& plan) {
         // Now loop through requests
         for (int64_t i = 0; i < n; ++i) {
             Request* req = plan.decode_requests[i]; // Get the request at index i
-            const int64_t visible_blocks =
-                (req->total_tokens() + config_.block_size - 1) / config_.block_size;
+            const int64_t visible_blocks = include_reserved_blocks
+                ? static_cast<int64_t>(req->block_ids.size())
+                : (req->total_tokens() + config_.block_size - 1) / config_.block_size;
             for (int64_t j = 0; j < visible_blocks; ++j) {
                 block_table_acc[i][j] =  static_cast<int32_t>(req->block_ids[j]); // Cast down to int32
             }
         }
 
     }
+}
+
+bool IterationLoop::can_reuse_decode_state(const IterationPlan& plan) const {
+    if (!config_.reuse_stable_decode_metadata || !decode_state_valid_
+        || !plan.prefill_requests.empty() || !retained_decode_tokens_.defined()
+        || retained_decode_tokens_.numel()
+            != static_cast<int64_t>(plan.decode_requests.size())
+        || decode_state_request_ids_.size() != plan.decode_requests.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < plan.decode_requests.size(); ++i) {
+        if (decode_state_request_ids_[i] != plan.decode_requests[i]->request_id) {
+            return false;
+        }
+    }
+    return !plan.decode_requests.empty();
+}
+
+void IterationLoop::remember_decode_state(const IterationPlan& plan) {
+    decode_state_request_ids_.clear();
+    decode_state_request_ids_.reserve(plan.decode_requests.size());
+    for (const Request* req : plan.decode_requests) {
+        decode_state_request_ids_.push_back(req->request_id);
+    }
+    decode_state_valid_ = !plan.decode_requests.empty() && plan.prefill_requests.empty();
+}
+
+void IterationLoop::advance_decode_state(const IterationPlan& plan) {
+    RECORD_FUNCTION("cpp/advance_device_decode_state", {});
+    auto& metadata = device_metadata();
+    const int64_t n = static_cast<int64_t>(plan.decode_requests.size());
+    auto ids = metadata.decode_input_ids.slice(0, 0, n);
+    auto positions = metadata.decode_positions.slice(0, 0, n);
+    auto lengths = metadata.decode_seq_lens.slice(0, 0, n);
+    auto slots = metadata.decode_slot_mapping.slice(0, 0, n);
+
+    ids.copy_(retained_decode_tokens_);
+    positions.add_(1);
+    lengths.add_(1);
+
+    // Requests reserve their complete page sequence at admission, so the
+    // table is immutable for a stable cohort. Only select the page containing
+    // the newly advanced position; no host table rebuild or H2D copy occurs.
+    auto logical_pages = torch::floor_divide(positions, config_.block_size)
+                             .to(torch::kLong)
+                             .unsqueeze(1);
+    auto physical_pages = metadata.decode_block_table
+                              .slice(0, 0, n)
+                              .gather(1, logical_pages)
+                              .squeeze(1)
+                              .to(torch::kLong);
+    auto offsets = torch::remainder(positions, config_.block_size);
+    slots.copy_(physical_pages * config_.block_size + offsets);
+    metadata.num_decode_tokens = n;
+    ++num_device_decode_state_replays_;
 }
 
 void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
@@ -712,21 +773,28 @@ int64_t IterationLoop::step(
     if (metadata_transfer_) {
         compute_stream = c10::impl::VirtualGuardImpl(device_.type()).getStream(device_);
         compute_guard.reset_stream(*compute_stream);
-        // DMA must finish reading the host staging buffer before CPU reuse.
-        {
+    }
+
+    const bool reuse_decode_state = can_reuse_decode_state(plan);
+    if (reuse_decode_state) {
+        // The preceding token readback synchronized the compute stream, so the
+        // persistent metadata is no longer in flight and can be advanced in place.
+        advance_decode_state(plan);
+    } else {
+        if (metadata_transfer_) {
+            // DMA must finish reading the host staging buffer before CPU reuse.
             RECORD_FUNCTION("cpp/wait_h2d_source_reuse", {});
             metadata_transfer_->copied.synchronize();
         }
-    }
-    host_metadata_.reset();
-    if (metadata_transfer_ && metadata_transfer_->consumed_valid[1 - active_batch_metadata_]) {
-        {
+        host_metadata_.reset();
+        if (metadata_transfer_
+            && metadata_transfer_->consumed_valid[1 - active_batch_metadata_]) {
             RECORD_FUNCTION("cpp/wait_device_metadata_reuse", {});
             metadata_transfer_->consumed[1 - active_batch_metadata_].synchronize();
         }
+        active_batch_metadata_ = 1 - active_batch_metadata_;
+        device_metadata().reset();
     }
-    active_batch_metadata_ = 1 - active_batch_metadata_;
-    device_metadata().reset();
     max_decode_context_length_ = 0;
 
     try {
@@ -757,8 +825,23 @@ int64_t IterationLoop::step(
         }
 
         if (!plan.decode_requests.empty()) {
-            build_decode_batch(plan);
-            transfer_phase(/*decode=*/true);
+            if (!reuse_decode_state) {
+                const bool seed_stable_state =
+                    config_.reuse_stable_decode_metadata
+                    && plan.prefill_requests.empty();
+                build_decode_batch(plan, seed_stable_state);
+                transfer_phase(/*decode=*/true);
+                if (seed_stable_state) {
+                    remember_decode_state(plan);
+                } else {
+                    decode_state_valid_ = false;
+                }
+            }
+            for (const Request* req : plan.decode_requests) {
+                max_decode_context_length_ = std::max(
+                    max_decode_context_length_, req->total_tokens()
+                );
+            }
             auto& metadata = device_metadata();
             int64_t n = metadata.num_decode_tokens;
             torch::Tensor decode_logits;
@@ -828,6 +911,19 @@ int64_t IterationLoop::step(
         // Sample
         torch::Tensor next_tokens = sample(logits);
 
+        if (config_.reuse_stable_decode_metadata
+            && !plan.decode_requests.empty() && plan.prefill_requests.empty()) {
+            // Keep the exact decode-row order used by the persistent metadata.
+            // update_requests still performs the existing CPU readback for EOS
+            // and request ownership; the next decode input itself stays on device.
+            retained_decode_tokens_ = next_tokens
+                .slice(0, 0, static_cast<int64_t>(plan.decode_requests.size()))
+                .clone();
+        } else {
+            decode_state_valid_ = false;
+            retained_decode_tokens_ = torch::Tensor();
+        }
+
         // Update state
         int64_t prev_completed = completed_outputs_.size();
         update_requests(plan, next_tokens);
@@ -838,6 +934,8 @@ int64_t IterationLoop::step(
         }
         return completed_outputs_.size() - prev_completed;
     } catch (...) {
+        decode_state_valid_ = false;
+        retained_decode_tokens_ = torch::Tensor();
         // A callback can enqueue reads and then throw. Drain both queues before
         // allowing a retry or freeing buffers, even if no event was recorded.
         if (metadata_transfer_) {
