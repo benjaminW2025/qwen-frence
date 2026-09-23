@@ -140,6 +140,7 @@ def drive(torch, cpp, config, requests, adapter, target_index, *, profile_target
     from torch.profiler import ProfilerActivity, profile, record_function
 
     loop = cpp.IterationLoop(config, torch.device(adapter.pool.k_pool[0].device))
+    adapter.loop = loop
     pending = sorted(requests, key=lambda request: (request["arrival"], request["id"]))
     cursor = iteration = 0
     mapping, outputs, steps = {}, {}, []

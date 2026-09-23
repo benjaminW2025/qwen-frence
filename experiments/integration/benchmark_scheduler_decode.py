@@ -96,6 +96,7 @@ class TraceCheck:
 
 def execute(torch, loop, adapter, requests):
     """One fully drained workload. Arrivals use iteration indices, not wall time."""
+    adapter.loop = loop
     pending = sorted(requests, key=lambda r: (r["arrival"], r["id"]))
     cursor, iteration = 0, 0
     mapping, outputs, steps = {}, {}, []

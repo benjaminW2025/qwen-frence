@@ -164,6 +164,8 @@ public:
     int64_t num_device_decode_state_replays() const {
         return num_device_decode_state_replays_;
     }
+    // Host-only plan bit for callback dispatch. No CUDA metadata readback.
+    bool current_step_is_mixed() const { return current_step_is_mixed_; }
 
 private:
     SchedulerConfig config_;
@@ -185,6 +187,7 @@ private:
     std::vector<int64_t> decode_state_request_ids_;
     torch::Tensor retained_decode_tokens_;
     int64_t num_device_decode_state_replays_ = 0;
+    bool current_step_is_mixed_ = false;
 
     // Simplified block manager. It owns page-ID allocation, but not the actual
     // K/V tensors; those remain behind forward_fn in this prototype.

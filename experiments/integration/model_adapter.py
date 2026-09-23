@@ -229,3 +229,100 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
             if checked is not None:
                 return checked
         return logits
+
+
+def combine_mixed_metadata(decode, prefill):
+    """Pack one-token decode rows before ragged prompt chunks.
+
+    Both use the same paged attention contract: context length includes the
+    newly written query tokens, and cu_seqlens marks each sequence's query
+    chunk. The decode metadata must have been cloned before the C++ scheduler
+    reuses its H2D staging buffer for prefill.
+    """
+    d_ids, d_positions, d_slots, d_cu, d_context, d_table, _, _ = decode
+    p_ids, p_positions, p_slots, p_cu, p_context, p_table, p_max_query, _ = prefill
+    if d_cu.numel() != 0 or d_ids.numel() != d_context.numel():
+        raise ValueError("mixed decode metadata must contain one token per sequence")
+    if p_cu.numel() != p_context.numel() + 1:
+        raise ValueError("mixed prefill cu_seqlens does not match request count")
+    width = max(d_table.shape[1], p_table.shape[1])
+    import torch.nn.functional as F
+    if d_table.shape[1] < width:
+        d_table = F.pad(d_table, (0, width - d_table.shape[1]))
+    if p_table.shape[1] < width:
+        p_table = F.pad(p_table, (0, width - p_table.shape[1]))
+    tables = torch.cat((d_table, p_table), dim=0)
+    decode_rows = d_ids.numel()
+    cu = torch.cat((torch.arange(decode_rows + 1, device=d_ids.device,
+                                 dtype=p_cu.dtype), p_cu[1:] + decode_rows))
+    return (torch.cat((d_ids, p_ids)),
+            torch.cat((d_positions, p_positions)),
+            torch.cat((d_slots, p_slots)), cu,
+            torch.cat((d_context, p_context)), tables, p_max_query)
+
+
+class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
+    """Use one packed model pass for a C++-scheduled mixed iteration.
+
+    The first C++ callback stages decode metadata and returns a logits tensor
+    that is filled during the subsequent prefill callback, before C++ samples.
+    Pure decode and pure prefill retain their established dispatch paths.
+    """
+
+    def __init__(self, *args, mixed_attention_policy="packed_paged", **kwargs):
+        super().__init__(*args, **kwargs)
+        if mixed_attention_policy not in ("packed_paged", "fa3_hybrid"):
+            raise ValueError("mixed attention policy must be packed_paged or fa3_hybrid")
+        self.mixed_attention_policy = mixed_attention_policy
+        self._pending_mixed = None
+        self.enable_packed_mixed = True
+
+    @torch.no_grad()
+    def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+        args = (ids, positions, slots, cu, context, table, max_query, decode)
+        if decode:
+            if self._pending_mixed is not None:
+                raise RuntimeError("previous mixed decode was not consumed")
+            if (not self.enable_packed_mixed or self.loop is None
+                    or not self.loop.current_step_is_mixed()):
+                return super().__call__(*args)
+            # The C++ transfer stream will reuse the active metadata buffer for
+            # prefill after this callback. Snapshot all decode views now, on
+            # the compute stream, before the consumed event is recorded.
+            saved = tuple(tensor.clone() for tensor in args[:6]) + (max_query, True)
+            placeholder = torch.empty((ids.numel(), self.model.cfg.vocab),
+                                      device=ids.device, dtype=self.model.lm_head.weight.dtype)
+            self._pending_mixed = (saved, placeholder)
+            self.step_calls.append((True, ids.numel(), context.numel(), max_query))
+            return placeholder
+
+        if self._pending_mixed is None:
+            return super().__call__(*args)
+        decode_args, placeholder = self._pending_mixed
+        self._pending_mixed = None
+        combined = combine_mixed_metadata(decode_args, args)
+        decode_rows = decode_args[0].numel()
+        logits = self.piecewise_prefill.forward(
+            *combined, mixed_decode_count=(decode_rows
+                                           if self.mixed_attention_policy == "fa3_hybrid"
+                                           else 0))
+        if logits is None:
+            observer = self.observer
+            self.observer = None
+            try:
+                logits = ModelAdapter.__call__(self, *combined, False)
+            finally:
+                self.observer = observer
+        decode_logits, prefill_logits = logits[:decode_rows], logits[decode_rows:]
+        if self.observer is not None:
+            checked_decode = self.observer(decode_args, decode_logits)
+            if checked_decode is not None:
+                decode_logits = checked_decode
+            checked_prefill = self.observer(args, prefill_logits)
+            if checked_prefill is not None:
+                prefill_logits = checked_prefill
+        placeholder.copy_(decode_logits)
+        self.step_calls.append((False, ids.numel(), context.numel(), max_query))
+        action = "packed_mixed_" + self.mixed_attention_policy
+        self.decisions[action] = self.decisions.get(action, 0) + 1
+        return prefill_logits

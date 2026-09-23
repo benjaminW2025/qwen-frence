@@ -763,6 +763,7 @@ int64_t IterationLoop::step(
     RECORD_FUNCTION("cpp/step", {});
     // Schedule
     IterationPlan plan = schedule();
+    current_step_is_mixed_ = !plan.decode_requests.empty() && !plan.prefill_requests.empty();
     if (plan.empty()) {
         return 0;
     }
@@ -932,8 +933,10 @@ int64_t IterationLoop::step(
             metadata_transfer_->consumed[active_batch_metadata_].record(*compute_stream);
             metadata_transfer_->consumed_valid[active_batch_metadata_] = true;
         }
+        current_step_is_mixed_ = false;
         return completed_outputs_.size() - prev_completed;
     } catch (...) {
+        current_step_is_mixed_ = false;
         decode_state_valid_ = false;
         retained_decode_tokens_ = torch::Tensor();
         // A callback can enqueue reads and then throw. Drain both queues before

@@ -9,6 +9,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
+import torch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +76,18 @@ def fake_vllm_modules():
 
 
 class PhaseProfileTests(unittest.TestCase):
+    def test_target_logit_check_reports_difference_without_dropping_timing(self):
+        metadata = (torch.tensor([1]), torch.tensor([0]), torch.tensor([2]),
+                    torch.empty(0, dtype=torch.int32), torch.tensor([1]),
+                    torch.tensor([[3]], dtype=torch.int32))
+        baseline = [{"metadata": metadata, "max_query": 1, "decode": True,
+                     "logits": torch.tensor([[0., 1.]])}]
+        candidate = [{"metadata": metadata, "max_query": 1, "decode": True,
+                      "logits": torch.tensor([[1., 0.]])}]
+        result = MODULE.compare_target_logits(torch, baseline, candidate)
+        self.assertEqual(result["status"], "numerical_difference")
+        self.assertEqual(result["rows"][0]["argmax_differences"], 1)
+
     def test_vllm_step_mode_is_set_before_import(self):
         with patch.dict(os.environ, {"VLLM_ENABLE_V1_MULTIPROCESSING": "1"}):
             MODULE.configure_vllm_step_mode()
