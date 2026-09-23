@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sweep packed-prefill token budgets with one model load and matched execution.
 
-This measures fewer, larger packed prefill calls and the two prefill fusions.
+This measures fewer, larger packed prefill calls and the prefill fusions.
 Every arm uses the same requests, weights, and decode graph. The piecewise
 prefill graph is replaced between arms, so only one large bucket remains live.
 """
@@ -30,10 +30,11 @@ from design import make_requests
 from fixed_regime import FIXED_SHAPES, get_fixed_case
 from model_adapter import ModelAdapter, PiecewiseGraphModelAdapter, allocate_pool
 from model_setup import check_startup, load_model_only
+from naive_forward import SWIGLU_FUSION_ROW_THRESHOLD
 
 
 DEFAULT_BUDGETS = (2048, 4096, 8192)
-FUSION_MODES = ("control", "qkv", "residual", "both")
+FUSION_MODES = ("control", "qkv", "residual", "both", "swiglu", "all")
 PHASES = ("wall_ms", "prefill_wall_ms", "mixed_wall_ms", "prefill_plus_mixed_ms",
           "decode_wall_ms", "output_tokens_per_s")
 
@@ -189,6 +190,12 @@ def plan_payload(args, base, requests):
         "cohort_output_tokens": output_tokens,
         "budgets": args.budgets,
         "fusion_modes": args.fusion_modes,
+        "swiglu_dispatch": {
+            "requires_custom_kernels": True,
+            "minimum_captured_bucket_rows": SWIGLU_FUSION_ROW_THRESHOLD + 1,
+            "active_budgets": [value for value in args.budgets
+                               if value > SWIGLU_FUSION_ROW_THRESHOLD],
+        },
         "decode_attention_policy": args.decode_attention_policy,
         "expected_prefill_calls": {str(value): prompt_tokens // value for value in args.budgets},
         "graphs_per_budget": 29,
@@ -214,8 +221,9 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, fusion_mode, ca
     candidate.piecewise_prefill = PiecewisePrefill(
         engine.model, pool, max_capture_tokens=budget, max_shapes=1,
         token_buckets=[budget],
-        enable_packed_qkv_rope_cache=fusion_mode in ("qkv", "both"),
-        enable_residual_rmsnorm=fusion_mode in ("residual", "both"))
+        enable_packed_qkv_rope_cache=fusion_mode in ("qkv", "both", "all"),
+        enable_residual_rmsnorm=fusion_mode in ("residual", "both", "all"),
+        enable_swiglu_fusion=fusion_mode in ("swiglu", "all"))
 
     def execute_arm(adapter, target_pool, observer=None):
         for tensor in target_pool.k_pool + target_pool.v_pool:

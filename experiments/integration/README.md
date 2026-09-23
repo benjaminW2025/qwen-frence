@@ -223,6 +223,13 @@ python3 experiments/integration/benchmark_prefill_budget.py \
 
 Repeat at B64 only after the B8 numerical gate passes. Use a new output
 directory and start with `--budgets 8192` to limit graph capture and GPU time.
+
+The conditional SwiGLU kernel is a separate opt-in: `--fusion-modes control
+swiglu all` compares it alone and alongside both prefill fusions. It dispatches
+only with custom kernels and more than 1408 captured bucket rows, so the
+2048/8192 buckets exercise it; smaller buckets use the PyTorch fallback.
+The plan reports which budgets cross the threshold. Keep this as an experiment
+until full-model numerical and timing gates pass.
 The earlier 2048/4096/8192 split-K measurements establish a scheduling lead,
 but they do not establish an FA3/fusion winner. Treat 16384 as a separate
 memory-gated probe after reviewing the 8192 result, not part of the default run.

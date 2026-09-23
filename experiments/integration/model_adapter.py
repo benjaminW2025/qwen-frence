@@ -180,7 +180,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  enable_prefill_packed_qkv_rope_cache=False,
-                 enable_prefill_residual_rmsnorm=False):
+                 enable_prefill_residual_rmsnorm=False,
+                 enable_prefill_swiglu_fusion=False):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -200,11 +201,13 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
             enable_prefill_packed_qkv_rope_cache
         )
         self.enable_prefill_residual_rmsnorm = bool(enable_prefill_residual_rmsnorm)
+        self.enable_prefill_swiglu_fusion = bool(enable_prefill_swiglu_fusion)
         self.piecewise_prefill = PiecewisePrefill(
             model, pool, max_capture_tokens=max_capture_tokens,
             max_shapes=max_prefill_shapes, token_buckets=prefill_buckets,
             enable_packed_qkv_rope_cache=self.enable_prefill_packed_qkv_rope_cache,
-            enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm)
+            enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm,
+            enable_swiglu_fusion=self.enable_prefill_swiglu_fusion)
 
     @torch.no_grad()
     def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):

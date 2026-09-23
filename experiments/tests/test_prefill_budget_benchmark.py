@@ -47,7 +47,7 @@ class PrefillBudgetBenchmarkTests(unittest.TestCase):
         ])
         base = MODULE.validate_args(args)
         plan = MODULE.plan_payload(args, base, MODULE.resolve_requests(args, base))
-        self.assertEqual(plan["fusion_modes"], list(MODULE.FUSION_MODES))
+        self.assertEqual(plan["fusion_modes"], ["control", "qkv", "residual", "both"])
         self.assertEqual(plan["correctness_workloads_per_budget"], 5)
         self.assertEqual(plan["expected_prefill_calls"], {"2048": 8, "8192": 2})
 
@@ -68,6 +68,17 @@ class PrefillBudgetBenchmarkTests(unittest.TestCase):
                                ["end_to_end_speedup"], 90 / 70)
         self.assertAlmostEqual(rows[3]["relative_to_control_same_budget"]
                                ["end_to_end_speedup"], 80 / 70)
+
+    def test_swiglu_modes_and_threshold_are_reported(self):
+        args = MODULE.build_parser().parse_args([
+            "--budgets", "1024", "2048",
+            "--fusion-modes", "control", "swiglu", "all",
+        ])
+        base = MODULE.validate_args(args)
+        plan = MODULE.plan_payload(args, base, MODULE.resolve_requests(args, base))
+        self.assertEqual(plan["fusion_modes"], ["control", "swiglu", "all"])
+        self.assertEqual(plan["swiglu_dispatch"]["minimum_captured_bucket_rows"], 1409)
+        self.assertEqual(plan["swiglu_dispatch"]["active_budgets"], [2048])
 
     def test_call_summary_reports_realized_packing(self):
         result = {"steps": [

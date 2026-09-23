@@ -20,7 +20,7 @@ class _AttentionBoundary:
 
     def __init__(self, model, pool, index, tokens, positions, slots, valid_tokens,
                  enable_packed_qkv_rope_cache=False,
-                 enable_residual_rmsnorm=False):
+                 enable_residual_rmsnorm=False, enable_swiglu_fusion=False):
         cfg = model.cfg
         device, dtype = pool.k_pool[0].device, pool.k_pool[0].dtype
         layers = model.layers
@@ -28,6 +28,7 @@ class _AttentionBoundary:
         self.last = index == len(layers)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_swiglu_fusion = bool(enable_swiglu_fusion)
         if index == 0:
             self.ids = torch.zeros(tokens, device=device, dtype=torch.long)
         else:
@@ -56,7 +57,8 @@ class _AttentionBoundary:
                     x = self.residual + projected
                     h = apply_rms_norm(x, previous.post_attn_norm, cfg)
                 gate, up = previous.project_gate_up(h)
-                branch = previous.down_proj(apply_swiglu(gate, up, cfg))
+                branch = previous.down_proj(apply_swiglu(
+                    gate, up, cfg, enable_regime_fusions=self.enable_swiglu_fusion))
                 if self.enable_residual_rmsnorm:
                     next_norm = model.norm if self.last else layers[index].input_norm
                     x, next_h = residual_add_rms_norm(
@@ -126,7 +128,7 @@ class PiecewisePrefill:
 
     def __init__(self, model, pool, *, max_capture_tokens=2048, max_shapes=8,
                  token_buckets=None, enable_packed_qkv_rope_cache=False,
-                 enable_residual_rmsnorm=False):
+                 enable_residual_rmsnorm=False, enable_swiglu_fusion=False):
         if max_capture_tokens < 1 or max_shapes < 1:
             raise ValueError("capture token and shape limits must be positive")
         if pool.k_pool[0].device.type != "cuda":
@@ -134,6 +136,7 @@ class PiecewisePrefill:
         self.model, self.pool = model, pool
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
+        self.enable_swiglu_fusion = bool(enable_swiglu_fusion)
         self.max_capture_tokens, self.max_shapes = max_capture_tokens, max_shapes
         if token_buckets is None:
             buckets = [b for b in (128, 256, 512, 1024, 2048) if b <= max_capture_tokens]
@@ -164,7 +167,8 @@ class PiecewisePrefill:
                 _AttentionBoundary(self.model, self.pool, i, bucket,
                                    positions, slots, valid_tokens,
                                    getattr(self, "enable_packed_qkv_rope_cache", False),
-                                   getattr(self, "enable_residual_rmsnorm", False))
+                                   getattr(self, "enable_residual_rmsnorm", False),
+                                   getattr(self, "enable_swiglu_fusion", False))
                 for i in range(len(self.model.layers) + 1)
             ]
         self.captured_calls += 1
