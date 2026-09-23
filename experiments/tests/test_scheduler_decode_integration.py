@@ -91,10 +91,11 @@ class GraphAdapterTests(unittest.TestCase):
         prefill.captured_calls = prefill.eager_calls = 0
         prefill.enable_packed_qkv_rope_cache = True
         prefill.enable_residual_rmsnorm = True
+        prefill.enable_swiglu_fusion = True
         with mock.patch.object(piecewise_prefill, "_AttentionBoundary", FakePiece):
             prefill.pieces(63)
         self.assertEqual(len(captured), 3)
-        self.assertTrue(all(args[7:] == (True, True) for args in captured))
+        self.assertTrue(all(args[7:] == (True, True, True) for args in captured))
 
     def test_piecewise_adapter_prefill_dispatch_records_once(self):
         from model_adapter import PiecewiseGraphModelAdapter
