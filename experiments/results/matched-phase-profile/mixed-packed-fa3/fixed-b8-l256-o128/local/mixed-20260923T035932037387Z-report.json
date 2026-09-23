@@ -1,0 +1,82 @@
+{
+  "status": "complete",
+  "kind": "mixed",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "shape_id": "fixed-b8-l256-o128",
+  "prefill_budget": 2048,
+  "arrival_step": 5,
+  "output_tokens": 16,
+  "local_policy": "fa3",
+  "local_mixed_policy": "packed-fa3",
+  "first_wave": 4,
+  "second_wave": 4,
+  "target_step_index": 5,
+  "target_step_calls": [
+    [
+      true,
+      4,
+      4,
+      1
+    ],
+    [
+      false,
+      1024,
+      4,
+      256
+    ]
+  ],
+  "target_callback_calls": [
+    {
+      "decode": true,
+      "tokens": 4,
+      "context_lengths": [
+        261,
+        261,
+        261,
+        261
+      ]
+    },
+    {
+      "decode": false,
+      "tokens": 1024,
+      "context_lengths": [
+        256,
+        256,
+        256,
+        256
+      ]
+    }
+  ],
+  "outputs_sha256": "b6044b178c051839b2466421759ca990cc82f406db5f504832c0371d03168780",
+  "model_load_seconds": 12.165204031392932,
+  "same_history_target_correctness": {
+    "status": "pass",
+    "atol": 0.05,
+    "rtol": 0.01,
+    "rows": [
+      {
+        "decode": true,
+        "elements": 607744,
+        "outside_tolerance": 0,
+        "argmax_differences": 0,
+        "max_abs": 0.015625,
+        "mean_abs": 0.0021558969747275114
+      },
+      {
+        "decode": false,
+        "elements": 607744,
+        "outside_tolerance": 0,
+        "argmax_differences": 0,
+        "max_abs": 0.0,
+        "mean_abs": 0.0
+      }
+    ]
+  },
+  "unprofiled_target_wall_ms": [
+    12.020738795399666,
+    12.052856385707855,
+    12.002648785710335
+  ],
+  "unprofiled_median_wall_ms": 12.020738795399666,
+  "trace": "/workspace/qwen-frence/experiments/results/matched-phase-profile/mixed-packed-fa3/fixed-b8-l256-o128/local/mixed-20260923T035932037387Z-trace.json"
+}
