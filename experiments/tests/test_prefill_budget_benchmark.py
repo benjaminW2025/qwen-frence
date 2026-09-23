@@ -33,6 +33,41 @@ class PrefillBudgetBenchmarkTests(unittest.TestCase):
             MODULE.validate_args(parser.parse_args(["--budgets", "2048", "3000"]))
         with self.assertRaisesRegex(ValueError, "exceeds the cohort"):
             MODULE.validate_args(parser.parse_args(["--budgets", "32768"]))
+        with self.assertRaisesRegex(ValueError, "start with control"):
+            MODULE.validate_args(parser.parse_args([
+                "--fusion-modes", "qkv", "control",
+            ]))
+
+    def test_fa3_fusion_plan_and_two_axis_comparison(self):
+        args = MODULE.build_parser().parse_args([
+            "--shape-id", "fixed-b8-l2048-o128",
+            "--budgets", "2048", "8192",
+            "--fusion-modes", "control", "qkv", "residual", "both",
+            "--decode-attention-policy", "fa3",
+        ])
+        base = MODULE.validate_args(args)
+        plan = MODULE.plan_payload(args, base, MODULE.resolve_requests(args, base))
+        self.assertEqual(plan["fusion_modes"], list(MODULE.FUSION_MODES))
+        self.assertEqual(plan["correctness_workloads_per_budget"], 5)
+        self.assertEqual(plan["expected_prefill_calls"], {"2048": 8, "8192": 2})
+
+        rows = [
+            {"budget": budget, "fusion_mode": mode,
+             "medians": {"wall_ms": wall, "prefill_plus_mixed_ms": wall / 2,
+                         "output_tokens_per_s": 1000 / wall},
+             "work": {"prefill_calls": calls}}
+            for budget, calls, mode, wall in (
+                (2048, 8, "control", 100),
+                (2048, 8, "both", 90),
+                (8192, 2, "control", 80),
+                (8192, 2, "both", 70),
+            )
+        ]
+        MODULE.aggregate(rows)
+        self.assertAlmostEqual(rows[3]["relative_to_smallest_budget"]
+                               ["end_to_end_speedup"], 90 / 70)
+        self.assertAlmostEqual(rows[3]["relative_to_control_same_budget"]
+                               ["end_to_end_speedup"], 80 / 70)
 
     def test_call_summary_reports_realized_packing(self):
         result = {"steps": [

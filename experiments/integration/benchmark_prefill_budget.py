@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Sweep packed-prefill token budgets with one model load and matched execution.
 
-This isolates the effect of doing fewer, larger packed prefill calls.  Every
-budget uses the same requests, weights, production decode graph, and packed
-prefill implementation.  The piecewise prefill graph is replaced between
-budgets so only one potentially large token bucket remains live at a time.
+This measures fewer, larger packed prefill calls and the two prefill fusions.
+Every arm uses the same requests, weights, and decode graph. The piecewise
+prefill graph is replaced between arms, so only one large bucket remains live.
 """
 
 from __future__ import annotations
@@ -34,6 +33,7 @@ from model_setup import check_startup, load_model_only
 
 
 DEFAULT_BUDGETS = (2048, 4096, 8192)
+FUSION_MODES = ("control", "qkv", "residual", "both")
 PHASES = ("wall_ms", "prefill_wall_ms", "mixed_wall_ms", "prefill_plus_mixed_ms",
           "decode_wall_ms", "output_tokens_per_s")
 
@@ -45,6 +45,9 @@ def build_parser():
     parser.add_argument("--budgets", type=int, nargs="+", default=list(DEFAULT_BUDGETS),
                         help="packed tokens per prefill iteration; use 16384 explicitly "
                              "for the full B8 cohort")
+    parser.add_argument("--fusion-modes", choices=FUSION_MODES, nargs="+",
+                        default=["control"],
+                        help="sequential prefill arms; include control first for paired-budget comparisons")
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=20260914)
@@ -52,10 +55,10 @@ def build_parser():
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--warmups", type=int, default=0)
     parser.add_argument("--logit-atol", type=float, default=.05)
-    parser.add_argument("--decode-attention-policy", choices=("production", "splitk"),
+    parser.add_argument("--decode-attention-policy", choices=("production", "splitk", "fa3"),
                         default="splitk",
                         help="fixed decode policy across budgets; splitk matches the "
-                             "latest long-context arm")
+                             "older budget sweep; fa3 uses accepted decode fusions")
     parser.add_argument("--workload-in", type=Path,
                         help="optional benchmark_core workload.json with the exact "
                              "table-row requests")
@@ -70,6 +73,9 @@ def build_parser():
 
 
 def validate_args(args):
+    if (len(set(args.fusion_modes)) != len(args.fusion_modes) or
+            (len(args.fusion_modes) > 1 and args.fusion_modes[0] != "control")):
+        raise ValueError("fusion modes must be distinct and start with control")
     if len(set(args.budgets)) != len(args.budgets) or any(value < 1 for value in args.budgets):
         raise ValueError("budgets must be distinct positive integers")
     if args.budgets != sorted(args.budgets):
@@ -141,9 +147,15 @@ def measured_metrics(result):
 
 
 def aggregate(rows):
-    baseline = rows[0]
-    base_medians = baseline["medians"]
+    smallest_by_mode = {}
+    control_by_budget = {}
     for row in rows:
+        smallest_by_mode.setdefault(row["fusion_mode"], row)
+        if row["fusion_mode"] == "control":
+            control_by_budget[row["budget"]] = row
+    for row in rows:
+        baseline = smallest_by_mode[row["fusion_mode"]]
+        base_medians = baseline["medians"]
         medians = row["medians"]
         row["relative_to_smallest_budget"] = {
             "end_to_end_speedup": base_medians["wall_ms"] / medians["wall_ms"],
@@ -154,6 +166,14 @@ def aggregate(rows):
             "prefill_call_reduction": (
                 baseline["work"]["prefill_calls"] / row["work"]["prefill_calls"]),
         }
+        control = control_by_budget.get(row["budget"])
+        if control is not None:
+            row["relative_to_control_same_budget"] = {
+                "end_to_end_speedup": control["medians"]["wall_ms"] / medians["wall_ms"],
+                "prefill_plus_mixed_speedup": (
+                    control["medians"]["prefill_plus_mixed_ms"] /
+                    medians["prefill_plus_mixed_ms"]),
+            }
     return rows
 
 
@@ -168,18 +188,20 @@ def plan_payload(args, base, requests):
         "cohort_prompt_tokens": prompt_tokens,
         "cohort_output_tokens": output_tokens,
         "budgets": args.budgets,
+        "fusion_modes": args.fusion_modes,
         "decode_attention_policy": args.decode_attention_policy,
         "expected_prefill_calls": {str(value): prompt_tokens // value for value in args.budgets},
         "graphs_per_budget": 29,
-        "timed_workloads_per_budget": args.trials * args.samples,
-        "warmup_workloads_per_budget": args.warmups,
-        "correctness_workloads_per_budget": 2,
+        "capture_policy": "one prefill graph set live at a time",
+        "timed_workloads_per_budget": args.trials * args.samples * len(args.fusion_modes),
+        "warmup_workloads_per_budget": args.warmups * len(args.fusion_modes),
+        "correctness_workloads_per_budget": 1 + len(args.fusion_modes),
         "requests_sha256": requests_fingerprint(requests),
     }
 
 
-def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eager, pool,
-               reference_pool):
+def run_budget(torch, cpp, engine, base, requests, args, budget, fusion_mode, candidate, eager, pool,
+               reference_pool, reference_cache):
     from piecewise_prefill import PiecewisePrefill
 
     case = case_for_budget(base, budget)
@@ -191,7 +213,9 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
     torch.cuda.reset_peak_memory_stats(engine.device)
     candidate.piecewise_prefill = PiecewisePrefill(
         engine.model, pool, max_capture_tokens=budget, max_shapes=1,
-        token_buckets=[budget])
+        token_buckets=[budget],
+        enable_packed_qkv_rope_cache=fusion_mode in ("qkv", "both"),
+        enable_residual_rmsnorm=fusion_mode in ("residual", "both"))
 
     def execute_arm(adapter, target_pool, observer=None):
         for tensor in target_pool.k_pool + target_pool.v_pool:
@@ -203,16 +227,20 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
         finally:
             adapter.observer = None
 
-    print(f"budget={budget}: eager reference", flush=True)
-    trace = TraceCheck(torch)
-    eager_result = execute_arm(eager, reference_pool, trace)
-    trace.finish()
-    eager_work = verify_actual_work(eager_result, base["max_running"], budget, 1)
+    if budget not in reference_cache:
+        print(f"budget={budget}: eager reference", flush=True)
+        trace = TraceCheck(torch)
+        eager_result = execute_arm(eager, reference_pool, trace)
+        trace.finish()
+        eager_work = verify_actual_work(eager_result, base["max_running"], budget, 1)
+        reference_cache[budget] = (trace.rows, eager_result, eager_work)
+    reference_rows, eager_result, eager_work = reference_cache[budget]
 
-    print(f"budget={budget}: piecewise same-history correctness", flush=True)
+    print(f"budget={budget} fusion={fusion_mode}: piecewise same-history correctness", flush=True)
     for tensor in reference_pool.k_pool + reference_pool.v_pool:
         tensor.fill_(float("nan"))
-    checker = SameHistoryCheck(torch, eager, trace.rows, f"budget-{budget}",
+    checker = SameHistoryCheck(torch, eager, reference_rows,
+                               f"budget-{budget}-{fusion_mode}",
                                atol=args.logit_atol, report_only=True)
     checked = execute_arm(candidate, pool, checker)
     checker.finish()
@@ -230,9 +258,12 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
     expected_outputs = free["outputs"]
     if expected_schedule != schedule_of(eager_result):
         raise AssertionError(f"budget={budget}: free-generation schedule changed")
-    splitk_executed = any(name != "production" for name in free["decisions"])
+    splitk_executed = (args.decode_attention_policy == "splitk" and
+                       any(name != "production" for name in free["decisions"]))
     if args.decode_attention_policy == "splitk" and not splitk_executed:
         raise AssertionError(f"budget={budget}: split-K policy never executed")
+    if args.decode_attention_policy == "fa3" and set(free["decisions"]) != {"FA3-auto"}:
+        raise AssertionError(f"budget={budget}: FA3 policy was not used throughout")
     for _ in range(args.warmups):
         warm = execute_arm(candidate, pool)
         if schedule_of(warm) != expected_schedule or warm["outputs"] != expected_outputs:
@@ -260,6 +291,7 @@ def run_budget(torch, cpp, engine, base, requests, args, budget, candidate, eage
         raise AssertionError(f"budget={budget}: timing did not stay on captured prefill")
     return {
         "budget": budget,
+        "fusion_mode": fusion_mode,
         "decode_attention_policy": args.decode_attention_policy,
         "decode_decisions": free["decisions"],
         "splitk_executed": splitk_executed,
@@ -304,7 +336,12 @@ def main():
         print(json.dumps(plan, indent=2))
         return
     if args.check_setup:
-        print(json.dumps(check_startup(args.device), indent=2))
+        startup = check_startup(args.device)
+        if args.decode_attention_policy == "fa3":
+            from kernel_dispatch import _load
+            _load("paged_decode_fa3")._load_fa3()
+            startup["fa3_interface_available"] = True
+        print(json.dumps(startup, indent=2))
         return
 
     import torch
@@ -324,6 +361,9 @@ def main():
         raise SystemExit(f"refusing to overwrite results in {args.output_dir}")
 
     startup = check_startup(args.device)
+    if args.decode_attention_policy == "fa3":
+        from kernel_dispatch import _load
+        _load("paged_decode_fa3")._load_fa3()
     model_source = resolve_model_source(args)
     from run_benchmarks import system_metadata
 
@@ -338,6 +378,8 @@ def main():
     candidate = PiecewiseGraphModelAdapter(
         engine.model, pool, None, **common,
         decode_attention_policy=args.decode_attention_policy,
+        enable_residual_rmsnorm=args.decode_attention_policy == "fa3",
+        enable_native_decode_qkv_postprocess=args.decode_attention_policy == "fa3",
         max_capture_tokens=args.budgets[0],
         max_prefill_shapes=1, prefill_buckets=[args.budgets[0]])
     eager = ModelAdapter(engine.model, reference_pool, None)
@@ -351,17 +393,21 @@ def main():
         "model_load_seconds": load_seconds,
         "hub_transfer": hub_transfer,
         "system": system_metadata(),
-        "scope": ("piecewise production path; one model/decode graph; one prefill "
-                  "bucket live at a time"),
+        "scope": ("piecewise path; one model/decode graph and one prefill "
+                  "bucket live at a time; FA3 uses accepted decode fusions"),
     }
     atomic_json(args.output_dir / "manifest.json", manifest)
     rows = []
+    reference_cache = {}
     try:
         for budget in args.budgets:
-            rows.append(run_budget(torch, cpp, engine, base, requests, args, budget,
-                                   candidate, eager, pool, reference_pool))
-            atomic_json(args.output_dir / "report.json", {
-                "status": "running", "shape_id": args.shape_id, "rows": aggregate(rows)})
+            for fusion_mode in args.fusion_modes:
+                rows.append(run_budget(torch, cpp, engine, base, requests, args,
+                                       budget, fusion_mode, candidate, eager, pool,
+                                       reference_pool, reference_cache))
+                atomic_json(args.output_dir / "report.json", {
+                    "status": "running", "shape_id": args.shape_id,
+                    "rows": aggregate(rows)})
     except Exception as error:
         atomic_json(args.output_dir / "report.json", {
             "status": "error", "shape_id": args.shape_id, "rows": aggregate(rows),
@@ -371,14 +417,18 @@ def main():
     atomic_json(args.output_dir / "report.json", {
         "status": "ok", "created_at": datetime.now(timezone.utc).isoformat(),
         "shape_id": args.shape_id, "rows": rows})
-    print("\nbudget  calls  seq/call  prefill+mixed ms  wall ms  output tok/s  vs base")
+    print("\nbudget  fusion    calls  seq/call  prefill+mixed ms  wall ms  vs budget  vs control")
     for row in rows:
-        print(f"{row['budget']:>6} {row['work']['prefill_calls']:>6} "
+        control = row.get("relative_to_control_same_budget", {})
+        control_speedup = control.get("end_to_end_speedup")
+        control_label = f"{control_speedup:.3f}x" if control_speedup is not None else "-"
+        print(f"{row['budget']:>6} {row['fusion_mode']:<8} "
+              f"{row['work']['prefill_calls']:>6} "
               f"{row['work']['mean_sequences_per_call']:>9.2f} "
               f"{row['medians']['prefill_plus_mixed_ms']:>16.2f} "
               f"{row['medians']['wall_ms']:>8.2f} "
-              f"{row['medians']['output_tokens_per_s']:>13.1f} "
-              f"{row['relative_to_smallest_budget']['end_to_end_speedup']:>8.3f}x")
+              f"{row['relative_to_smallest_budget']['end_to_end_speedup']:>8.3f}x "
+              f"{control_label}")
     print(f"wrote {args.output_dir / 'report.json'}")
 
 
