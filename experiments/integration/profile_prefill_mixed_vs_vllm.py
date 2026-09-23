@@ -13,6 +13,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import statistics
 import subprocess
@@ -34,6 +35,20 @@ from profile_cpp_control import drive
 from profile_latest_vs_vllm import (PINNED_VLLM, add_vllm_requests,
                                     prepare_destination, summarize_chrome_trace,
                                     verify_external_setup)
+
+
+def configure_vllm_step_mode():
+    """Make request admission wait for step(), rather than racing a core process.
+
+    With V1 multiprocessing the core may start executing the first request
+    while later add_request() calls are still being submitted. The first
+    LLMEngine.step() is then not an eight-request prefill step, even though the
+    entire cohort was added before that call. In-process mode makes the target
+    step a deterministic scheduler boundary for this *step* comparison.
+    """
+    if "vllm.envs" in sys.modules:
+        raise RuntimeError("set vLLM step mode before importing vllm")
+    os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 
 
 def build_parser():
@@ -148,6 +163,7 @@ def complete_vllm(directory, args):
     return (report.get("status") == "complete" and report.get("kind") == args.kind
             and report.get("shape_id") == args.shape_id
             and report.get("prefill_budget") == args.prefill_budget
+            and report.get("vllm_enable_v1_multiprocessing") == "0"
             and report.get("arrival_step") == args.arrival_step
             and report.get("output_tokens") == args.output_tokens
             and (trace.is_file() or len(list(directory.rglob(trace.name))) == 1))
@@ -298,6 +314,7 @@ def verify_vllm_target(discovery, first, second, kind):
 
 
 def run_vllm(args, case, requests, first, second, target_index):
+    configure_vllm_step_mode()
     output = args.output_dir / "vllm"
     if not prepare_destination(output, lambda path: complete_vllm(path, args),
                                args.retry_failed):
@@ -306,7 +323,6 @@ def run_vllm(args, case, requests, first, second, target_index):
     setup = verify_external_setup(args)
     trace_dir = output / "trace"
     trace_dir.mkdir()
-    import os
     os.environ["VLLM_TORCH_PROFILER_DIR"] = str(trace_dir)
     os.environ["VLLM_TORCH_PROFILER_WITH_STACK"] = "0"
     from vllm import LLM
@@ -344,6 +360,7 @@ def run_vllm(args, case, requests, first, second, target_index):
     summarize_chrome_trace(traces[0])  # reject empty or malformed traces before completion
     report = {"status": "complete", "kind": args.kind, "shape_id": args.shape_id,
               "model": model, "vllm_version": PINNED_VLLM,
+              "vllm_enable_v1_multiprocessing": os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"],
               "prefill_budget": args.prefill_budget,
               "arrival_step": args.arrival_step, "output_tokens": args.output_tokens,
               "first_wave": first, "second_wave": second,
@@ -385,6 +402,8 @@ def analyze(args, case, first, second, target_index):
             or local["first_wave"] != vllm["first_wave"]
             or local["second_wave"] != vllm["second_wave"]):
         raise ValueError("local and vLLM work/settings do not match")
+    if vllm.get("vllm_enable_v1_multiprocessing") != "0":
+        raise ValueError("vLLM result was not run with deterministic step scheduling")
     verify_vllm_target(vllm, first, second, args.kind)
     local_cuda = summarize_chrome_trace(resolve_trace(local["trace"], args.output_dir / "local"))
     vllm_cuda = summarize_chrome_trace(resolve_trace(vllm["trace"], args.output_dir / "vllm"))
@@ -413,7 +432,9 @@ def main():
     if args.action == "plan":
         print(json.dumps(plan(args, case, first, second, target_index), indent=2))
     elif args.action == "check-setup":
-        print(json.dumps(verify_external_setup(args), indent=2))
+        configure_vllm_step_mode()
+        print(json.dumps({**verify_external_setup(args),
+                          "vllm_enable_v1_multiprocessing": "0"}, indent=2))
     elif args.action == "run-local":
         run_local(args, case, requests, first, second, target_index)
     elif args.action == "run-vllm":
@@ -421,6 +442,7 @@ def main():
     elif args.action == "analyze":
         analyze(args, case, first, second, target_index)
     else:
+        configure_vllm_step_mode()
         verify_external_setup(args)
         common = ["--kind", args.kind, "--shape-id", args.shape_id,
                   "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),

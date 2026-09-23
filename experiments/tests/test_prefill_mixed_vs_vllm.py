@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -74,6 +75,11 @@ def fake_vllm_modules():
 
 
 class PhaseProfileTests(unittest.TestCase):
+    def test_vllm_step_mode_is_set_before_import(self):
+        with patch.dict(os.environ, {"VLLM_ENABLE_V1_MULTIPROCESSING": "1"}):
+            MODULE.configure_vllm_step_mode()
+            self.assertEqual(os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"], "0")
+
     def test_prefill_target_advances_every_new_request_once(self):
         llm = FakeLLM()
         requests = [{"id": i, "prompt": [1] * 256, "output": 12}
