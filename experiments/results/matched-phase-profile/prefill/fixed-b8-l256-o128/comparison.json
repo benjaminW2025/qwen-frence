@@ -1,0 +1,626 @@
+{
+  "status": "complete",
+  "kind": "prefill",
+  "shape_id": "fixed-b8-l256-o128",
+  "work": {
+    "kind": "prefill",
+    "shape_id": "fixed-b8-l256-o128",
+    "first_wave": 8,
+    "second_wave": 0,
+    "prompt_length": 256,
+    "output_tokens": 16,
+    "target_engine_step": 0,
+    "target_decode_tokens": 0,
+    "target_prefill_tokens": 2048,
+    "shared_prefill_budget": 2048,
+    "local_model_passes": 1,
+    "note": "fails before reporting a timing if either scheduler misses target work"
+  },
+  "local_wall_ms": 11.27106323838234,
+  "vllm_wall_ms": 11.988716199994087,
+  "local_over_vllm": 0.940139298517042,
+  "local_cuda_activity": {
+    "summed_cuda_activity_us": 10653.294,
+    "activity_count": 469,
+    "categories": [
+      {
+        "category": "gemm",
+        "calls": 113,
+        "total_us": 7642.349999999999,
+        "percent_of_cuda_activity": 71.73696698880177
+      },
+      {
+        "category": "activation",
+        "calls": 28,
+        "total_us": 993.5759999999999,
+        "percent_of_cuda_activity": 9.326467475693432
+      },
+      {
+        "category": "rope",
+        "calls": 56,
+        "total_us": 560.5840000000001,
+        "percent_of_cuda_activity": 5.262071993882832
+      },
+      {
+        "category": "attention",
+        "calls": 28,
+        "total_us": 475.781,
+        "percent_of_cuda_activity": 4.46604590092041
+      },
+      {
+        "category": "memory_copy_or_set",
+        "calls": 96,
+        "total_us": 310.11699999999996,
+        "percent_of_cuda_activity": 2.910996354742486
+      },
+      {
+        "category": "elementwise",
+        "calls": 60,
+        "total_us": 294.43199999999996,
+        "percent_of_cuda_activity": 2.7637648975049407
+      },
+      {
+        "category": "normalization",
+        "calls": 57,
+        "total_us": 236.38799999999992,
+        "percent_of_cuda_activity": 2.2189193314293205
+      },
+      {
+        "category": "other",
+        "calls": 30,
+        "total_us": 130.11399999999998,
+        "percent_of_cuda_activity": 1.2213499411543507
+      },
+      {
+        "category": "sampling",
+        "calls": 1,
+        "total_us": 9.952,
+        "percent_of_cuda_activity": 0.09341711587045284
+      }
+    ],
+    "kernels": [
+      {
+        "name": "nvjet_hsh_320x128_64x3_1x2_h_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 28,
+        "total_us": 4362.524,
+        "mean_us": 155.8044285714286,
+        "percent_of_cuda_activity": 40.950001004384184
+      },
+      {
+        "name": "nvjet_hsh_192x128_64x5_1x2_h_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 56,
+        "total_us": 2514.413,
+        "mean_us": 44.90023214285714,
+        "percent_of_cuda_activity": 23.602211672746474
+      },
+      {
+        "name": "_swiglu_kernel",
+        "category": "activation",
+        "calls": 28,
+        "total_us": 993.5759999999999,
+        "mean_us": 35.48485714285714,
+        "percent_of_cuda_activity": 9.326467475693432
+      },
+      {
+        "name": "nvjet_hsh_128x256_64x4_2x1_v_bz_coopA_bias_TNN",
+        "category": "gemm",
+        "calls": 28,
+        "total_us": 593.06,
+        "mean_us": 21.180714285714284,
+        "percent_of_cuda_activity": 5.566916673847544
+      },
+      {
+        "name": "rope_kernel",
+        "category": "rope",
+        "calls": 56,
+        "total_us": 560.5840000000001,
+        "mean_us": 10.010428571428573,
+        "percent_of_cuda_activity": 5.262071993882832
+      },
+      {
+        "name": "_packed_paged_prefill_attention_kernel",
+        "category": "attention",
+        "calls": 28,
+        "total_us": 475.781,
+        "mean_us": 16.99217857142857,
+        "percent_of_cuda_activity": 4.46604590092041
+      },
+      {
+        "name": "void at::native::vectorized_elementwise_kernel<8, at::native::CUDAFunctor_add<c10::Half>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::Half>, std::array<char*, 3ul>)",
+        "category": "elementwise",
+        "calls": 56,
+        "total_us": 289.15199999999993,
+        "mean_us": 5.16342857142857,
+        "percent_of_cuda_activity": 2.7142027620752787
+      },
+      {
+        "name": "Memcpy DtoD (Device -> Device)",
+        "category": "memory_copy_or_set",
+        "calls": 59,
+        "total_us": 274.949,
+        "mean_us": 4.660152542372882,
+        "percent_of_cuda_activity": 2.5808824951231046
+      },
+      {
+        "name": "fused_rms_norm",
+        "category": "normalization",
+        "calls": 57,
+        "total_us": 236.38799999999992,
+        "mean_us": 4.147157894736841,
+        "percent_of_cuda_activity": 2.2189193314293205
+      },
+      {
+        "name": "nvjet_hsh_384x8_64x4_2x1_v_bz_TNT",
+        "category": "gemm",
+        "calls": 1,
+        "total_us": 172.353,
+        "mean_us": 172.353,
+        "percent_of_cuda_activity": 1.6178376378235688
+      },
+      {
+        "name": "_masked_kv_write_kernel",
+        "category": "other",
+        "calls": 28,
+        "total_us": 119.234,
+        "mean_us": 4.258357142857142,
+        "percent_of_cuda_activity": 1.1192219045114122
+      },
+      {
+        "name": "Memset (Unknown)",
+        "category": "memory_copy_or_set",
+        "calls": 28,
+        "total_us": 24.22400000000001,
+        "mean_us": 0.8651428571428575,
+        "percent_of_cuda_activity": 0.2273850698197197
+      },
+      {
+        "name": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+        "category": "sampling",
+        "calls": 1,
+        "total_us": 9.952,
+        "mean_us": 9.952,
+        "percent_of_cuda_activity": 0.09341711587045284
+      },
+      {
+        "name": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+        "category": "other",
+        "calls": 1,
+        "total_us": 6.24,
+        "mean_us": 6.24,
+        "percent_of_cuda_activity": 0.05857343278050901
+      },
+      {
+        "name": "Memcpy HtoD (Pinned -> Device)",
+        "category": "memory_copy_or_set",
+        "calls": 5,
+        "total_us": 5.888,
+        "mean_us": 1.1776,
+        "percent_of_cuda_activity": 0.055269290418531576
+      },
+      {
+        "name": "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::Half, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::Half, unsigned int>, at::cuda::detail::TensorInfo<c10::Half const, unsigned int>, at::cuda::detail::TensorInfo<long const, unsigned int>, int, int, unsigned int, long)",
+        "category": "other",
+        "calls": 1,
+        "total_us": 4.64,
+        "mean_us": 4.64,
+        "percent_of_cuda_activity": 0.04355460386242978
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pageable)",
+        "category": "memory_copy_or_set",
+        "calls": 1,
+        "total_us": 2.496,
+        "mean_us": 2.496,
+        "percent_of_cuda_activity": 0.023429373112203604
+      },
+      {
+        "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 1.664,
+        "mean_us": 1.664,
+        "percent_of_cuda_activity": 0.015619582074802404
+      },
+      {
+        "name": "Memset (Device)",
+        "category": "memory_copy_or_set",
+        "calls": 2,
+        "total_us": 1.44,
+        "mean_us": 0.72,
+        "percent_of_cuda_activity": 0.013516946026271312
+      },
+      {
+        "name": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1} const&)::{lambda(int)#1})",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 1.408,
+        "mean_us": 1.408,
+        "percent_of_cuda_activity": 0.013216569447909724
+      },
+      {
+        "name": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 1.216,
+        "mean_us": 1.216,
+        "percent_of_cuda_activity": 0.011414309977740218
+      },
+      {
+        "name": "Memcpy HtoD (Pageable -> Device)",
+        "category": "memory_copy_or_set",
+        "calls": 1,
+        "total_us": 1.12,
+        "mean_us": 1.12,
+        "percent_of_cuda_activity": 0.010513180242655466
+      },
+      {
+        "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 0.992,
+        "mean_us": 0.992,
+        "percent_of_cuda_activity": 0.009311673929209126
+      }
+    ]
+  },
+  "vllm_cuda_activity": {
+    "summed_cuda_activity_us": 10216.839999999998,
+    "activity_count": 411,
+    "categories": [
+      {
+        "category": "gemm",
+        "calls": 114,
+        "total_us": 7715.703,
+        "percent_of_cuda_activity": 75.51946590139418
+      },
+      {
+        "category": "activation",
+        "calls": 28,
+        "total_us": 930.696,
+        "percent_of_cuda_activity": 9.109431096111912
+      },
+      {
+        "category": "other",
+        "calls": 142,
+        "total_us": 822.792,
+        "percent_of_cuda_activity": 8.053292407437134
+      },
+      {
+        "category": "attention",
+        "calls": 28,
+        "total_us": 445.6040000000001,
+        "percent_of_cuda_activity": 4.361465971866058
+      },
+      {
+        "category": "kv_write",
+        "calls": 28,
+        "total_us": 215.55499999999995,
+        "percent_of_cuda_activity": 2.109801073521754
+      },
+      {
+        "category": "elementwise",
+        "calls": 33,
+        "total_us": 40.60700000000001,
+        "percent_of_cuda_activity": 0.3974516582426662
+      },
+      {
+        "category": "memory_copy_or_set",
+        "calls": 37,
+        "total_us": 36.476000000000006,
+        "percent_of_cuda_activity": 0.35701841273818535
+      },
+      {
+        "category": "sampling",
+        "calls": 1,
+        "total_us": 9.407,
+        "percent_of_cuda_activity": 0.09207347868812668
+      }
+    ],
+    "kernels": [
+      {
+        "name": "nvjet_hsh_320x128_64x3_1x2_h_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 28,
+        "total_us": 4413.472,
+        "mean_us": 157.624,
+        "percent_of_cuda_activity": 43.198014258811924
+      },
+      {
+        "name": "nvjet_hsh_192x128_64x5_1x2_h_bz_coopB_TNT",
+        "category": "gemm",
+        "calls": 56,
+        "total_us": 2515.408999999999,
+        "mean_us": 44.91801785714284,
+        "percent_of_cuda_activity": 24.620225040227698
+      },
+      {
+        "name": "triton_poi_fused_mul_silu_1",
+        "category": "activation",
+        "calls": 28,
+        "total_us": 930.696,
+        "mean_us": 33.23914285714286,
+        "percent_of_cuda_activity": 9.109431096111912
+      },
+      {
+        "name": "nvjet_hsh_128x256_64x4_2x1_v_bz_coopA_bias_TNN",
+        "category": "gemm",
+        "calls": 28,
+        "total_us": 617.0280000000001,
+        "mean_us": 22.03671428571429,
+        "percent_of_cuda_activity": 6.039323313274948
+      },
+      {
+        "name": "void cutlass::device_kernel<flash::enable_sm90_or_later<flash::FlashAttnFwdSm90<flash::CollectiveMainloopFwdSm90<2, cute::tuple<cute::C<1>, cute::C<1>, cute::C<1> >, cute::tuple<cute::C<128>, cute::C<128>, cute::C<128> >, 128, cutlass::half_t, float, cutlass::arch::Sm90, true, false, false, true, true, false, false, true, true, true, false, false, cutlass::bfloat16_t, 1>, flash::CollectiveEpilogueFwd<cute::tuple<cute::C<128>, cute::C<128>, cute::C<128> >, cute::tuple<cute::C<1>, cute::C<1>, cute::C<1> >, cutlass::half_t, cutlass::arch::Sm90, 256, true, true, false, false, 1>, flash::VarlenDynamicPersistentTileScheduler<128, 256, 128, false, true, true> > > >(flash::enable_sm90_or_later<flash::FlashAttnFwdSm90<flash::CollectiveMainloopFwdSm90<2, cute::tuple<cute::C<1>, cute::C<1>, cute::C<1> >, cute::tuple<cute::C<128>, cute::C<128>, cute::C<128> >, 128, cutlass::half_t, float, cutlass::arch::Sm90, true, false, false, true, true, false, false, true, true, true, false, false, cutlass::bfloat16_t, 1>, flash::CollectiveEpilogueFwd<cute::tuple<cute::C<128>, cute::C<128>, cute::C<128> >, cute::tuple<cute::C<1>, cute::C<1>, cute::C<1> >, cutlass::half_t, cutlass::arch::Sm90, 256, true, true, false, false, 1>, flash::VarlenDynamicPersistentTileScheduler<128, 256, 128, false, true, true> > >::Params)",
+        "category": "attention",
+        "calls": 28,
+        "total_us": 445.6040000000001,
+        "mean_us": 15.914428571428575,
+        "percent_of_cuda_activity": 4.361465971866058
+      },
+      {
+        "name": "triton_red_fused__to_copy_add_mean_mul_pow_rsqrt_2",
+        "category": "other",
+        "calls": 28,
+        "total_us": 282.78700000000003,
+        "mean_us": 10.099535714285716,
+        "percent_of_cuda_activity": 2.7678518994131265
+      },
+      {
+        "name": "triton_red_fused__to_copy_add_mean_mul_pow_rsqrt_0",
+        "category": "other",
+        "calls": 28,
+        "total_us": 241.60100000000003,
+        "mean_us": 8.628607142857144,
+        "percent_of_cuda_activity": 2.364733126876804
+      },
+      {
+        "name": "void vllm::reshape_and_cache_flash_kernel<unsigned short, unsigned short, (vllm::Fp8KVCacheDataType)0>(unsigned short const*, unsigned short const*, unsigned short*, unsigned short*, long const*, long, long, long, long, long, int, int, int, float const*, float const*)",
+        "category": "kv_write",
+        "calls": 28,
+        "total_us": 215.55499999999995,
+        "mean_us": 7.6983928571428555,
+        "percent_of_cuda_activity": 2.109801073521754
+      },
+      {
+        "name": "nvjet_hsh_384x8_64x4_2x1_v_bz_TNT",
+        "category": "gemm",
+        "calls": 1,
+        "total_us": 167.457,
+        "mean_us": 167.457,
+        "percent_of_cuda_activity": 1.6390292888995035
+      },
+      {
+        "name": "triton_poi_fused_cat_3",
+        "category": "other",
+        "calls": 27,
+        "total_us": 145.56899999999996,
+        "mean_us": 5.391444444444443,
+        "percent_of_cuda_activity": 1.4247947506273955
+      },
+      {
+        "name": "triton_poi_fused_view_5",
+        "category": "other",
+        "calls": 27,
+        "total_us": 78.496,
+        "mean_us": 2.907259259259259,
+        "percent_of_cuda_activity": 0.7683001789202925
+      },
+      {
+        "name": "triton_poi_fused_cat_4",
+        "category": "other",
+        "calls": 27,
+        "total_us": 53.88999999999999,
+        "mean_us": 1.9959259259259257,
+        "percent_of_cuda_activity": 0.5274625030831451
+      },
+      {
+        "name": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)",
+        "category": "elementwise",
+        "calls": 28,
+        "total_us": 28.51200000000001,
+        "mean_us": 1.0182857142857147,
+        "percent_of_cuda_activity": 0.27906867485445613
+      },
+      {
+        "name": "Memset (Device)",
+        "category": "memory_copy_or_set",
+        "calls": 30,
+        "total_us": 27.54900000000001,
+        "mean_us": 0.9183000000000003,
+        "percent_of_cuda_activity": 0.26964305988935927
+      },
+      {
+        "name": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<float, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+        "category": "sampling",
+        "calls": 1,
+        "total_us": 9.407,
+        "mean_us": 9.407,
+        "percent_of_cuda_activity": 0.09207347868812668
+      },
+      {
+        "name": "triton_red_fused__to_copy_add_embedding_mean_mul_pow_rsqrt_0",
+        "category": "other",
+        "calls": 1,
+        "total_us": 8.513,
+        "mean_us": 8.513,
+        "percent_of_cuda_activity": 0.0833232193124293
+      },
+      {
+        "name": "Memcpy HtoD (Pinned -> Device)",
+        "category": "memory_copy_or_set",
+        "calls": 6,
+        "total_us": 6.432,
+        "mean_us": 1.072,
+        "percent_of_cuda_activity": 0.06295488624662814
+      },
+      {
+        "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 5.92,
+        "mean_us": 5.92,
+        "percent_of_cuda_activity": 0.057943552018040814
+      },
+      {
+        "name": "triton_poi_fused_cat_1",
+        "category": "other",
+        "calls": 1,
+        "total_us": 5.441,
+        "mean_us": 5.441,
+        "percent_of_cuda_activity": 0.05325521394090542
+      },
+      {
+        "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "category": "elementwise",
+        "calls": 2,
+        "total_us": 3.359,
+        "mean_us": 1.6795,
+        "percent_of_cuda_activity": 0.032877093112939036
+      },
+      {
+        "name": "triton_poi_fused_view_3",
+        "category": "other",
+        "calls": 1,
+        "total_us": 2.88,
+        "mean_us": 2.88,
+        "percent_of_cuda_activity": 0.028188755035803637
+      },
+      {
+        "name": "Memcpy DtoH (Device -> Pinned)",
+        "category": "memory_copy_or_set",
+        "calls": 1,
+        "total_us": 2.495,
+        "mean_us": 2.495,
+        "percent_of_cuda_activity": 0.024420466602197943
+      },
+      {
+        "name": "flash::prepare_varlen_num_blocks_kernel(int, int, int, int const*, int const*, int const*, int const*, int const*, int const*, int, int, int, int, int, cutlass::FastDivmod, cutlass::FastDivmod, int*, int*, bool)",
+        "category": "gemm",
+        "calls": 1,
+        "total_us": 2.337,
+        "mean_us": 2.337,
+        "percent_of_cuda_activity": 0.02287400018009483
+      },
+      {
+        "name": "triton_poi_fused_cat_2",
+        "category": "other",
+        "calls": 1,
+        "total_us": 2.111,
+        "mean_us": 2.111,
+        "percent_of_cuda_activity": 0.02066196593075746
+      },
+      {
+        "name": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 1.536,
+        "mean_us": 1.536,
+        "percent_of_cuda_activity": 0.01503400268576194
+      },
+      {
+        "name": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+        "category": "other",
+        "calls": 1,
+        "total_us": 1.504,
+        "mean_us": 1.504,
+        "percent_of_cuda_activity": 0.014720794296475234
+      },
+      {
+        "name": "void at::native::unrolled_elementwise_kernel<at::native::CUDAFunctorOnSelf_add<int>, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast>(int, at::native::CUDAFunctorOnSelf_add<int>, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast)",
+        "category": "elementwise",
+        "calls": 1,
+        "total_us": 1.28,
+        "mean_us": 1.28,
+        "percent_of_cuda_activity": 0.012528335571468284
+      }
+    ]
+  },
+  "category_comparison": [
+    {
+      "category": "gemm",
+      "local_us": 7642.349999999999,
+      "vllm_us": 7715.703,
+      "local_percent": 71.73696698880177,
+      "vllm_percent": 75.51946590139418,
+      "local_over_vllm": 0.9904930244204577
+    },
+    {
+      "category": "activation",
+      "local_us": 993.5759999999999,
+      "vllm_us": 930.696,
+      "local_percent": 9.326467475693432,
+      "vllm_percent": 9.109431096111912,
+      "local_over_vllm": 1.0675623404419916
+    },
+    {
+      "category": "rope",
+      "local_us": 560.5840000000001,
+      "vllm_us": 0.0,
+      "local_percent": 5.262071993882832,
+      "vllm_percent": 0.0,
+      "local_over_vllm": null
+    },
+    {
+      "category": "attention",
+      "local_us": 475.781,
+      "vllm_us": 445.6040000000001,
+      "local_percent": 4.46604590092041,
+      "vllm_percent": 4.361465971866058,
+      "local_over_vllm": 1.06772156443838
+    },
+    {
+      "category": "memory_copy_or_set",
+      "local_us": 310.11699999999996,
+      "vllm_us": 36.476000000000006,
+      "local_percent": 2.910996354742486,
+      "vllm_percent": 0.35701841273818535,
+      "local_over_vllm": 8.501946485360234
+    },
+    {
+      "category": "elementwise",
+      "local_us": 294.43199999999996,
+      "vllm_us": 40.60700000000001,
+      "local_percent": 2.7637648975049407,
+      "vllm_percent": 0.3974516582426662,
+      "local_over_vllm": 7.25076957174871
+    },
+    {
+      "category": "normalization",
+      "local_us": 236.38799999999992,
+      "vllm_us": 0.0,
+      "local_percent": 2.2189193314293205,
+      "vllm_percent": 0.0,
+      "local_over_vllm": null
+    },
+    {
+      "category": "other",
+      "local_us": 130.11399999999998,
+      "vllm_us": 822.792,
+      "local_percent": 1.2213499411543507,
+      "vllm_percent": 8.053292407437134,
+      "local_over_vllm": 0.15813717197055874
+    },
+    {
+      "category": "sampling",
+      "local_us": 9.952,
+      "vllm_us": 9.407,
+      "local_percent": 0.09341711587045284,
+      "vllm_percent": 0.09207347868812668,
+      "local_over_vllm": 1.057935579887318
+    },
+    {
+      "category": "kv_write",
+      "local_us": 0.0,
+      "vllm_us": 215.55499999999995,
+      "local_percent": 0.0,
+      "vllm_percent": 2.109801073521754,
+      "local_over_vllm": 0.0
+    }
+  ],
+  "notes": [
+    "Wall medians are unprofiled; CUDA activity is diagnostic.",
+    "Mixed compares the same requests/arrivals/token budget, not an identical model-pass decomposition."
+  ]
+}

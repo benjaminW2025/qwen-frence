@@ -1,0 +1,46 @@
+{
+  "status": "complete",
+  "kind": "prefill",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "shape_id": "fixed-b8-l256-o128",
+  "prefill_budget": 2048,
+  "arrival_step": 5,
+  "output_tokens": 16,
+  "local_policy": "fa3",
+  "first_wave": 8,
+  "second_wave": 0,
+  "target_step_index": 0,
+  "target_step_calls": [
+    [
+      false,
+      2048,
+      8,
+      256
+    ]
+  ],
+  "target_callback_calls": [
+    {
+      "decode": false,
+      "tokens": 2048,
+      "context_lengths": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ]
+    }
+  ],
+  "outputs_sha256": "b6044b178c051839b2466421759ca990cc82f406db5f504832c0371d03168780",
+  "model_load_seconds": 12.607195030897856,
+  "unprofiled_target_wall_ms": [
+    11.27106323838234,
+    11.262064799666405,
+    11.379977688193321
+  ],
+  "unprofiled_median_wall_ms": 11.27106323838234,
+  "trace": "/workspace/qwen-frence/experiments/results/matched-phase-profile/prefill/fixed-b8-l256-o128/local/prefill-20260923T032620481914Z-trace.json"
+}

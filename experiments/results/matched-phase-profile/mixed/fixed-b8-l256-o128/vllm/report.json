@@ -1,0 +1,44 @@
+{
+  "status": "complete",
+  "kind": "mixed",
+  "shape_id": "fixed-b8-l256-o128",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "vllm_version": "0.10.2",
+  "vllm_enable_v1_multiprocessing": "0",
+  "prefill_budget": 2048,
+  "arrival_step": 5,
+  "output_tokens": 16,
+  "first_wave": 4,
+  "second_wave": 4,
+  "target_step_index": 5,
+  "target_progress_before": {
+    "discovery:0": 5,
+    "discovery:1": 5,
+    "discovery:2": 5,
+    "discovery:3": 5,
+    "discovery:4": 0,
+    "discovery:5": 0,
+    "discovery:6": 0,
+    "discovery:7": 0
+  },
+  "target_progress_after": {
+    "discovery:0": 6,
+    "discovery:1": 6,
+    "discovery:2": 6,
+    "discovery:3": 6,
+    "discovery:4": 1,
+    "discovery:5": 1,
+    "discovery:6": 1,
+    "discovery:7": 1
+  },
+  "total_steps": 21,
+  "matched_num_blocks": 144,
+  "kv_cache_memory_bytes": 66060288,
+  "unprofiled_target_wall_ms": [
+    7.525451481342316,
+    7.4726250022649765,
+    7.426947355270386
+  ],
+  "unprofiled_median_wall_ms": 7.4726250022649765,
+  "trace": "/workspace/qwen-frence/experiments/results/matched-phase-profile/mixed/fixed-b8-l256-o128/vllm/trace/a40cd1db8b46_6485.1790134500990959976.pt.trace.json.gz"
+}

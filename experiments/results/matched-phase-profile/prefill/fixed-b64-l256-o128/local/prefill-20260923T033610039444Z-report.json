@@ -1,0 +1,70 @@
+{
+  "status": "complete",
+  "kind": "prefill",
+  "model": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "shape_id": "fixed-b64-l256-o128",
+  "prefill_budget": 8192,
+  "arrival_step": 5,
+  "output_tokens": 16,
+  "local_policy": "fa3",
+  "first_wave": 32,
+  "second_wave": 0,
+  "target_step_index": 0,
+  "target_step_calls": [
+    [
+      false,
+      8192,
+      32,
+      256
+    ]
+  ],
+  "target_callback_calls": [
+    {
+      "decode": false,
+      "tokens": 8192,
+      "context_lengths": [
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256,
+        256
+      ]
+    }
+  ],
+  "outputs_sha256": "da929e2db02d94d783fafd754eef06e1ee625a1c1a2be5505191498ec44a7494",
+  "model_load_seconds": 12.021929768845439,
+  "unprofiled_target_wall_ms": [
+    40.74283316731453,
+    40.92289134860039,
+    40.959812700748444
+  ],
+  "unprofiled_median_wall_ms": 40.92289134860039,
+  "trace": "/workspace/qwen-frence/experiments/results/matched-phase-profile/prefill/fixed-b64-l256-o128/local/prefill-20260923T033610039444Z-trace.json"
+}
