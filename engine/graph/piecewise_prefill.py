@@ -175,7 +175,8 @@ class PiecewisePrefill:
         return self.shapes[bucket]
 
     @torch.no_grad()
-    def forward(self, ids, positions, slots, cu, context, table, max_query):
+    def forward(self, ids, positions, slots, cu, context, table, max_query,
+                *, mixed_decode_count=0):
         from kernel_dispatch import packed_paged_prefill_attention
 
         cfg, model, pool = self.model.cfg, self.model, self.pool
@@ -189,10 +190,25 @@ class PiecewisePrefill:
         q, residual = pieces[0].run_initial(ids, tokens)
         self.graph_replays += 1
         for i in range(len(model.layers)):
-            attention = packed_paged_prefill_attention(
-                q[:, :, :tokens, :], pool.k_pool[i], pool.v_pool[i], cu, table, context,
-                max_query_len=max_query, page_size=pool.block_size,
-                tile_policy="static")
+            if mixed_decode_count:
+                from kernel_dispatch import fa3_paged_decode_attention
+                decode_q = q[0, :, :mixed_decode_count, :].transpose(0, 1).contiguous()
+                decode_attention = fa3_paged_decode_attention(
+                    decode_q, pool.k_pool[i], pool.v_pool[i],
+                    table[:mixed_decode_count], context[:mixed_decode_count],
+                ).transpose(0, 1).unsqueeze(0)
+                prefill_attention = packed_paged_prefill_attention(
+                    q[:, :, mixed_decode_count:tokens, :], pool.k_pool[i], pool.v_pool[i],
+                    cu[mixed_decode_count:] - mixed_decode_count,
+                    table[mixed_decode_count:], context[mixed_decode_count:],
+                    max_query_len=max_query, page_size=pool.block_size,
+                    tile_policy="static")
+                attention = torch.cat((decode_attention, prefill_attention), dim=2)
+            else:
+                attention = packed_paged_prefill_attention(
+                    q[:, :, :tokens, :], pool.k_pool[i], pool.v_pool[i], cu, table, context,
+                    max_query_len=max_query, page_size=pool.block_size,
+                    tile_policy="static")
             attention = attention.transpose(1, 2).reshape(tokens, cfg.n_heads * cfg.d_head)
             result = pieces[i + 1].run_from_attention(residual, attention, tokens)
             self.graph_replays += 1

@@ -276,6 +276,49 @@ class IterationLoopTests(unittest.TestCase):
         self.assertEqual(dict(loop.pop_completed()), {0: [2, 3, 4], 1: [6, 7]})
         self.assertEqual(modes, [False, True, False, True])
 
+    def test_mixed_plan_bit_is_visible_to_both_callbacks_only(self):
+        loop = cpp.IterationLoop(make_cpp_config(), torch.device("cpu"))
+        loop.submit_request([1], 3)
+        seen = []
+
+        def forward(*args):
+            seen.append((bool(args[-1]), loop.current_step_is_mixed()))
+            return cpp_forward()(*args)
+
+        loop.step(forward)
+        self.assertFalse(loop.current_step_is_mixed())
+        loop.submit_request([5], 2)
+        while loop.num_pending() or loop.num_running():
+            loop.step(forward)
+            self.assertFalse(loop.current_step_is_mixed())
+        self.assertEqual(seen, [(False, False), (True, True),
+                                (False, True), (True, False)])
+
+    def test_mixed_decode_logits_can_be_filled_by_prefill_callback(self):
+        loop = cpp.IterationLoop(make_cpp_config(), torch.device("cpu"))
+        loop.submit_request([1], 3)
+        pending = None
+
+        def forward(*args):
+            nonlocal pending
+            if loop.current_step_is_mixed() and args[-1]:
+                ids = args[0].clone()
+                placeholder = torch.empty((ids.numel(), VOCAB_SIZE))
+                pending = (ids, placeholder)
+                return placeholder
+            if pending is not None:
+                ids, placeholder = pending
+                pending = None
+                placeholder.copy_(deterministic_logits(ids))
+            return cpp_forward()(*args)
+
+        loop.step(forward)
+        loop.submit_request([5], 2)
+        while loop.num_pending() or loop.num_running():
+            loop.step(forward)
+        self.assertIsNone(pending)
+        self.assertEqual(dict(loop.pop_completed()), {0: [2, 3, 4], 1: [6, 7]})
+
     def test_eos_completes_and_releases_request(self):
         config = make_cpp_config(eos_token_id=3)
         loop = cpp.IterationLoop(config, torch.device("cpu"))

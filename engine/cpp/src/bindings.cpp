@@ -55,6 +55,7 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
              "Get and clear completed request outputs")
         .def("max_decode_context_length", &IterationLoop::max_decode_context_length)
         .def("num_device_decode_state_replays", &IterationLoop::num_device_decode_state_replays)
+        .def("current_step_is_mixed", &IterationLoop::current_step_is_mixed)
         .def("num_pending", &IterationLoop::num_pending)
         .def("num_running", &IterationLoop::num_running);
 }

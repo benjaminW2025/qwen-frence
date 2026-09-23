@@ -70,6 +70,12 @@ def build_parser():
     parser.add_argument("--prefill-budget", type=int,
                         help="shared local/vLLM token budget: B8=2048, B64=8192")
     parser.add_argument("--local-policy", choices=("fa3", "splitk"), default="fa3")
+    parser.add_argument("--local-mixed-policy",
+                        choices=("separate", "packed", "packed-fa3"),
+                        default="separate", help="packed shares projections; packed-fa3 "
+                        "uses FA3 for its decode rows")
+    parser.add_argument("--vllm-reference-dir", type=Path,
+                        help="reuse an already validated vLLM arm instead of loading it again")
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--retry-failed", action="store_true")
@@ -87,12 +93,20 @@ def validate(args):
     args.prefill_budget = args.prefill_budget or (2048 if shape["batch"] == 8 else 8192)
     if args.prefill_budget < 1:
         raise ValueError("prefill budget must be positive")
+    if args.local_mixed_policy != "separate" and args.kind != "mixed":
+        raise ValueError("packed mixed policy requires --kind mixed")
     # The shared setup preflight checks the same accepted decode QKV path used
     # in the local mixed arm. It is inactive in a pure-prefill target step.
     args.qkv_mode = "native"
     args.suite_dir = args.suite_dir.resolve()
+    phase_directory = (f"mixed-{args.local_mixed_policy}"
+                       if args.local_mixed_policy != "separate" else args.kind)
     args.output_dir = (args.output_dir or ROOT / "experiments/results/matched-phase-profile"
-                       / args.kind / args.shape_id).resolve()
+                       / phase_directory / args.shape_id).resolve()
+    if args.vllm_reference_dir is not None:
+        args.vllm_reference_dir = args.vllm_reference_dir.resolve()
+        if args.seed != 20260914:
+            raise ValueError("saved vLLM reference was generated with seed 20260914")
     frozen_case = get_fixed_case(args.shape_id)
     frozen_args = argparse.Namespace(
         output_dir=args.suite_dir / args.shape_id, shape_id=args.shape_id,
@@ -129,7 +143,11 @@ def plan(args, case, first, second, target_index):
             "target_decode_tokens": first if second else 0,
             "target_prefill_tokens": (second or first) * case["lengths"][0],
             "shared_prefill_budget": args.prefill_budget,
-            "local_model_passes": 2 if second else 1,
+            "local_model_passes": (2 if second and args.local_mixed_policy == "separate"
+                                   else 1),
+            "local_mixed_policy": args.local_mixed_policy,
+            "vllm_reference_dir": (str(args.vllm_reference_dir)
+                                   if args.vllm_reference_dir else None),
             "note": "fails before reporting a timing if either scheduler misses target work"}
 
 
@@ -137,6 +155,50 @@ def expected_local_calls(case, first, second):
     prompt = case["lengths"][0]
     prefill = (False, (second or first) * prompt, second or first, prompt)
     return [(True, first, first, 1), prefill] if second else [prefill]
+
+
+class TargetLogits:
+    """Read back just the target callbacks during an untimed validation pass."""
+
+    def __init__(self, start, count):
+        self.start, self.end = start, start + count
+        self.cursor = 0
+        self.rows = []
+
+    def __call__(self, args, logits):
+        if self.start <= self.cursor < self.end:
+            self.rows.append({"metadata": tuple(t.detach().cpu().clone()
+                                                for t in args[:6]),
+                              "max_query": args[6], "decode": args[7],
+                              "logits": logits.detach().cpu().clone()})
+        self.cursor += 1
+
+
+def compare_target_logits(torch, baseline, candidate):
+    if len(baseline) != len(candidate):
+        raise AssertionError("candidate target callback count differs")
+    rows = []
+    for old, new in zip(baseline, candidate):
+        same_metadata = (old["decode"] == new["decode"]
+                         and old["max_query"] == new["max_query"]
+                         and all(torch.equal(left, right)
+                                 for left, right in zip(old["metadata"], new["metadata"])))
+        if not same_metadata:
+            raise AssertionError("candidate target metadata differs from separate passes")
+        reference, actual = old["logits"].float(), new["logits"].float()
+        if reference.shape != actual.shape or not torch.isfinite(actual).all():
+            raise AssertionError("candidate logits changed shape or became nonfinite")
+        difference = (actual - reference).abs()
+        outside = difference > .05 + .01 * reference.abs()
+        rows.append({"decode": bool(old["decode"]), "elements": difference.numel(),
+                     "outside_tolerance": int(outside.sum()),
+                     "argmax_differences": int((actual.argmax(-1)
+                                                 != reference.argmax(-1)).sum()),
+                     "max_abs": float(difference.max()),
+                     "mean_abs": float(difference.mean())})
+    return {"status": "pass" if all(row["outside_tolerance"] == 0 and
+                                    row["argmax_differences"] == 0 for row in rows)
+            else "numerical_difference", "atol": .05, "rtol": .01, "rows": rows}
 
 
 def complete_local(directory, args):
@@ -151,6 +213,7 @@ def complete_local(directory, args):
             report.get("arrival_step") == args.arrival_step and
             report.get("output_tokens") == args.output_tokens and
             report.get("local_policy") == args.local_policy and
+            report.get("local_mixed_policy", "separate") == args.local_mixed_policy and
             (trace.is_file() or len(list(directory.rglob(trace.name))) == 1))
 
 
@@ -162,6 +225,7 @@ def complete_vllm(directory, args):
     trace = Path(report.get("trace", "missing"))
     return (report.get("status") == "complete" and report.get("kind") == args.kind
             and report.get("shape_id") == args.shape_id
+            and report.get("vllm_version") == PINNED_VLLM
             and report.get("prefill_budget") == args.prefill_budget
             and report.get("vllm_enable_v1_multiprocessing") == "0"
             and report.get("arrival_step") == args.arrival_step
@@ -175,7 +239,8 @@ def run_local(args, case, requests, first, second, target_index):
                                args.retry_failed):
         print("local already complete; skipping", flush=True)
         return
-    from model_adapter import PiecewiseGraphModelAdapter, allocate_pool
+    from model_adapter import (PackedMixedPiecewiseGraphModelAdapter,
+                               PiecewiseGraphModelAdapter, allocate_pool)
     from model_setup import check_startup, load_model_only
     import torch
     import inference_engine_cpp as cpp
@@ -187,8 +252,11 @@ def run_local(args, case, requests, first, second, target_index):
     config = make_config(cpp, case)
     blocks = config.max_batch_size * ((config.max_context_length + 15) // 16 + 1)
     pool = allocate_pool(engine.cfg, blocks, engine.device)
-    adapter = PiecewiseGraphModelAdapter(
-        engine.model, pool, None, max_running=config.max_batch_size,
+    adapter_class = (PackedMixedPiecewiseGraphModelAdapter
+                     if args.local_mixed_policy != "separate"
+                     else PiecewiseGraphModelAdapter)
+    adapter_options = dict(
+        max_running=config.max_batch_size,
         max_context_length=config.max_context_length,
         decode_attention_policy=args.local_policy,
         max_capture_tokens=args.prefill_budget, max_prefill_shapes=1,
@@ -196,6 +264,9 @@ def run_local(args, case, requests, first, second, target_index):
         enable_residual_rmsnorm=True,
         enable_native_decode_qkv_postprocess=True,
         enable_prefill_swiglu_fusion=True)
+    if args.local_mixed_policy == "packed-fa3":
+        adapter_options["mixed_attention_policy"] = "fa3_hybrid"
+    adapter = adapter_class(engine.model, pool, None, **adapter_options)
 
     def poison():
         for tensor in pool.k_pool + pool.v_pool:
@@ -214,6 +285,26 @@ def run_local(args, case, requests, first, second, target_index):
         raise AssertionError(f"local target work differs: {target}; expected {calls}")
     output_hash = hashlib.sha256(json.dumps(
         preflight["outputs"], sort_keys=True).encode()).hexdigest()
+    correctness = None
+    if args.local_mixed_policy != "separate":
+        first_call = sum(len(row["calls"]) for row in preflight["steps"][:target_index])
+        reference = TargetLogits(first_call, len(calls))
+        candidate = TargetLogits(first_call, len(calls))
+        try:
+            adapter.enable_packed_mixed = False
+            adapter.observer = reference
+            poison()
+            execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
+                    adapter, requests)
+            adapter.enable_packed_mixed = True
+            adapter.observer = candidate
+            poison()
+            execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
+                    adapter, requests)
+        finally:
+            adapter.enable_packed_mixed = True
+            adapter.observer = None
+        correctness = compare_target_logits(torch, reference.rows, candidate.rows)
 
     def checked_run(*, trace=False):
         poison()
@@ -233,10 +324,12 @@ def run_local(args, case, requests, first, second, target_index):
     report = {"status": "complete", "kind": args.kind, "model": model_source,
               "shape_id": args.shape_id, "prefill_budget": args.prefill_budget,
               "arrival_step": args.arrival_step, "output_tokens": args.output_tokens,
-              "local_policy": args.local_policy, "first_wave": first,
+              "local_policy": args.local_policy,
+              "local_mixed_policy": args.local_mixed_policy, "first_wave": first,
               "second_wave": second, "target_step_index": target_index,
               "target_step_calls": target[1], "target_callback_calls": traced["target_calls"],
               "outputs_sha256": output_hash, "model_load_seconds": load_seconds,
+              "same_history_target_correctness": correctness,
               "unprofiled_target_wall_ms": baseline,
               "unprofiled_median_wall_ms": statistics.median(baseline),
               "trace": str(trace_path)}
@@ -314,6 +407,8 @@ def verify_vllm_target(discovery, first, second, kind):
 
 
 def run_vllm(args, case, requests, first, second, target_index):
+    if args.vllm_reference_dir is not None:
+        raise ValueError("--vllm-reference-dir reuses a prior result; do not run-vllm")
     configure_vllm_step_mode()
     output = args.output_dir / "vllm"
     if not prepare_destination(output, lambda path: complete_vllm(path, args),
@@ -389,10 +484,11 @@ def resolve_trace(recorded, directory):
 
 def analyze(args, case, first, second, target_index):
     local_paths = list((args.output_dir / "local").glob("*-report.json"))
-    if len(local_paths) != 1 or not complete_vllm(args.output_dir / "vllm", args):
+    vllm_dir = ((args.vllm_reference_dir or args.output_dir) / "vllm")
+    if len(local_paths) != 1 or not complete_vllm(vllm_dir, args):
         raise ValueError("both local and vLLM reports must be complete")
     local = json.loads(local_paths[0].read_text())
-    vllm = json.loads((args.output_dir / "vllm/report.json").read_text())
+    vllm = json.loads((vllm_dir / "report.json").read_text())
     calls = expected_local_calls(case, first, second)
     if (not complete_local(args.output_dir / "local", args)
             or [tuple(row) for row in local["target_step_calls"]] != calls
@@ -406,11 +502,34 @@ def analyze(args, case, first, second, target_index):
         raise ValueError("vLLM result was not run with deterministic step scheduling")
     verify_vllm_target(vllm, first, second, args.kind)
     local_cuda = summarize_chrome_trace(resolve_trace(local["trace"], args.output_dir / "local"))
-    vllm_cuda = summarize_chrome_trace(resolve_trace(vllm["trace"], args.output_dir / "vllm"))
+    vllm_cuda = summarize_chrome_trace(resolve_trace(vllm["trace"], vllm_dir))
     from profile_latest_vs_vllm import compare_categories
     ratio = local["unprofiled_median_wall_ms"] / vllm["unprofiled_median_wall_ms"]
+    separate_baseline = None
+    if args.vllm_reference_dir is not None:
+        baseline_files = list((args.vllm_reference_dir / "local").glob("*-report.json"))
+        if len(baseline_files) == 1:
+            baseline = json.loads(baseline_files[0].read_text())
+            if (baseline.get("kind") == args.kind
+                    and baseline.get("shape_id") == args.shape_id
+                    and baseline.get("prefill_budget") == args.prefill_budget
+                    and baseline.get("arrival_step") == args.arrival_step
+                    and baseline.get("output_tokens") == args.output_tokens
+                    and baseline.get("local_policy") == args.local_policy
+                    and baseline.get("local_mixed_policy", "separate") == "separate"):
+                separate_baseline = {
+                    "wall_ms": baseline["unprofiled_median_wall_ms"],
+                    "speedup": (baseline["unprofiled_median_wall_ms"]
+                                / local["unprofiled_median_wall_ms"]),
+                    "category_comparison": compare_categories(
+                        local_cuda, summarize_chrome_trace(resolve_trace(
+                            baseline["trace"], args.vllm_reference_dir / "local"))),
+                }
     report = {"status": "complete", "kind": args.kind, "shape_id": args.shape_id,
               "work": plan(args, case, first, second, target_index),
+              "vllm_reference_dir": str(vllm_dir),
+              "same_history_target_correctness": local.get("same_history_target_correctness"),
+              "separate_local_baseline": separate_baseline,
               "local_wall_ms": local["unprofiled_median_wall_ms"],
               "vllm_wall_ms": vllm["unprofiled_median_wall_ms"],
               "local_over_vllm": ratio,
@@ -423,6 +542,11 @@ def analyze(args, case, first, second, target_index):
     path.write_text(json.dumps(report, indent=2) + "\n")
     print(f"{args.kind}: local {report['local_wall_ms']:.3f} ms; "
           f"vLLM {report['vllm_wall_ms']:.3f} ms; local/vLLM {ratio:.3f}x")
+    if report["same_history_target_correctness"] is not None:
+        print("same-history target correctness: "
+              f"{report['same_history_target_correctness']['status']}")
+    if separate_baseline is not None:
+        print(f"vs prior separate local: {separate_baseline['speedup']:.3f}x")
     print(f"comparison: {path}")
 
 
@@ -451,11 +575,16 @@ def main():
                   "--output-tokens", str(args.output_tokens),
                   "--prefill-budget", str(args.prefill_budget),
                   "--local-policy", args.local_policy,
+                  "--local-mixed-policy", args.local_mixed_policy,
                   "--warmups", str(args.warmups),
                   "--repetitions", str(args.repetitions)]
+        if args.vllm_reference_dir is not None:
+            common.extend(("--vllm-reference-dir", str(args.vllm_reference_dir)))
         if args.retry_failed:
             common.append("--retry-failed")
-        for action in ("run-local", "run-vllm", "analyze"):
+        actions = (("run-local", "analyze") if args.vllm_reference_dir
+                   else ("run-local", "run-vllm", "analyze"))
+        for action in actions:
             subprocess.run([sys.executable, str(Path(__file__)), action, *common],
                            cwd=ROOT, check=True)
 
