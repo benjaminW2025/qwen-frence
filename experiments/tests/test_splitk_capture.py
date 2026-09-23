@@ -121,6 +121,38 @@ class CaptureBoundTests(unittest.TestCase):
             **kwargs,
         )
 
+    def test_block_table_cache_detects_rewrite_at_same_address(self):
+        import torch
+        from paged_graph_decoder import CUDAGraphDecoder
+
+        decoder = CUDAGraphDecoder.__new__(CUDAGraphDecoder)
+        decoder.s_input_ids = torch.empty(1, 1, dtype=torch.long)
+        decoder.s_positions = torch.empty(1, dtype=torch.long)
+        decoder.s_seq_lens = torch.empty(1, dtype=torch.int32)
+        decoder.s_block_table = torch.empty(1, 2, dtype=torch.int32)
+        decoder.s_slot_mapping = torch.empty(1, dtype=torch.long)
+        decoder.s_logits = torch.empty(1, 1)
+        decoder.graph = types.SimpleNamespace(replay=lambda: None)
+        decoder._block_table_source_signature = None
+        decoder.enable_stable_decode_table_cache = True
+        table = torch.tensor([[3, 4]], dtype=torch.int32)
+        inputs = (torch.zeros(1, 1, dtype=torch.long), torch.zeros(1, dtype=torch.long),
+                  torch.ones(1, dtype=torch.int32))
+        slots = torch.zeros(1, dtype=torch.long)
+
+        decoder.decode(*inputs, table[:], slots)
+        copied_version = decoder.s_block_table._version
+        decoder.decode(*inputs, table[:], slots)
+        self.assertEqual(decoder.s_block_table._version, copied_version)
+        table.copy_(torch.tensor([[5, 6]], dtype=torch.int32))
+        decoder.decode(*inputs, table[:], slots)
+        torch.testing.assert_close(decoder.s_block_table, table)
+        self.assertGreater(decoder.s_block_table._version, copied_version)
+        decoder.enable_stable_decode_table_cache = False
+        copied_version = decoder.s_block_table._version
+        decoder.decode(*inputs, table[:], slots)
+        self.assertGreater(decoder.s_block_table._version, copied_version)
+
     def test_bound_defaults_to_the_whole_captured_block_table(self):
         decoder = self._decoder("splitk", max_blocks=64, block_size=16)
         # Anything the block table can address is a context this graph may replay.

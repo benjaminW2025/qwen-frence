@@ -372,9 +372,111 @@ class IterationLoopTests(unittest.TestCase):
         for (_, cpp_logits), (_, python_logits) in zip(cpp_trace, python_trace):
             torch.testing.assert_close(cpp_logits, python_logits, rtol=0, atol=0)
 
+    def test_stable_decode_state_advances_without_rebuilding_host_metadata(self):
+        config = make_cpp_config(max_batch_size=2, block_size=4)
+        config.reuse_stable_decode_metadata = True
+        loop = cpp.IterationLoop(config, torch.device("cpu"))
+        loop.submit_request([1, 2, 3, 4, 5], 6)
+        loop.submit_request([10, 11, 12, 13, 14], 6)
+        decode_rows = []
+
+        def forward(ids, positions, slots, cu, context, blocks, max_query, decode):
+            if decode:
+                decode_rows.append({
+                    "pointers": tuple(t.data_ptr() for t in
+                                      (ids, positions, slots, context, blocks)),
+                    "ids": ids.clone(),
+                    "positions": positions.clone(),
+                    "context": context.clone(),
+                    "slots": slots.clone(),
+                    "blocks": blocks.clone(),
+                })
+            return cpp_forward()(ids, positions, slots, cu, context, blocks,
+                                 max_query, decode)
+
+        while loop.num_pending() or loop.num_running():
+            loop.step(forward)
+
+        self.assertEqual(dict(loop.pop_completed()), {
+            0: [6, 7, 8, 9, 10, 11],
+            1: [15, 16, 17, 18, 19, 20],
+        })
+        self.assertGreaterEqual(loop.num_device_decode_state_replays(), 3)
+        self.assertGreaterEqual(len(decode_rows), 4)
+        # One seeded device buffer remains at a fixed address for the stable cohort.
+        self.assertEqual(len({row["pointers"] for row in decode_rows}), 1)
+        for previous, current in zip(decode_rows, decode_rows[1:]):
+            torch.testing.assert_close(current["ids"], previous["ids"] + 1)
+            torch.testing.assert_close(current["positions"], previous["positions"] + 1)
+            torch.testing.assert_close(current["context"], previous["context"] + 1)
+            expected_slots = current["blocks"].gather(
+                1, (current["positions"] // 4).reshape(-1, 1)
+            ).reshape(-1).to(torch.long) * 4 + current["positions"] % 4
+            torch.testing.assert_close(current["slots"], expected_slots)
+
+    def test_stable_decode_state_falls_back_across_mixed_and_cohort_changes(self):
+        def run(reuse):
+            config = make_cpp_config(max_batch_size=2, max_prefill_tokens_per_iter=3,
+                                     block_size=4)
+            config.reuse_stable_decode_metadata = reuse
+            loop = cpp.IterationLoop(config, torch.device("cpu"))
+            loop.submit_request([1, 2, 3, 4, 5], 5)
+            loop.submit_request([10, 11, 12, 13, 14], 2)
+            trace = []
+            iteration = 0
+
+            def forward(ids, positions, slots, cu, context, blocks, max_query, decode):
+                trace.append((decode, ids.tolist(), positions.tolist(),
+                              slots.tolist(), context.tolist()))
+                return cpp_forward()(ids, positions, slots, cu, context,
+                                     blocks, max_query, decode)
+
+            while loop.num_pending() or loop.num_running():
+                if iteration == 2:
+                    loop.submit_request([20, 21, 22], 4)
+                loop.step(forward)
+                iteration += 1
+            return dict(loop.pop_completed()), trace, loop.num_device_decode_state_replays()
+
+        baseline, baseline_trace, _ = run(False)
+        candidate, candidate_trace, replays = run(True)
+        self.assertEqual(candidate, baseline)
+        self.assertEqual(candidate_trace, baseline_trace)
+        self.assertGreater(replays, 0)
+
 
 @unittest.skipUnless(cpp is not None and torch.cuda.is_available(), "requires CUDA extension runtime")
 class PinnedMetadataCudaTests(unittest.TestCase):
+    def test_stable_decode_metadata_matches_standard_on_cuda(self):
+        def run(reuse):
+            config = make_cpp_config(max_batch_size=2, block_size=4)
+            config.reuse_stable_decode_metadata = reuse
+            loop = cpp.IterationLoop(config, torch.device("cuda"))
+            loop.submit_request([1, 2, 3, 4, 5], 6)
+            loop.submit_request([10, 11, 12, 13, 14], 6)
+            decode_rows = []
+
+            def forward(ids, positions, slots, cu, context, blocks, max_query, decode):
+                if decode:
+                    decode_rows.append(tuple(t.cpu().clone() for t in
+                                             (ids, positions, slots, context)))
+                return cpp_forward()(ids, positions, slots, cu, context,
+                                     blocks, max_query, decode)
+
+            while loop.num_pending() or loop.num_running():
+                loop.step(forward)
+            return dict(loop.pop_completed()), decode_rows, loop.num_device_decode_state_replays()
+
+        baseline, baseline_rows, baseline_replays = run(False)
+        candidate, candidate_rows, candidate_replays = run(True)
+        self.assertEqual(candidate, baseline)
+        self.assertEqual(len(candidate_rows), len(baseline_rows))
+        for expected, actual in zip(baseline_rows, candidate_rows):
+            for expected_tensor, actual_tensor in zip(expected, actual):
+                torch.testing.assert_close(actual_tensor, expected_tensor, rtol=0, atol=0)
+        self.assertEqual(baseline_replays, 0)
+        self.assertGreater(candidate_replays, 0)
+
     def test_metadata_and_outputs_match_cpu_across_streams(self):
         def run(device):
             loop = cpp.IterationLoop(

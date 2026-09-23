@@ -99,7 +99,8 @@ class GraphModelAdapter(ModelAdapter):
                  enable_native_decode_rope_kv=False,
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
-                 enable_packed_qkv_rope_cache=False):
+                 enable_packed_qkv_rope_cache=False,
+                 enable_stable_decode_table_cache=False):
         super().__init__(model, pool, loop)
         if decode_attention_policy not in ("production", "splitk", "fa3"):
             raise ValueError("graph decode policy must be 'production', 'splitk', or 'fa3'")
@@ -144,6 +145,7 @@ class GraphModelAdapter(ModelAdapter):
             ),
             enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
+            enable_stable_decode_table_cache=enable_stable_decode_table_cache,
         )
 
     @torch.no_grad()
@@ -179,6 +181,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
+                 enable_stable_decode_table_cache=False,
                  enable_prefill_packed_qkv_rope_cache=False,
                  enable_prefill_residual_rmsnorm=False,
                  enable_prefill_swiglu_fusion=False):
@@ -192,7 +195,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                              enable_native_decode_qkv_postprocess
                          ),
                          enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache,
-                         enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache)
+                         enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache,
+                         enable_stable_decode_table_cache=enable_stable_decode_table_cache)
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))

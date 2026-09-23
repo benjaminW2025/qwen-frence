@@ -36,7 +36,8 @@ class CUDAGraphDecoder:
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
-                 output_head_policy="logits", output_head_config=None):
+                 output_head_policy="logits", output_head_config=None,
+                 enable_stable_decode_table_cache=False):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -59,6 +60,7 @@ class CUDAGraphDecoder:
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.enable_stable_decode_table_cache = bool(enable_stable_decode_table_cache)
         self.output_head_policy = output_head_policy
         self.output_head_config = output_head_config
         if output_head_policy not in ("logits", "fused_argmax"):
@@ -83,6 +85,7 @@ class CUDAGraphDecoder:
         # Static output buffers
         self.s_logits = None
         self.graph = None
+        self._block_table_source_signature = None
 
     def _step_forward(self):
         return graph_decode_forward(
@@ -130,7 +133,20 @@ class CUDAGraphDecoder:
         self.s_input_ids.copy_(input_ids)
         self.s_positions.copy_(positions)
         self.s_seq_lens.copy_(seq_lens)
-        self.s_block_table.copy_(block_table)
+        # The C++ stable-cohort path retains one fixed-address, immutable full
+        # page table. Copy it only when the source storage or contents change.
+        # A reused metadata buffer can hold a different cohort after prefill;
+        # tensor version detects an in-place rewrite at the same address.
+        if self.enable_stable_decode_table_cache:
+            table_signature = (
+                block_table.data_ptr(), tuple(block_table.shape),
+                tuple(block_table.stride()), block_table._version,
+            )
+        else:
+            table_signature = None
+        if not self.enable_stable_decode_table_cache or table_signature != self._block_table_source_signature:
+            self.s_block_table.copy_(block_table)
+            self._block_table_source_signature = table_signature
         self.s_slot_mapping.copy_(slot_mapping)
         self.graph.replay()
         return self.s_logits

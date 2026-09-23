@@ -36,6 +36,7 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
         .def_readwrite("num_kv_heads", &SchedulerConfig::num_kv_heads)
         .def_readwrite("head_dim", &SchedulerConfig::head_dim)
         .def_readwrite("overlap_prefill_build", &SchedulerConfig::overlap_prefill_build)
+        .def_readwrite("reuse_stable_decode_metadata", &SchedulerConfig::reuse_stable_decode_metadata)
         .def_readwrite("eos_token_id", &SchedulerConfig::eos_token_id);
 
     // IterationLoop
@@ -53,6 +54,7 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
         .def("pop_completed", &IterationLoop::pop_completed,
              "Get and clear completed request outputs")
         .def("max_decode_context_length", &IterationLoop::max_decode_context_length)
+        .def("num_device_decode_state_replays", &IterationLoop::num_device_decode_state_replays)
         .def("num_pending", &IterationLoop::num_pending)
         .def("num_running", &IterationLoop::num_running);
 }

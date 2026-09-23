@@ -509,6 +509,23 @@ overhead. The current synchronous `step()` reads sampled tokens on the CPU befor
 the next scheduling decision, so a D2H wait is expected but its *cost* must be
 measured, not inferred from the call site.
 
+For the current 8192-token packed-prefill candidate, profile the fixed B64 row
+with `--prefill-budget 8192 --decode-attention-policy fa3 --qkv-mode native
+--enable-residual-rmsnorm`. Use `--prefill-fusion-mode control` and `swiglu`
+in separate runs, with `--kind prefill` for the first full-budget call and
+`--kind mixed` for a later prefill/decode iteration. The report labels the
+selected fusion, retains the uninstrumented step timings, and separates CUDA
+kernel categories in the one-step trace.
+
+The experimental stable-cohort decode metadata path is opt-in through
+`--reuse-stable-decode-metadata`. Compare a full-batch decode occurrence such
+as `--kind decode --occurrence 32` with and without that flag, using the same
+case and budget. The report records whether the selected step actually reused
+device state, along with the output digest and C++ CPU ranges. This measures
+the C02/C03 prototype; the baseline already uses pinned double-buffered
+metadata. CUDA correctness and H100 timing remain required before enabling the
+prototype by default.
+
 ## Piecewise packed-prefill capture
 
 `benchmark_piecewise_prefill.py` compares the same C++ scheduler and captured

@@ -114,6 +114,9 @@ struct SchedulerConfig {
     int64_t num_kv_heads = 2;
     int64_t head_dim = 128;
     bool overlap_prefill_build = true;  // A/B switch for mixed-iteration CPU/GPU overlap
+    // Experimental fixed-cohort fast path. Seed complete decode metadata once,
+    // then retain sampled IDs and advance positions/lengths/slots on device.
+    bool reuse_stable_decode_metadata = false;
 };
 
 // The main C++ iteration loop
@@ -158,6 +161,9 @@ public:
     int64_t max_decode_context_length() const { return max_decode_context_length_; }
     int64_t num_pending() const { return pending_queue_.size(); }
     int64_t num_running() const { return running_requests_.size(); }
+    int64_t num_device_decode_state_replays() const {
+        return num_device_decode_state_replays_;
+    }
 
 private:
     SchedulerConfig config_;
@@ -175,6 +181,10 @@ private:
 
     int64_t next_request_id_ = 0;
     int64_t max_decode_context_length_ = 0;
+    bool decode_state_valid_ = false;
+    std::vector<int64_t> decode_state_request_ids_;
+    torch::Tensor retained_decode_tokens_;
+    int64_t num_device_decode_state_replays_ = 0;
 
     // Simplified block manager. It owns page-ID allocation, but not the actual
     // K/V tensors; those remain behind forward_fn in this prototype.
@@ -183,9 +193,12 @@ private:
 
     // Internal methods
     IterationPlan schedule();
-    void build_decode_batch(const IterationPlan& plan);
+    void build_decode_batch(const IterationPlan& plan, bool include_reserved_blocks = false);
     void build_prefill_batch(const IterationPlan& plan);
     void copy_batch(bool decode, bool prefill);
+    bool can_reuse_decode_state(const IterationPlan& plan) const;
+    void remember_decode_state(const IterationPlan& plan);
+    void advance_decode_state(const IterationPlan& plan);
     BatchMetadata& device_metadata() { return batch_metadata_[active_batch_metadata_]; }
     torch::Tensor sample(torch::Tensor logits);
     void update_requests(const IterationPlan& plan, torch::Tensor next_tokens);

@@ -43,6 +43,18 @@ class ProfileDesignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "prefill-budget"):
             MODULE.validate_args(args)
 
+    def test_prefill_fusion_profile_requires_piecewise_adapter(self):
+        args = MODULE.build_parser().parse_args([
+            "--preset", "fixed", "--case-id", "fixed-b64-l2048-o128",
+            "--kind", "prefill", "--prefill-budget", "8192",
+            "--decode-attention-policy", "fa3",
+            "--prefill-fusion-mode", "swiglu",
+        ])
+        MODULE.validate_args(args)
+        args.adapter = "eager-prefill"
+        with self.assertRaisesRegex(ValueError, "piecewise-prefill"):
+            MODULE.validate_args(args)
+
     def test_cuda_activity_summary_counts_leaf_events_once(self):
         events = [
             SimpleNamespace(name="decode_attention_kernel", device_type="DeviceType.CUDA",
@@ -52,6 +64,9 @@ class ProfileDesignTests(unittest.TestCase):
             SimpleNamespace(name="nvjet_gemm", device_type="DeviceType.CUDA",
                             self_device_time_total=60.0),
             SimpleNamespace(name="python/parent", device_type="DeviceType.CPU",
+                            self_device_time_total=200.0),
+            SimpleNamespace(name="python/model_callback_decode",
+                            device_type="DeviceType.CUDA",
                             self_device_time_total=200.0),
         ]
         summary = MODULE.cuda_activity_summary(events)
@@ -64,6 +79,8 @@ class ProfileDesignTests(unittest.TestCase):
     def test_flash_attention_is_not_misbucketed_as_gemm(self):
         self.assertEqual(MODULE.cuda_kernel_category(
             "void cutlass::device_kernel<flash::FlashAttnFwdSm90>()"), "attention")
+        self.assertEqual(MODULE.cuda_kernel_category(
+            "void flash::flash_fwd_splitkv_kernel<cutlass::half_t>()"), "attention")
         self.assertEqual(MODULE.cuda_kernel_category(
             "vllm::reshape_and_cache_flash_kernel"), "kv_write")
 
