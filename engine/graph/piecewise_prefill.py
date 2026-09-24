@@ -196,7 +196,7 @@ class PiecewisePrefill:
         for i in range(len(model.layers)):
             if mixed_attention_policy == "fa3_varlen":
                 from kernel_dispatch import fa3_paged_varlen_attention
-                query = q[0].transpose(0, 1).contiguous()
+                query = q[0, :, :tokens, :].transpose(0, 1).contiguous()
                 rows = fa3_paged_varlen_attention(
                     query, pool.k_pool[i], pool.v_pool[i], cu, table, context,
                     max_query_len=max_query)
