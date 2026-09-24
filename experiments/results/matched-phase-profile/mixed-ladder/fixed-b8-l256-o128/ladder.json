@@ -1,0 +1,153 @@
+{
+  "status": "numerical_difference",
+  "shape_id": "fixed-b8-l256-o128",
+  "vllm_wall_ms": 7.4726250022649765,
+  "notes": [
+    "Existing arm reports are reused; wall medians may be from different runs and should be reconfirmed if close.",
+    "Numerical differences are reported without suppressing timings."
+  ],
+  "rows": [
+    {
+      "arm": "packed",
+      "capture_bucket_tokens": 2048,
+      "prefill_qkv_rope_cache": false,
+      "local_wall_ms": 11.021150276064873,
+      "local_over_vllm": 1.4748699784512573,
+      "profiled_gemm_us": 7315.237,
+      "profiled_attention_us": 501.66499999999996,
+      "profiled_rope_us": 560.9290000000001,
+      "target_correctness": {
+        "status": "pass",
+        "atol": 0.05,
+        "rtol": 0.01,
+        "rows": [
+          {
+            "decode": true,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.013671875,
+            "mean_abs": 0.0020572200883179903
+          },
+          {
+            "decode": false,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.0,
+            "mean_abs": 0.0
+          }
+        ]
+      },
+      "exact_control_correctness": null,
+      "comparison": "/workspace/qwen-frence/experiments/results/matched-phase-profile/mixed-packed/fixed-b8-l256-o128/comparison.json",
+      "speedup_vs_broad": 1.0,
+      "speedup_vs_exact": 0.7704833668106883
+    },
+    {
+      "arm": "packed-exact",
+      "capture_bucket_tokens": 1028,
+      "prefill_qkv_rope_cache": false,
+      "local_wall_ms": 8.49161297082901,
+      "local_over_vllm": 1.136362786605132,
+      "profiled_gemm_us": 4636.919,
+      "profiled_attention_us": 502.5320000000001,
+      "profiled_rope_us": 317.2179999999999,
+      "target_correctness": {
+        "status": "pass",
+        "atol": 0.05,
+        "rtol": 0.01,
+        "rows": [
+          {
+            "decode": true,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.015625,
+            "mean_abs": 0.0017217342974618077
+          },
+          {
+            "decode": false,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.0,
+            "mean_abs": 0.0
+          }
+        ]
+      },
+      "exact_control_correctness": null,
+      "comparison": "/workspace/qwen-frence/experiments/results/matched-phase-profile/mixed-packed-exact/fixed-b8-l256-o128/comparison.json",
+      "speedup_vs_broad": 1.2978865515804252,
+      "speedup_vs_exact": 1.0
+    },
+    {
+      "arm": "packed-exact-qkv",
+      "capture_bucket_tokens": 1028,
+      "prefill_qkv_rope_cache": true,
+      "local_wall_ms": 8.41216929256916,
+      "local_over_vllm": 1.1257314919481982,
+      "profiled_gemm_us": 4653.943,
+      "profiled_attention_us": 498.14900000000006,
+      "profiled_rope_us": 412.0710000000001,
+      "target_correctness": {
+        "status": "pass",
+        "atol": 0.05,
+        "rtol": 0.01,
+        "rows": [
+          {
+            "decode": true,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.01171875,
+            "mean_abs": 0.001688716234639287
+          },
+          {
+            "decode": false,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.0,
+            "mean_abs": 0.0
+          }
+        ]
+      },
+      "exact_control_correctness": {
+        "status": "numerical_difference",
+        "atol": 0.05,
+        "rtol": 0.01,
+        "rows": [
+          {
+            "decode": true,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 0,
+            "max_abs": 0.017578125,
+            "mean_abs": 0.002209295751526952
+          },
+          {
+            "decode": false,
+            "elements": 607744,
+            "outside_tolerance": 0,
+            "argmax_differences": 1,
+            "max_abs": 0.02734375,
+            "mean_abs": 0.0036410666070878506
+          }
+        ],
+        "target_kv": {
+          "status": "pass",
+          "elements": 14737408,
+          "outside_tolerance": 0,
+          "max_abs": 0.0625,
+          "atol": 0.05,
+          "rtol": 0.01
+        },
+        "whole_workload_tokens_equal": false
+      },
+      "comparison": "/workspace/qwen-frence/experiments/results/matched-phase-profile/mixed-packed-exact-qkv/fixed-b8-l256-o128/comparison.json",
+      "speedup_vs_broad": 1.31014366125517,
+      "speedup_vs_exact": 1.0094438991295653
+    }
+  ]
+}
