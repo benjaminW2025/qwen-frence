@@ -28,6 +28,22 @@ class CurrentEightTests(unittest.TestCase):
                 self.assertEqual(len(digest), 64)
                 self.assertGreater(blocks, 0)
 
+    def test_cpu_dispatch_plan_includes_packed_mixed_rows(self):
+        args = SimpleNamespace(suite_dir=SUITE, seed=20260914)
+        expected_mixed = (0, 0, 7, 7, 7, 7, 63, 63)
+        expected_max = (0, 0, 2055, 2055, 2104, 2104, 2111, 2111)
+        for shape, mixed, maximum in zip(benchmark.SHAPES, expected_mixed,
+                                         expected_max):
+            with self.subTest(shape=shape):
+                case, requests, _, _, _ = benchmark.input_contract(args, shape)
+                plan = benchmark.dispatch_plan(case, requests, args.seed)
+                self.assertEqual(plan["mixed_steps"], mixed)
+                self.assertEqual(plan["max_packed_mixed_tokens"], maximum)
+                self.assertEqual(plan["prefill_buckets"],
+                                 [2048] if not mixed else [2048, maximum])
+                self.assertEqual(plan["swiglu_fused_buckets"],
+                                 plan["prefill_buckets"])
+
     def test_vllm_result_refuses_mismatched_capacity(self):
         args = SimpleNamespace(suite_dir=SUITE, seed=20260914)
         shape = benchmark.SHAPES[0]
@@ -55,6 +71,18 @@ class CurrentEightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mismatched"):
                 benchmark.local_is_complete(path, "different")
 
+    def test_mixed_child_does_not_receive_burst_only_reuse_option(self):
+        args = SimpleNamespace(suite_dir=SUITE, output_dir=Path("out"),
+                               shape_id=benchmark.SHAPES[0],
+                               model="Qwen/Qwen2.5-1.5B", device="cuda:0",
+                               seed=20260914, warmups=1, repetitions=3,
+                               reuse_vllm_from=Path("old-burst"))
+        self.assertIn("--reuse-vllm-from", benchmark.forwarded(
+            args, "run-vllm", args.shape_id))
+        child = benchmark.mixed_forwarded(args, args.shape_id)
+        self.assertNotIn("--reuse-vllm-from", child)
+        self.assertEqual(child[2], "run-cell")
+
     def test_analysis_joins_local_and_vllm_by_request_id(self):
         shape = benchmark.SHAPES[0]
         source = next((SUITE / shape / "reference").glob("*.json"))
@@ -67,7 +95,8 @@ class CurrentEightTests(unittest.TestCase):
                    for row in payload["backends"]["vllm"]["runs"][-1]["requests"]}
         with tempfile.TemporaryDirectory() as temporary:
             args = SimpleNamespace(suite_dir=SUITE, output_dir=Path(temporary),
-                                   seed=20260914, warmups=1, repetitions=3)
+                                   seed=20260914, warmups=1, repetitions=3,
+                                   reuse_vllm_from=None)
             local_path, reference_dir, comparison = benchmark.stage_paths(args, shape)
             reference_dir.mkdir(parents=True)
             (reference_dir / "reference.json").write_bytes(source.read_bytes())
@@ -76,7 +105,10 @@ class CurrentEightTests(unittest.TestCase):
                 "workload_sha256": digest, "engine_flags": benchmark.ENGINE_FLAGS,
                 "repository_commit": commit,
                 "num_blocks": blocks, "warmups": 1, "repetitions": 3,
-                "runs": [{"outputs": outputs}],
+                "dispatch_plan": benchmark.dispatch_plan(case,
+                    benchmark.input_contract(args_for_input, shape)[1], args.seed),
+                "runs": [{"outputs": outputs, "mixed_steps": 0,
+                          "packed_mixed_calls": 0}],
                 "median_output_tokens_per_s": 2500.0,
             })
             with mock.patch.object(benchmark, "repository_commit", return_value=commit):

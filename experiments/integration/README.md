@@ -777,28 +777,40 @@ production-ready, and the program never modifies production dispatch defaults.
 
 ## Current eight-cell FA3/graph versus vLLM checkpoint
 
-`benchmark_current_8_vs_vllm.py` runs the eight frozen factorial burst workloads
-through the current C++ scheduler, exact-batch FA3 decode graph, 2048-token
-piecewise prefill graph, residual/RMSNorm decode fusion, native decode QKV
-postprocessing, and prefill SwiGLU fusion. vLLM 0.10.2 runs in a separate
-process with the same prompt IDs, concurrency and token budget, and matched
-logical KV capacity. The packed mixed callback is enabled but these uniform
-burst workloads have no mixed steps; use the staggered mixed experiment for it.
+`benchmark_current_8_vs_vllm.py` runs both the frozen burst workload and a
+staggered two-wave mixed workload for each of the eight factorial shapes. The
+local arm uses the C++ scheduler, FA3 decode graphs, bucketed piecewise prefill
+graphs, the C++ packed mixed callback, residual/RMSNorm decode fusion, native
+decode QKV postprocessing, and conditional prefill SwiGLU fusion. Capture
+buckets are derived from a CPU dry schedule: the packed mixed callback can
+contain up to the 2048-token prefill budget **plus decode tokens**. vLLM 0.10.2
+runs separately with the same prompt IDs, concurrency, token budget and matched
+logical KV capacity. The staggered comparator uses in-process vLLM step mode
+so the second wave can be injected at the same logical iteration index.
 
 ```bash
 python3 experiments/integration/benchmark_current_8_vs_vllm.py plan \
   --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v1
+  --output-dir experiments/results/current-eight-vs-vllm-v2
 python3 experiments/integration/benchmark_current_8_vs_vllm.py check \
   --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v1
+  --output-dir experiments/results/current-eight-vs-vllm-v2 \
+  --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1
 python3 experiments/integration/benchmark_current_8_vs_vllm.py run-table \
   --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v1
+  --output-dir experiments/results/current-eight-vs-vllm-v2 \
+  --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1
 ```
 
 The table resumes completed local and vLLM stages after interruption. It rejects
-stale or mismatched results rather than overwriting them. Each cell writes
-`comparison.json`, and the full table writes `summary.json`. A CPU-only `plan`
-validates all eight frozen inputs; `check` validates the pinned model cache,
-extension, vLLM package and a tiny FA3 GPU call before loading model weights.
+stale or mismatched results rather than overwriting them. Each cell writes a
+burst `comparison.json` and a `mixed/<shape>/comparison.json`; the full table
+writes `summary.json` with both results per shape. A CPU-only `plan` validates
+all eight frozen inputs and schedules; `check` validates the pinned model cache,
+extension, vLLM package and tiny decode/varlen FA3 GPU calls before loading
+model weights. Mixed whole-workload timing includes both arrival waves; it is
+not a one-step attention microbenchmark.
+`--reuse-vllm-from` is optional; use it only for prior burst results from the
+same pod. It validates workload, model, vLLM version, KV capacity, run counts
+and GPU model before reuse. Staggered mixed vLLM results are always measured
+fresh.

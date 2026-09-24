@@ -35,7 +35,7 @@ ENGINE_FLAGS = {
     "packed_mixed_step": True,
     "decode_attention_policy": "fa3",
     "decode_graph_bucket": "exact_batch",
-    "prefill_graph_buckets": [PREFILL_TOKENS_PER_STEP],
+    "prefill_graph_buckets": "CPU-scheduled pure/mixed exact upper bounds",
     "residual_rmsnorm": True,
     "native_decode_qkv_postprocess": True,
     "prefill_swiglu_fusion": True,
@@ -57,6 +57,9 @@ def parser():
     result.add_argument("--seed", type=int, default=20260914)
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
+    result.add_argument("--reuse-vllm-from", type=Path,
+                        help="explicitly reuse validated burst vLLM results from a prior "
+                             "output directory on the same GPU pod")
     return result
 
 
@@ -95,6 +98,28 @@ def input_contract(args, shape_id):
 def stage_paths(args, shape_id):
     cell = args.output_dir / shape_id
     return cell / "local.json", cell / "vllm", cell / "comparison.json"
+
+
+def dispatch_plan(case, requests, seed):
+    """Resolve graph buckets and expected mixed dispatch before loading weights."""
+    import torch
+    import inference_engine_cpp as cpp
+    from benchmark_integrated_graph import dry_schedule
+    from naive_forward import SWIGLU_FUSION_ROW_THRESHOLD
+
+    schedule = dry_schedule(torch, cpp, case, seed, requests)
+    packed = [sum(call[1] for call in step["calls"])
+              for step in schedule["steps"] if step["kind"] == "mixed"]
+    prefill = [call[1] for step in schedule["steps"]
+               for call in step["calls"] if not call[0]]
+    if not prefill or max(prefill) != PREFILL_TOKENS_PER_STEP:
+        raise AssertionError(f"{case['id']}: CPU prefill work differs from fixed budget")
+    buckets = sorted({PREFILL_TOKENS_PER_STEP, max(packed, default=0)})
+    buckets = [bucket for bucket in buckets if bucket > 0]
+    return {"prefill_buckets": buckets, "mixed_steps": len(packed),
+            "max_packed_mixed_tokens": max(packed, default=0),
+            "swiglu_fused_buckets": [bucket for bucket in buckets
+                                     if bucket > SWIGLU_FUSION_ROW_THRESHOLD]}
 
 
 def local_is_complete(path, digest, *, model=None, blocks=None,
@@ -164,8 +189,33 @@ def vllm_result(directory, workload, digest, case, blocks, model,
     return payload
 
 
+def selected_vllm_result(args, shape_id, workload, digest, case, blocks, model):
+    own_directory = stage_paths(args, shape_id)[1]
+    own = vllm_result(own_directory, workload, digest, case, blocks, model,
+                      args.warmups, args.repetitions, repository_commit())
+    if own is not None:
+        return own, own_directory
+    if args.reuse_vllm_from is None:
+        return None, own_directory
+    source = args.reuse_vllm_from / shape_id / "vllm"
+    reused = vllm_result(source, workload, digest, case, blocks, model,
+                         args.warmups, args.repetitions)
+    if reused is None:
+        return None, own_directory
+    import torch
+    gpu = reused.get("system", {}).get("gpu", {})
+    props = torch.cuda.get_device_properties(args.device)
+    if (gpu.get("name") != props.name
+            or gpu.get("total_memory_bytes") != props.total_memory
+            or gpu.get("compute_capability") != f"{props.major}.{props.minor}"):
+        raise ValueError(f"{source}: reused vLLM result is from different GPU hardware")
+    return reused, source
+
+
 def run_local(args, shape_id, model_source):
     case, requests, _, digest, blocks = input_contract(args, shape_id)
+    dispatch = dispatch_plan(case, requests, args.seed)
+    buckets = dispatch["prefill_buckets"]
     local_path, _, _ = stage_paths(args, shape_id)
     if local_is_complete(local_path, digest, model=model_source, blocks=blocks,
                          warmups=args.warmups, repetitions=args.repetitions,
@@ -190,11 +240,16 @@ def run_local(args, shape_id, model_source):
         engine.model, pool, None, max_running=case["max_running"],
         max_context_length=config.max_context_length,
         decode_attention_policy="fa3", decode_buckets=[case["max_running"]],
-        max_capture_tokens=PREFILL_TOKENS_PER_STEP, max_prefill_shapes=1,
-        prefill_buckets=[PREFILL_TOKENS_PER_STEP],
+        max_capture_tokens=max(buckets), max_prefill_shapes=len(buckets),
+        prefill_buckets=buckets,
         enable_residual_rmsnorm=True,
         enable_native_decode_qkv_postprocess=True,
         enable_prefill_swiglu_fusion=True)
+    if (adapter.graph_decoder.buckets != [case["max_running"]]
+            or not adapter.enable_residual_rmsnorm
+            or not adapter.enable_native_decode_qkv_postprocess
+            or not adapter.piecewise_prefill.enable_swiglu_fusion):
+        raise AssertionError(f"{shape_id}: regime optimization flags did not reach model")
     runs = []
     for index in range(args.warmups + args.repetitions):
         # Excluded from timing; makes uninitialized/stale KV reads obvious.
@@ -209,13 +264,18 @@ def run_local(args, shape_id, model_source):
             raise AssertionError(f"{shape_id}: missing or short local output")
         if adapter.piecewise_prefill.eager_calls:
             raise AssertionError(f"{shape_id}: prefill missed graph bucket")
-        if any(row["kind"] == "mixed" for row in result["steps"]):
-            raise AssertionError(f"{shape_id}: fixed burst unexpectedly contained mixed steps")
+        mixed_steps = sum(row["kind"] == "mixed" for row in result["steps"])
+        if mixed_steps != dispatch["mixed_steps"]:
+            raise AssertionError(f"{shape_id}: mixed step count changed from CPU plan")
+        if adapter.decisions.get("packed_mixed_cpp_varlen", 0) != mixed_steps:
+            raise AssertionError(f"{shape_id}: C++ packed mixed dispatch not used on every mixed step")
         if index >= args.warmups:
             runs.append({"wall_ms": result["wall_ms"],
                          "output_tokens_per_s": result["output_tokens_per_s"],
                          "outputs": result["outputs"], "work": work,
-                         "mixed_steps": 0})
+                         "mixed_steps": mixed_steps,
+                         "packed_mixed_calls": adapter.decisions.get(
+                             "packed_mixed_cpp_varlen", 0)})
         print(f"{shape_id}: local {'warmup' if index < args.warmups else 'run'} "
               f"{index + 1}/{args.warmups + args.repetitions} "
               f"{result['output_tokens_per_s']:.1f} tok/s", flush=True)
@@ -224,11 +284,14 @@ def run_local(args, shape_id, model_source):
     if (not adapter.decisions.get("FA3-auto")
             or not adapter.piecewise_prefill.graph_replays):
         raise AssertionError(f"{shape_id}: requested CUDA graph path did not replay")
+    if sorted(adapter.piecewise_prefill.shapes) != buckets:
+        raise AssertionError(f"{shape_id}: expected pure/mixed graph buckets not captured")
     atomic_json(local_path, {"status": "complete", "shape_id": shape_id,
                              "model": model_source, "workload_sha256": digest,
                              "repository_commit": repository_commit(),
                              "engine_flags": ENGINE_FLAGS, "warmups": args.warmups,
                              "repetitions": args.repetitions, "num_blocks": blocks,
+                             "dispatch_plan": dispatch,
                              "runs": runs,
                              "median_output_tokens_per_s": statistics.median(
                                  row["output_tokens_per_s"] for row in runs),
@@ -240,10 +303,10 @@ def run_local(args, shape_id, model_source):
 def run_vllm(args, shape_id, model_source):
     case, _, workload, digest, blocks = input_contract(args, shape_id)
     _, directory, _ = stage_paths(args, shape_id)
-    if vllm_result(directory, workload, digest, case, blocks,
-                   model_source, args.warmups, args.repetitions,
-                   repository_commit()) is not None:
-        print(f"{shape_id}: vLLM complete; reusing", flush=True)
+    existing, source = selected_vllm_result(
+        args, shape_id, workload, digest, case, blocks, model_source)
+    if existing is not None:
+        print(f"{shape_id}: vLLM complete; reusing {source}", flush=True)
         return
     command = [sys.executable, str(ROOT / "benchmarks/run_benchmarks.py"),
                "--backends", "vllm", "--strict-backends",
@@ -263,7 +326,8 @@ def run_vllm(args, shape_id, model_source):
 
 
 def analyze_cell(args, shape_id, model_source):
-    case, _, workload, digest, blocks = input_contract(args, shape_id)
+    case, requests, workload, digest, blocks = input_contract(args, shape_id)
+    dispatch = dispatch_plan(case, requests, args.seed)
     local_path, directory, report_path = stage_paths(args, shape_id)
     if not local_is_complete(local_path, digest, model=model_source,
                              blocks=blocks, warmups=args.warmups,
@@ -271,11 +335,11 @@ def analyze_cell(args, shape_id, model_source):
                              commit=repository_commit()):
         raise ValueError(f"missing local result: {local_path}")
     local = json.loads(local_path.read_text())
-    if local["model"] != model_source or local["num_blocks"] != blocks:
+    if (local["model"] != model_source or local["num_blocks"] != blocks
+            or local.get("dispatch_plan") != dispatch):
         raise ValueError(f"{shape_id}: local model/KV capacity differs")
-    reference = vllm_result(directory, workload, digest, case, blocks,
-                            model_source, args.warmups, args.repetitions,
-                            repository_commit())
+    reference, reference_dir = selected_vllm_result(
+        args, shape_id, workload, digest, case, blocks, model_source)
     if reference is None:
         raise ValueError(f"missing vLLM result: {directory}")
     vllm = reference["backends"]["vllm"]
@@ -290,8 +354,11 @@ def analyze_cell(args, shape_id, model_source):
               "vllm_output_tokens_per_s": vllm_rate,
               "local_over_vllm": local_rate / vllm_rate,
               "exact_output_requests": exact, "total_requests": len(vllm_output),
-              "mixed_steps": 0,
-              "note": "burst fixed table; packed mixed callback configured but not exercised"}
+              "vllm_result_dir": str(reference_dir),
+              "mixed_steps": local["runs"][0]["mixed_steps"],
+              "packed_mixed_calls": local["runs"][0]["packed_mixed_calls"],
+              "prefill_buckets": dispatch["prefill_buckets"],
+              "note": "burst fixed table; packed mixed callback exercised where C++ overlaps decode/prefill"}
     atomic_json(report_path, report)
     print(f"{shape_id}: local {local_rate:.1f}, vLLM {vllm_rate:.1f} tok/s; "
           f"local/vLLM {local_rate / vllm_rate:.3f}x; "
@@ -300,9 +367,21 @@ def analyze_cell(args, shape_id, model_source):
 
 
 def forwarded(args, action, shape_id):
-    return [sys.executable, str(Path(__file__)), action,
+    command = [sys.executable, str(Path(__file__)), action,
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
+            "--seed", str(args.seed), "--warmups", str(args.warmups),
+            "--repetitions", str(args.repetitions)]
+    if args.reuse_vllm_from is not None:
+        command += ["--reuse-vllm-from", str(args.reuse_vllm_from)]
+    return command
+
+
+def mixed_forwarded(args, shape_id):
+    return [sys.executable, str(HERE / "benchmark_current_mixed_8_vs_vllm.py"),
+            "run-cell", "--suite-dir", str(args.suite_dir),
+            "--output-dir", str(args.output_dir), "--shape-id", shape_id,
+            "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
 
@@ -316,13 +395,28 @@ def main():
     selected = (args.shape_id,) if args.shape_id else SHAPES
     for shape_id in selected:
         input_contract(args, shape_id)
+    from benchmark_current_mixed_8_vs_vllm import mixed_plan, analyze as analyze_mixed
     if args.action == "plan":
-        print(json.dumps({"shapes": selected, "engine": ENGINE_FLAGS,
-                          "warmups": args.warmups, "repetitions": args.repetitions,
-                          "mixed_callback_exercised": False}, indent=2))
+        shapes = {}
+        for shape_id in selected:
+            case, requests, _, _, _ = input_contract(args, shape_id)
+            mixed_case, _, first, arrival, buckets, _, _ = mixed_plan(args, shape_id)
+            shapes[shape_id] = {"burst": dispatch_plan(case, requests, args.seed),
+                                "staggered_mixed": {
+                                    "first_wave": first, "arrival_step": arrival,
+                                    "prefill_buckets": buckets,
+                                    "batch": mixed_case["max_running"]}}
+        print(json.dumps({"shapes": shapes, "engine": ENGINE_FLAGS,
+                          "warmups": args.warmups, "repetitions": args.repetitions},
+                         indent=2))
         return
     model_source = resolve_model_source(args)
     if args.action == "check":
+        for shape_id in selected:
+            mixed_plan(args, shape_id)
+            case, _, workload, digest, blocks = input_contract(args, shape_id)
+            selected_vllm_result(args, shape_id, workload, digest, case,
+                                 blocks, model_source)
         from model_setup import check_startup
         setup = check_startup(args.device)
         import torch
@@ -332,6 +426,7 @@ def main():
             raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
         decode_fa3 = _load("paged_decode_fa3")
         decode_fa3._load_fa3()
+        _load("paged_varlen_fa3").smoke_varlen_fa3(args.device)
         version = importlib.metadata.version("vllm")
         if version != "0.10.2":
             raise ValueError(f"expected vLLM 0.10.2, got {version}")
@@ -360,12 +455,18 @@ def main():
             print(f"[{index}/{len(selected)}] {shape_id}", flush=True)
             subprocess.run(forwarded(args, "run-local", shape_id), cwd=ROOT, check=True)
             subprocess.run(forwarded(args, "run-vllm", shape_id), cwd=ROOT, check=True)
-            reports.append(analyze_cell(args, shape_id, model_source))
+            burst = analyze_cell(args, shape_id, model_source)
+            subprocess.run(mixed_forwarded(args, shape_id), cwd=ROOT, check=True)
+            mixed = analyze_mixed(args, shape_id, model_source)
+            reports.append({"shape_id": shape_id, "burst": burst, "mixed": mixed})
         if args.action == "run-table":
             atomic_json(args.output_dir / "summary.json", {"status": "complete",
                          "rows": reports})
     if args.action == "analyze":
-        reports = [analyze_cell(args, shape_id, model_source) for shape_id in selected]
+        reports = [{"shape_id": shape_id,
+                    "burst": analyze_cell(args, shape_id, model_source),
+                    "mixed": analyze_mixed(args, shape_id, model_source)}
+                   for shape_id in selected]
         if args.shape_id is None:
             atomic_json(args.output_dir / "summary.json", {"status": "complete",
                          "rows": reports})
