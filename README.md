@@ -64,7 +64,7 @@ sampling returns token IDs to the scheduler, which advances or completes request
 
 ## Empirical evidence
 
-The canonical final artifact is [`experiments/results/current-eight-vs-vllm-v2/summary.json`](experiments/results/current-eight-vs-vllm-v2/summary.json). It contains all eight fixed shapes, each measured as burst and staggered mixed workloads. Every one of the 16 end-to-end comparisons favors the current engine:
+The canonical final artifact is [`experiments/results/current-eight-vs-vllm-v2/summary.json`](experiments/results/current-eight-vs-vllm-v2/summary.json). It contains all eight fixed shapes, each measured as burst and staggered mixed workloads. Every one of the 16 end-to-end comparisons favors the current engine (the scaling factor refers to speedup, hence higher is better):
 
 | Regime | Burst local/vLLM | Mixed local/vLLM |
 |---|---:|---:|
