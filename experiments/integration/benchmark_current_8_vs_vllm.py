@@ -60,6 +60,8 @@ def parser():
     result.add_argument("--reuse-vllm-from", type=Path,
                         help="explicitly reuse validated burst vLLM results from a prior "
                              "output directory on the same GPU pod")
+    result.add_argument("--resume-commit", help="explicitly permit completed results "
+                        "from this prior benchmark commit (7+ hex chars)")
     return result
 
 
@@ -73,6 +75,11 @@ def atomic_json(path, value):
 def repository_commit():
     return subprocess.check_output(["git", "rev-parse", "HEAD"],
                                    cwd=ROOT, text=True).strip()
+
+
+def commit_matches(recorded, current, resume_commit=None):
+    return recorded == current or bool(
+        resume_commit and recorded and recorded.startswith(resume_commit))
 
 
 def input_contract(args, shape_id):
@@ -122,8 +129,42 @@ def dispatch_plan(case, requests, seed):
                                      if bucket > SWIGLU_FUSION_ROW_THRESHOLD]}
 
 
+def adapter_options(case, buckets):
+    if not buckets or min(buckets) < 1:
+        raise ValueError("burst graph buckets must be positive")
+    return dict(max_running=case["max_running"],
+                max_context_length=max(length + output for length, output in
+                                       zip(case["lengths"], case["outputs"])),
+                decode_attention_policy="fa3",
+                decode_buckets=[case["max_running"]],
+                max_capture_tokens=max(buckets),
+                max_prefill_shapes=len(buckets), prefill_buckets=buckets,
+                enable_residual_rmsnorm=True,
+                enable_native_decode_qkv_postprocess=True,
+                enable_prefill_swiglu_fusion=True)
+
+
+def validate_capture_options(options):
+    """Exercise the real graph bucket constructor without CUDA/model weights."""
+    graph_dir = ROOT / "engine/graph"
+    if str(graph_dir) not in sys.path:
+        sys.path.insert(0, str(graph_dir))
+    from piecewise_prefill import PiecewisePrefill
+
+    model = SimpleNamespace(layers=[object()])
+    pool = SimpleNamespace(k_pool=[SimpleNamespace(
+        device=SimpleNamespace(type="cuda"))])
+    graph = PiecewisePrefill(
+        model, pool, max_capture_tokens=options["max_capture_tokens"],
+        max_shapes=options["max_prefill_shapes"],
+        token_buckets=options["prefill_buckets"])
+    if graph.buckets != tuple(sorted(set(options["prefill_buckets"]))):
+        raise AssertionError("captured graph buckets differ from plan")
+
+
 def local_is_complete(path, digest, *, model=None, blocks=None,
-                      warmups=None, repetitions=None, commit=None):
+                      warmups=None, repetitions=None, commit=None,
+                      resume_commit=None):
     if not path.is_file():
         return False
     row = json.loads(path.read_text())
@@ -133,13 +174,14 @@ def local_is_complete(path, digest, *, model=None, blocks=None,
             or (blocks is not None and row.get("num_blocks") != blocks)
             or (warmups is not None and row.get("warmups") != warmups)
             or (repetitions is not None and row.get("repetitions") != repetitions)
-            or (commit is not None and row.get("repository_commit") != commit)):
+            or (commit is not None and not commit_matches(
+                row.get("repository_commit"), commit, resume_commit))):
         raise ValueError(f"stale or mismatched local result: {path}")
     return True
 
 
 def vllm_result(directory, workload, digest, case, blocks, model,
-                warmups, repetitions, commit=None):
+                warmups, repetitions, commit=None, resume_commit=None):
     files = sorted(directory.glob("*.json"))
     if not files:
         return None
@@ -166,8 +208,9 @@ def vllm_result(directory, workload, digest, case, blocks, model,
         raise ValueError(f"{files[0]}: missing measured vLLM repetitions")
     if payload.get("system", {}).get("packages", {}).get("vllm") != "0.10.2":
         raise ValueError(f"{files[0]}: expected pinned vLLM 0.10.2")
-    if (commit is not None and payload.get("system", {}).get("repository", {})
-            .get("commit") != commit):
+    if (commit is not None and not commit_matches(
+            payload.get("system", {}).get("repository", {}).get("commit"),
+            commit, resume_commit)):
         raise ValueError(f"{files[0]}: result came from a different source commit")
     expected_ids = {request.request_id for request in workload.requests}
     if result.get("summary", {}).get("output_throughput_tok_s", 0) <= 0:
@@ -192,7 +235,8 @@ def vllm_result(directory, workload, digest, case, blocks, model,
 def selected_vllm_result(args, shape_id, workload, digest, case, blocks, model):
     own_directory = stage_paths(args, shape_id)[1]
     own = vllm_result(own_directory, workload, digest, case, blocks, model,
-                      args.warmups, args.repetitions, repository_commit())
+                      args.warmups, args.repetitions, repository_commit(),
+                      args.resume_commit)
     if own is not None:
         return own, own_directory
     if args.reuse_vllm_from is None:
@@ -219,7 +263,7 @@ def run_local(args, shape_id, model_source):
     local_path, _, _ = stage_paths(args, shape_id)
     if local_is_complete(local_path, digest, model=model_source, blocks=blocks,
                          warmups=args.warmups, repetitions=args.repetitions,
-                         commit=repository_commit()):
+                         commit=repository_commit(), resume_commit=args.resume_commit):
         print(f"{shape_id}: local complete; reusing", flush=True)
         return
 
@@ -237,14 +281,7 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, max_running=case["max_running"],
-        max_context_length=config.max_context_length,
-        decode_attention_policy="fa3", decode_buckets=[case["max_running"]],
-        max_capture_tokens=max(buckets), max_prefill_shapes=len(buckets),
-        prefill_buckets=buckets,
-        enable_residual_rmsnorm=True,
-        enable_native_decode_qkv_postprocess=True,
-        enable_prefill_swiglu_fusion=True)
+        engine.model, pool, None, **adapter_options(case, buckets))
     if (adapter.graph_decoder.buckets != [case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -321,7 +358,7 @@ def run_vllm(args, shape_id, model_source):
     subprocess.run(command, cwd=ROOT, check=True)
     if vllm_result(directory, workload, digest, case, blocks,
                    model_source, args.warmups, args.repetitions,
-                   repository_commit()) is None:
+                   repository_commit(), args.resume_commit) is None:
         raise AssertionError(f"{shape_id}: vLLM produced no validated result")
 
 
@@ -332,11 +369,19 @@ def analyze_cell(args, shape_id, model_source):
     if not local_is_complete(local_path, digest, model=model_source,
                              blocks=blocks, warmups=args.warmups,
                              repetitions=args.repetitions,
-                             commit=repository_commit()):
+                             commit=repository_commit(),
+                             resume_commit=args.resume_commit):
         raise ValueError(f"missing local result: {local_path}")
     local = json.loads(local_path.read_text())
+    observed_dispatch = dict(local.get("dispatch_plan", {}))
+    if ("swiglu_fused_buckets" not in observed_dispatch and args.resume_commit
+            and local.get("repository_commit", "").startswith(args.resume_commit)):
+        from naive_forward import SWIGLU_FUSION_ROW_THRESHOLD
+        observed_dispatch["swiglu_fused_buckets"] = [
+            bucket for bucket in observed_dispatch.get("prefill_buckets", [])
+            if bucket > SWIGLU_FUSION_ROW_THRESHOLD]
     if (local["model"] != model_source or local["num_blocks"] != blocks
-            or local.get("dispatch_plan") != dispatch):
+            or observed_dispatch != dispatch):
         raise ValueError(f"{shape_id}: local model/KV capacity differs")
     reference, reference_dir = selected_vllm_result(
         args, shape_id, workload, digest, case, blocks, model_source)
@@ -350,6 +395,8 @@ def analyze_cell(args, shape_id, model_source):
     local_rate = local["median_output_tokens_per_s"]
     vllm_rate = vllm["summary"]["output_throughput_tok_s"]
     report = {"status": "complete", "shape_id": shape_id, "workload_sha256": digest,
+              "local_repository_commit": local["repository_commit"],
+              "vllm_repository_commit": reference["system"]["repository"]["commit"],
               "local_output_tokens_per_s": local_rate,
               "vllm_output_tokens_per_s": vllm_rate,
               "local_over_vllm": local_rate / vllm_rate,
@@ -374,20 +421,28 @@ def forwarded(args, action, shape_id):
             "--repetitions", str(args.repetitions)]
     if args.reuse_vllm_from is not None:
         command += ["--reuse-vllm-from", str(args.reuse_vllm_from)]
+    if args.resume_commit is not None:
+        command += ["--resume-commit", args.resume_commit]
     return command
 
 
 def mixed_forwarded(args, shape_id):
-    return [sys.executable, str(HERE / "benchmark_current_mixed_8_vs_vllm.py"),
+    command = [sys.executable, str(HERE / "benchmark_current_mixed_8_vs_vllm.py"),
             "run-cell", "--suite-dir", str(args.suite_dir),
             "--output-dir", str(args.output_dir), "--shape-id", shape_id,
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
+    if args.resume_commit is not None:
+        command += ["--resume-commit", args.resume_commit]
+    return command
 
 
 def main():
     args = parser().parse_args()
+    if args.resume_commit is not None and (len(args.resume_commit) < 7 or
+            any(char not in "0123456789abcdef" for char in args.resume_commit.lower())):
+        raise ValueError("--resume-commit must be at least seven hexadecimal characters")
     if args.warmups < 1 or args.repetitions < 1 or args.device != "cuda:0":
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")
     if args.action in ("run-cell", "run-local", "run-vllm") and args.shape_id is None:
@@ -395,16 +450,25 @@ def main():
     selected = (args.shape_id,) if args.shape_id else SHAPES
     for shape_id in selected:
         input_contract(args, shape_id)
-    from benchmark_current_mixed_8_vs_vllm import mixed_plan, analyze as analyze_mixed
+    from benchmark_current_mixed_8_vs_vllm import (
+        mixed_plan, adapter_options as mixed_adapter_options,
+        analyze as analyze_mixed)
     if args.action == "plan":
         shapes = {}
         for shape_id in selected:
             case, requests, _, _, _ = input_contract(args, shape_id)
             mixed_case, _, first, arrival, buckets, _, _ = mixed_plan(args, shape_id)
-            shapes[shape_id] = {"burst": dispatch_plan(case, requests, args.seed),
+            burst = dispatch_plan(case, requests, args.seed)
+            validate_capture_options(adapter_options(case, burst["prefill_buckets"]))
+            validate_capture_options(mixed_adapter_options(mixed_case, buckets))
+            shapes[shape_id] = {"burst": {**burst, "max_capture_tokens":
+                                          adapter_options(case, burst["prefill_buckets"])
+                                          ["max_capture_tokens"]},
                                 "staggered_mixed": {
                                     "first_wave": first, "arrival_step": arrival,
                                     "prefill_buckets": buckets,
+                                    "max_capture_tokens": mixed_adapter_options(
+                                        mixed_case, buckets)["max_capture_tokens"],
                                     "batch": mixed_case["max_running"]}}
         print(json.dumps({"shapes": shapes, "engine": ENGINE_FLAGS,
                           "warmups": args.warmups, "repetitions": args.repetitions},
@@ -413,7 +477,11 @@ def main():
     model_source = resolve_model_source(args)
     if args.action == "check":
         for shape_id in selected:
-            mixed_plan(args, shape_id)
+            case, requests, _, _, _ = input_contract(args, shape_id)
+            burst = dispatch_plan(case, requests, args.seed)
+            validate_capture_options(adapter_options(case, burst["prefill_buckets"]))
+            mixed_case, _, _, _, mixed_buckets, _, _ = mixed_plan(args, shape_id)
+            validate_capture_options(mixed_adapter_options(mixed_case, mixed_buckets))
             case, _, workload, digest, blocks = input_contract(args, shape_id)
             selected_vllm_result(args, shape_id, workload, digest, case,
                                  blocks, model_source)

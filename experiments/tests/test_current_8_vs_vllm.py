@@ -71,16 +71,29 @@ class CurrentEightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mismatched"):
                 benchmark.local_is_complete(path, "different")
 
+    def test_prior_commit_requires_explicit_resume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "local.json"
+            path.write_text(json.dumps({"status": "complete", "workload_sha256": "frozen",
+                                        "engine_flags": benchmark.ENGINE_FLAGS,
+                                        "repository_commit": "f318493" + "0" * 33}))
+            with self.assertRaisesRegex(ValueError, "mismatched"):
+                benchmark.local_is_complete(path, "frozen", commit="newcommit")
+            self.assertTrue(benchmark.local_is_complete(
+                path, "frozen", commit="newcommit", resume_commit="f318493"))
+
     def test_mixed_child_does_not_receive_burst_only_reuse_option(self):
         args = SimpleNamespace(suite_dir=SUITE, output_dir=Path("out"),
                                shape_id=benchmark.SHAPES[0],
                                model="Qwen/Qwen2.5-1.5B", device="cuda:0",
                                seed=20260914, warmups=1, repetitions=3,
-                               reuse_vllm_from=Path("old-burst"))
+                               reuse_vllm_from=Path("old-burst"),
+                               resume_commit="f318493")
         self.assertIn("--reuse-vllm-from", benchmark.forwarded(
             args, "run-vllm", args.shape_id))
         child = benchmark.mixed_forwarded(args, args.shape_id)
         self.assertNotIn("--reuse-vllm-from", child)
+        self.assertIn("--resume-commit", child)
         self.assertEqual(child[2], "run-cell")
 
     def test_analysis_joins_local_and_vllm_by_request_id(self):
@@ -96,7 +109,7 @@ class CurrentEightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             args = SimpleNamespace(suite_dir=SUITE, output_dir=Path(temporary),
                                    seed=20260914, warmups=1, repetitions=3,
-                                   reuse_vllm_from=None)
+                                   reuse_vllm_from=None, resume_commit=None)
             local_path, reference_dir, comparison = benchmark.stage_paths(args, shape)
             reference_dir.mkdir(parents=True)
             (reference_dir / "reference.json").write_bytes(source.read_bytes())
@@ -115,6 +128,20 @@ class CurrentEightTests(unittest.TestCase):
                 report = benchmark.analyze_cell(args, shape, model)
             self.assertEqual(report["exact_output_requests"], case["max_running"])
             self.assertTrue(comparison.is_file())
+
+            # The previous runner's completed cell predates the additional
+            # derived SwiGLU field, but its actual dispatch buckets are unchanged.
+            old_commit = "f318493" + "0" * 33
+            payload["system"]["repository"]["commit"] = old_commit
+            (reference_dir / "reference.json").write_text(json.dumps(payload))
+            previous = json.loads(local_path.read_text())
+            previous["repository_commit"] = old_commit
+            del previous["dispatch_plan"]["swiglu_fused_buckets"]
+            benchmark.atomic_json(local_path, previous)
+            args.resume_commit = "f318493"
+            with mock.patch.object(benchmark, "repository_commit", return_value="newcommit"):
+                resumed = benchmark.analyze_cell(args, shape, model)
+            self.assertEqual(resumed["exact_output_requests"], case["max_running"])
 
 
 if __name__ == "__main__":

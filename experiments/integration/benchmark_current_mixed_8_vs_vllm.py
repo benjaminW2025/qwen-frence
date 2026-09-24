@@ -26,7 +26,8 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
     sys.path.insert(0, str(directory))
 
 from benchmark_current_8_vs_vllm import (ENGINE_FLAGS, SHAPES, atomic_json,
-                                         input_contract, repository_commit)
+                                         commit_matches, input_contract,
+                                         repository_commit, validate_capture_options)
 from fixed_regime import PREFILL_TOKENS_PER_STEP
 
 
@@ -65,17 +66,35 @@ def paths(args, shape_id):
     return root / "local.json", root / "vllm.json", root / "comparison.json"
 
 
+def adapter_options(case, buckets):
+    if not buckets or min(buckets) < 1:
+        raise ValueError("mixed graph buckets must be positive")
+    return dict(max_running=case["max_running"],
+                max_context_length=max(length + output for length, output in
+                                       zip(case["lengths"], case["outputs"])),
+                decode_attention_policy="fa3",
+                decode_buckets=[case["max_running"]],
+                max_capture_tokens=max(buckets),
+                max_prefill_shapes=len(buckets), prefill_buckets=buckets,
+                enable_residual_rmsnorm=True,
+                enable_native_decode_qkv_postprocess=True,
+                enable_prefill_swiglu_fusion=True)
+
+
 def validate_saved(path, *, shape_id, fingerprint, model, args):
     if not path.is_file():
         return None
     row = json.loads(path.read_text())
     expected = {"status": "complete", "shape_id": shape_id,
                 "workload_sha256": fingerprint, "model": model,
-                "repository_commit": repository_commit(),
                 "warmups": args.warmups, "repetitions": args.repetitions}
     for key, value in expected.items():
         if row.get(key) != value:
             raise ValueError(f"{path}: {key} differs; use a new output directory")
+    if not commit_matches(row.get("repository_commit"), repository_commit(),
+                          args.resume_commit):
+        raise ValueError(f"{path}: source commit differs; use --resume-commit only "
+                         "if this prior result is known valid")
     return row
 
 
@@ -116,13 +135,7 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, max_running=case["max_running"],
-        max_context_length=config.max_context_length,
-        decode_attention_policy="fa3", decode_buckets=[case["max_running"]],
-        max_capture_tokens=PREFILL_TOKENS_PER_STEP, max_prefill_shapes=len(buckets),
-        prefill_buckets=buckets, enable_residual_rmsnorm=True,
-        enable_native_decode_qkv_postprocess=True,
-        enable_prefill_swiglu_fusion=True)
+        engine.model, pool, None, **adapter_options(case, buckets))
     if (adapter.graph_decoder.buckets != [case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -298,6 +311,8 @@ def analyze(args, shape_id, model_source):
     local_rate, vllm_rate = (local["median_output_tokens_per_s"],
                              vllm["median_output_tokens_per_s"])
     report = {"status": "complete", "shape_id": shape_id, "scenario": "mixed",
+              "local_repository_commit": local["repository_commit"],
+              "vllm_repository_commit": vllm["repository_commit"],
               "first_wave": first, "arrival_step": arrival,
               "local_output_tokens_per_s": local_rate,
               "vllm_output_tokens_per_s": vllm_rate,
@@ -314,11 +329,14 @@ def analyze(args, shape_id, model_source):
 
 
 def forward(args, action, shape_id):
-    return [sys.executable, str(Path(__file__)), action,
+    command = [sys.executable, str(Path(__file__)), action,
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
+    if args.resume_commit is not None:
+        command += ["--resume-commit", args.resume_commit]
+    return command
 
 
 def main():
@@ -333,16 +351,23 @@ def main():
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--resume-commit")
     args = parser.parse_args()
+    if args.resume_commit is not None and (len(args.resume_commit) < 7 or
+            any(char not in "0123456789abcdef" for char in args.resume_commit.lower())):
+        raise ValueError("--resume-commit must be at least seven hexadecimal characters")
     if args.device != "cuda:0" or args.warmups < 1 or args.repetitions < 1:
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")
     case, _, first, arrival, buckets, _, _ = mixed_plan(args, args.shape_id)
+    options = adapter_options(case, buckets)
+    validate_capture_options(options)
     if args.action == "plan":
         print(json.dumps({"shape_id": args.shape_id, "batch": case["max_running"],
                           "prompt_length": case["lengths"][0],
                           "output_length": case["outputs"][0], "first_wave": first,
                           "second_wave": case["max_running"] - first,
                           "arrival_step": arrival, "prefill_buckets": buckets,
+                          "max_capture_tokens": options["max_capture_tokens"],
                           "token_budget": PREFILL_TOKENS_PER_STEP}, indent=2))
         return
     from benchmark_latest_vs_vllm import resolve_model_source
