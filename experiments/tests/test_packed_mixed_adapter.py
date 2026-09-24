@@ -36,6 +36,37 @@ def inputs():
 
 
 class PackedMixedTests(unittest.TestCase):
+    def test_whole_mixed_graph_dispatch_fills_deferred_decode_logits(self):
+        adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
+        adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),
+                                        lm_head=SimpleNamespace(weight=torch.empty(4)))
+        adapter.loop = SimpleNamespace(current_step_is_mixed=lambda: True)
+        adapter._pending_mixed = None
+        adapter.enable_packed_mixed = True
+        adapter.mixed_attention_policy = "fa3_varlen"
+        adapter.full_mixed_graph = True
+        adapter.full_mixed_hits = 0
+        adapter.step_calls = []
+        adapter.decisions = {}
+        adapter.observer = None
+        seen = []
+
+        def full_forward(*args):
+            seen.append((args[0].numel(), args[3].numel(), args[6]))
+            return torch.arange(20, dtype=torch.float32).view(5, 4)
+
+        key = (5, 5, torch.Size((4, 2)), 2)
+        adapter.full_mixed_graphs = {key: SimpleNamespace(forward=full_forward)}
+        adapter.piecewise_prefill = SimpleNamespace(
+            forward=lambda *_args, **_kwargs: self.fail("unexpected piecewise fallback"))
+        decode, prefill = inputs()
+        placeholder = adapter(*decode)
+        prefill_logits = adapter(*prefill)
+        self.assertEqual(seen, [(5, 5, 2)])
+        self.assertEqual(adapter.full_mixed_hits, 1)
+        self.assertEqual(placeholder.tolist(), [[0., 1., 2., 3.], [4., 5., 6., 7.]])
+        self.assertEqual(prefill_logits.shape, (3, 4))
+
     def test_metadata_keeps_decode_first_and_pads_page_tables(self):
         combined = combine_mixed_metadata(*inputs())
         self.assertEqual(combined[0].tolist(), [10, 11, 20, 21, 22])
@@ -52,6 +83,7 @@ class PackedMixedTests(unittest.TestCase):
         adapter._pending_mixed = None
         adapter.enable_packed_mixed = True
         adapter.mixed_attention_policy = "packed_paged"
+        adapter.full_mixed_graph = False
         adapter.step_calls = []
         adapter.decisions = {}
         adapter.observer = None
@@ -67,7 +99,8 @@ class PackedMixedTests(unittest.TestCase):
         decode[0][0] = 999  # C++ reuses the decode metadata buffer for prefill.
         prefill_logits = adapter(*prefill)
         self.assertEqual(seen, [([10, 11, 20, 21, 22], [0, 1, 2, 4, 5],
-                                 {"mixed_decode_count": 0})])
+                                 {"mixed_decode_count": 0,
+                                  "mixed_attention_policy": "packed_paged"})])
         self.assertEqual(placeholder.tolist(), [[0., 1., 2., 3.], [4., 5., 6., 7.]])
         self.assertEqual(prefill_logits.tolist(), [[8., 9., 10., 11.],
                                                    [12., 13., 14., 15.],
@@ -82,13 +115,15 @@ class PackedMixedTests(unittest.TestCase):
         adapter._pending_mixed = None
         adapter.enable_packed_mixed = True
         adapter.mixed_attention_policy = "fa3_hybrid"
+        adapter.full_mixed_graph = False
         adapter.step_calls = []
         adapter.decisions = {}
         adapter.observer = None
         counts = []
 
-        def forward(*_args, mixed_decode_count):
+        def forward(*_args, mixed_decode_count, mixed_attention_policy):
             counts.append(mixed_decode_count)
+            self.assertEqual(mixed_attention_policy, "fa3_hybrid")
             return torch.zeros((5, 4))
 
         adapter.piecewise_prefill = SimpleNamespace(forward=forward)

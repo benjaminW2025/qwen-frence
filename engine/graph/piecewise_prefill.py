@@ -20,7 +20,8 @@ class _AttentionBoundary:
 
     def __init__(self, model, pool, index, tokens, positions, slots, valid_tokens,
                  enable_packed_qkv_rope_cache=False,
-                 enable_residual_rmsnorm=False, enable_swiglu_fusion=False):
+                 enable_residual_rmsnorm=False, enable_swiglu_fusion=False,
+                 capture_graph=True):
         cfg = model.cfg
         device, dtype = pool.k_pool[0].device, pool.k_pool[0].dtype
         layers = model.layers
@@ -98,6 +99,9 @@ class _AttentionBoundary:
                                 pool.k_pool[index], pool.v_pool[index])
             return q, x
 
+        self.run_segment = run_segment
+        if not capture_graph:
+            return
         # Warm up on a side stream for allocator setup and Triton JIT, then
         # capture. The caller's stream waits before the first replay.
         current = torch.cuda.current_stream(device)
@@ -176,7 +180,7 @@ class PiecewisePrefill:
 
     @torch.no_grad()
     def forward(self, ids, positions, slots, cu, context, table, max_query,
-                *, mixed_decode_count=0):
+                *, mixed_decode_count=0, mixed_attention_policy="packed_paged"):
         from kernel_dispatch import packed_paged_prefill_attention
 
         cfg, model, pool = self.model.cfg, self.model, self.pool
@@ -190,7 +194,14 @@ class PiecewisePrefill:
         q, residual = pieces[0].run_initial(ids, tokens)
         self.graph_replays += 1
         for i in range(len(model.layers)):
-            if mixed_decode_count:
+            if mixed_attention_policy == "fa3_varlen":
+                from kernel_dispatch import fa3_paged_varlen_attention
+                query = q[0].transpose(0, 1).contiguous()
+                rows = fa3_paged_varlen_attention(
+                    query, pool.k_pool[i], pool.v_pool[i], cu, table, context,
+                    max_query_len=max_query)
+                attention = rows.transpose(0, 1).unsqueeze(0)
+            elif mixed_decode_count:
                 from kernel_dispatch import fa3_paged_decode_attention
                 decode_q = q[0, :, :mixed_decode_count, :].transpose(0, 1).contiguous()
                 decode_attention = fa3_paged_decode_attention(
