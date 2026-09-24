@@ -1,0 +1,17 @@
+{
+  "status": "complete",
+  "shape_id": "fixed-b8-l256-o128",
+  "workload_sha256": "899ce1c9035817a474bb2f25a43ee1ee14d0a0fe95b209e6314521ac1d7bb56e",
+  "local_output_tokens_per_s": 3278.623416442382,
+  "vllm_output_tokens_per_s": 2281.2672279001904,
+  "local_over_vllm": 1.4371939316641198,
+  "exact_output_requests": 8,
+  "total_requests": 8,
+  "vllm_result_dir": "experiments/results/current-eight-vs-vllm-v1/fixed-b8-l256-o128/vllm",
+  "mixed_steps": 0,
+  "packed_mixed_calls": 0,
+  "prefill_buckets": [
+    2048
+  ],
+  "note": "burst fixed table; packed mixed callback exercised where C++ overlaps decode/prefill"
+}
