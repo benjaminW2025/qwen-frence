@@ -82,6 +82,17 @@ class CurrentEightTests(unittest.TestCase):
             self.assertTrue(benchmark.local_is_complete(
                 path, "frozen", commit="newcommit", resume_commit="f318493"))
 
+    def test_multiple_prior_commits_are_forwarded_and_matched(self):
+        allowed = ["f318493", "2627dcc"]
+        self.assertTrue(benchmark.commit_matches("2627dcc" + "0" * 33,
+                                                 "newcommit", allowed))
+        self.assertTrue(benchmark.commit_matches("f318493" + "0" * 33,
+                                                 "newcommit", allowed))
+        self.assertFalse(benchmark.commit_matches("unrelated", "newcommit", allowed))
+        self.assertEqual(benchmark.resume_options(allowed),
+                         ["--resume-commit", "f318493",
+                          "--resume-commit", "2627dcc"])
+
     def test_mixed_child_does_not_receive_burst_only_reuse_option(self):
         args = SimpleNamespace(suite_dir=SUITE, output_dir=Path("out"),
                                shape_id=benchmark.SHAPES[0],

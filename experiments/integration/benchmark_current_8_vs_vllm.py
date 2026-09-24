@@ -60,8 +60,9 @@ def parser():
     result.add_argument("--reuse-vllm-from", type=Path,
                         help="explicitly reuse validated burst vLLM results from a prior "
                              "output directory on the same GPU pod")
-    result.add_argument("--resume-commit", help="explicitly permit completed results "
-                        "from this prior benchmark commit (7+ hex chars)")
+    result.add_argument("--resume-commit", action="append", help="explicitly permit "
+                        "completed results from a prior benchmark commit (7+ hex chars); "
+                        "repeat for multiple prior commits")
     return result
 
 
@@ -78,8 +79,14 @@ def repository_commit():
 
 
 def commit_matches(recorded, current, resume_commit=None):
-    return recorded == current or bool(
-        resume_commit and recorded and recorded.startswith(resume_commit))
+    allowed = (resume_commit,) if isinstance(resume_commit, str) else (resume_commit or ())
+    return recorded == current or bool(recorded and any(
+        recorded.startswith(prefix) for prefix in allowed))
+
+
+def resume_options(resume_commit):
+    allowed = (resume_commit,) if isinstance(resume_commit, str) else (resume_commit or ())
+    return [option for prefix in allowed for option in ("--resume-commit", prefix)]
 
 
 def input_contract(args, shape_id):
@@ -374,8 +381,8 @@ def analyze_cell(args, shape_id, model_source):
         raise ValueError(f"missing local result: {local_path}")
     local = json.loads(local_path.read_text())
     observed_dispatch = dict(local.get("dispatch_plan", {}))
-    if ("swiglu_fused_buckets" not in observed_dispatch and args.resume_commit
-            and local.get("repository_commit", "").startswith(args.resume_commit)):
+    if ("swiglu_fused_buckets" not in observed_dispatch and commit_matches(
+            local.get("repository_commit"), repository_commit(), args.resume_commit)):
         from naive_forward import SWIGLU_FUSION_ROW_THRESHOLD
         observed_dispatch["swiglu_fused_buckets"] = [
             bucket for bucket in observed_dispatch.get("prefill_buckets", [])
@@ -421,8 +428,7 @@ def forwarded(args, action, shape_id):
             "--repetitions", str(args.repetitions)]
     if args.reuse_vllm_from is not None:
         command += ["--reuse-vllm-from", str(args.reuse_vllm_from)]
-    if args.resume_commit is not None:
-        command += ["--resume-commit", args.resume_commit]
+    command += resume_options(args.resume_commit)
     return command
 
 
@@ -433,15 +439,15 @@ def mixed_forwarded(args, shape_id):
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
-    if args.resume_commit is not None:
-        command += ["--resume-commit", args.resume_commit]
+    command += resume_options(args.resume_commit)
     return command
 
 
 def main():
     args = parser().parse_args()
-    if args.resume_commit is not None and (len(args.resume_commit) < 7 or
-            any(char not in "0123456789abcdef" for char in args.resume_commit.lower())):
+    if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
+                                   for char in prefix.lower())
+           for prefix in (args.resume_commit or [])):
         raise ValueError("--resume-commit must be at least seven hexadecimal characters")
     if args.warmups < 1 or args.repetitions < 1 or args.device != "cuda:0":
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")

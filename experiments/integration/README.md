@@ -796,12 +796,12 @@ python3 experiments/integration/benchmark_current_8_vs_vllm.py check \
   --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
   --output-dir experiments/results/current-eight-vs-vllm-v2 \
   --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1 \
-  --resume-commit f318493
+  --resume-commit f318493 --resume-commit 2627dcc
 python3 experiments/integration/benchmark_current_8_vs_vllm.py run-table \
   --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
   --output-dir experiments/results/current-eight-vs-vllm-v2 \
   --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1 \
-  --resume-commit f318493
+  --resume-commit f318493 --resume-commit 2627dcc
 ```
 
 The table resumes completed local and vLLM stages after interruption. It rejects
@@ -816,7 +816,7 @@ not a one-step attention microbenchmark.
 same pod. It validates workload, model, vLLM version, KV capacity, run counts
 and GPU model before reuse. Staggered mixed vLLM results are always measured
 fresh.
-`--resume-commit f318493` explicitly retains completed `v2` cells from the
-previous Python-only runner revision; their workload, model, optimization
+The repeated `--resume-commit` flags explicitly retain completed `v2` cells
+from both prior runner revisions; their workload, model, optimization
 flags, graph-bucket plan and run counts must still validate. It does not turn
 the failed mixed B8/L2048 run into a result.
