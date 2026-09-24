@@ -93,6 +93,11 @@ def fa3_paged_decode_attention(*args, **kwargs):
     return _load("paged_decode_fa3").fa3_paged_decode_attention(*args, **kwargs)
 
 
+def fa3_paged_varlen_attention(*args, **kwargs):
+    """Run packed mixed attention through vLLM's paged FA3 varlen API."""
+    return _load("paged_varlen_fa3").fa3_paged_varlen_attention(*args, **kwargs)
+
+
 def swiglu(*args, **kwargs):
     """Fuse the SiLU activation and gated elementwise product."""
     return _load("swiglu").swiglu(*args, **kwargs)

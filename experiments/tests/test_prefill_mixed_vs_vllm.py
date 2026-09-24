@@ -125,9 +125,14 @@ class PhaseProfileTests(unittest.TestCase):
                     "same_history_target_correctness": {"status": "pass"},
                     "same_history_exact_control_correctness": (
                         {"status": "pass"} if arm == "packed-exact-qkv" else None),
-                    "local_cuda_activity": {"categories": [
+                    "local_cuda_activity": {"activity_count": 100,
+                                            "summed_cuda_activity_us": wall * 500,
+                                            "categories": [
                         {"category": "gemm", "total_us": wall * 500}]}}
                 (directory / "comparison.json").write_text(json.dumps(comparison))
+                (directory / "local").mkdir()
+                (directory / "local/mixed-report.json").write_text(
+                    '{"whole_mixed_graph_hits": 0}')
             args = SimpleNamespace(kind="mixed", vllm_reference_dir=reference,
                                    shape_id=shape, suite_dir=root / "suite",
                                    model="cached-model", device="cuda:0", seed=20260914,
@@ -148,6 +153,40 @@ class PhaseProfileTests(unittest.TestCase):
             self.assertEqual([row["capture_bucket_tokens"] for row in report["rows"]],
                              [2048, 1028, 1028])
             self.assertAlmostEqual(report["rows"][1]["speedup_vs_broad"], 11 / 8)
+            for arm, wall, hits in (("packed-exact-varlen", 7.9, 0),
+                                    ("packed-exact-varlen-full", 7.5, 1)):
+                directory = (root / "experiments/results/matched-phase-profile"
+                             / f"mixed-{arm}" / shape)
+                (directory / "local").mkdir(parents=True)
+                (directory / "local/mixed-report.json").write_text(
+                    json.dumps({"whole_mixed_graph_hits": hits}))
+                (directory / "comparison.json").write_text(json.dumps({
+                    "status": "complete", "work": {
+                        "shape_id": shape, "local_mixed_policy": arm,
+                        "shared_prefill_budget": 2048},
+                    "local_wall_ms": wall, "vllm_wall_ms": 7.5,
+                    "local_over_vllm": wall / 7.5,
+                    "same_history_target_correctness": {"status": "pass"},
+                    "same_history_exact_control_correctness": None,
+                    "local_cuda_activity": {"activity_count": 100,
+                                            "summed_cuda_activity_us": wall * 500,
+                                            "categories": [
+                        {"category": "gemm", "total_us": wall * 500}]}}))
+            args.action = "run-attention-ladder"
+            with (patch.object(MODULE, "ROOT", root),
+                  patch.object(MODULE, "complete_vllm", return_value=True),
+                  patch.object(MODULE, "complete_local", return_value=True),
+                  patch.object(MODULE, "resolve_model_source", return_value="cached-model"),
+                  patch.object(MODULE, "verify_vllm_target"),
+                  patch.object(MODULE.subprocess, "run") as launch):
+                MODULE.run_ladder(args, {"lengths": [256] * 8}, 4, 4)
+            launch.assert_not_called()
+            attention_report = json.loads(
+                (root / "experiments/results/matched-phase-profile"
+                 / "mixed-attention-ladder" / shape / "ladder.json").read_text())
+            self.assertEqual(attention_report["status"], "complete")
+            self.assertEqual([row["whole_mixed_graph_hits"]
+                              for row in attention_report["rows"]], [0, 0, 1])
 
     def test_exact_mixed_capture_keeps_scheduler_budget(self):
         case = {"lengths": [256] * 8}
@@ -157,6 +196,10 @@ class PhaseProfileTests(unittest.TestCase):
         self.assertEqual(MODULE.capture_configuration(broad, case, 4, 4), (2048, False))
         self.assertEqual(MODULE.capture_configuration(exact, case, 4, 4), (1028, False))
         self.assertEqual(MODULE.capture_configuration(fused, case, 4, 4), (1028, True))
+        for policy in ("packed-exact-varlen", "packed-exact-varlen-full"):
+            self.assertEqual(MODULE.capture_configuration(
+                SimpleNamespace(local_mixed_policy=policy, prefill_budget=2048),
+                case, 4, 4), (1028, False))
         self.assertEqual(MODULE.capture_configuration(
             SimpleNamespace(local_mixed_policy="packed-exact", prefill_budget=8192),
             {"lengths": [256] * 64}, 16, 16), (4112, False))

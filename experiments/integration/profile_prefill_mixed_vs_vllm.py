@@ -54,7 +54,8 @@ def configure_vllm_step_mode():
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("plan", "check-setup", "run", "run-local",
-                                           "run-vllm", "analyze", "run-ladder"))
+                                           "run-vllm", "analyze", "run-ladder",
+                                           "run-attention-ladder"))
     parser.add_argument("--kind", choices=("prefill", "mixed"), required=True)
     parser.add_argument("--shape-id", choices=("fixed-b8-l256-o128", "fixed-b64-l256-o128"),
                         default="fixed-b8-l256-o128")
@@ -72,7 +73,8 @@ def build_parser():
     parser.add_argument("--local-policy", choices=("fa3", "splitk"), default="fa3")
     parser.add_argument("--local-mixed-policy",
                         choices=("separate", "packed", "packed-fa3",
-                                 "packed-exact", "packed-exact-qkv"),
+                                 "packed-exact", "packed-exact-qkv",
+                                 "packed-exact-varlen", "packed-exact-varlen-full"),
                         default="separate", help="packed shares projections; packed-fa3 "
                         "uses FA3 for its decode rows; exact variants specialize the "
                         "graph bucket to this mixed cohort")
@@ -139,7 +141,7 @@ def validate(args):
 
 def capture_configuration(args, case, first, second):
     """Keep the scheduler token budget fixed while changing only graph work."""
-    exact = args.local_mixed_policy in ("packed-exact", "packed-exact-qkv")
+    exact = args.local_mixed_policy.startswith("packed-exact")
     bucket = second * case["lengths"][0] + first if exact else args.prefill_budget
     if bucket < (second or first) * case["lengths"][0] or bucket > args.prefill_budget:
         raise ValueError("capture bucket does not fit the selected cohort and budget")
@@ -159,6 +161,8 @@ def plan(args, case, first, second, target_index):
             "capture_bucket_tokens": bucket,
             "capture_padding_tokens": bucket - target_tokens,
             "prefill_qkv_rope_cache": qkv_fusion,
+            "packed_varlen_fa3": "varlen" in args.local_mixed_policy,
+            "whole_mixed_graph": args.local_mixed_policy == "packed-exact-varlen-full",
             "local_model_passes": (2 if second and args.local_mixed_policy == "separate"
                                    else 1),
             "local_mixed_policy": args.local_mixed_policy,
@@ -271,6 +275,8 @@ def complete_local(directory, args):
             report.get("local_mixed_policy", "separate") == args.local_mixed_policy and
             report.get("capture_bucket_tokens", args.prefill_budget) == bucket and
             report.get("prefill_qkv_rope_cache", False) == qkv_fusion and
+            (args.local_mixed_policy != "packed-exact-varlen-full"
+             or report.get("whole_mixed_graph_hits", 0) > 0) and
             (not qkv_fusion or (report.get("same_history_exact_control_correctness") or {})
              .get("target_kv") is not None) and
             (trace.is_file() or len(list(directory.rglob(trace.name))) == 1))
@@ -305,6 +311,11 @@ def run_local(args, case, requests, first, second, target_index):
     import inference_engine_cpp as cpp
 
     setup = check_startup(args.device)
+    if "varlen" in args.local_mixed_policy:
+        from kernel_dispatch import _load
+        _load("paged_varlen_fa3").smoke_varlen_fa3(
+            args.device,
+            capture_graph=args.local_mixed_policy == "packed-exact-varlen-full")
     model_source = resolve_model_source(args)
     engine, load_seconds, _ = load_model_only(
         model_source, args.device, "float16", hub_transfer=setup["hub_transfer"])
@@ -327,6 +338,10 @@ def run_local(args, case, requests, first, second, target_index):
         enable_prefill_packed_qkv_rope_cache=qkv_fusion)
     if args.local_mixed_policy == "packed-fa3":
         adapter_options["mixed_attention_policy"] = "fa3_hybrid"
+    elif "varlen" in args.local_mixed_policy:
+        adapter_options["mixed_attention_policy"] = "fa3_varlen"
+        adapter_options["full_mixed_graph"] = (
+            args.local_mixed_policy == "packed-exact-varlen-full")
     adapter = adapter_class(engine.model, pool, None, **adapter_options)
 
     def poison():
@@ -339,6 +354,8 @@ def run_local(args, case, requests, first, second, target_index):
     if (set(adapter.piecewise_prefill.shapes) != {capture_bucket}
             or adapter.piecewise_prefill.eager_calls):
         raise AssertionError("piecewise prefill missed the selected graph bucket")
+    if args.local_mixed_policy == "packed-exact-varlen-full" and not adapter.full_mixed_hits:
+        raise AssertionError("whole mixed graph did not replay in preflight")
     expected_steps = [(row["kind"], row["calls"], row["completed"])
                       for row in preflight["steps"]]
     if target_index >= len(expected_steps):
@@ -435,6 +452,10 @@ def run_local(args, case, requests, first, second, target_index):
               "local_mixed_policy": args.local_mixed_policy, "first_wave": first,
               "capture_bucket_tokens": capture_bucket,
               "prefill_qkv_rope_cache": qkv_fusion,
+              "whole_mixed_graphs": len(adapter.full_mixed_graphs)
+              if hasattr(adapter, "full_mixed_graphs") else 0,
+              "whole_mixed_graph_hits": adapter.full_mixed_hits
+              if hasattr(adapter, "full_mixed_hits") else 0,
               "second_wave": second, "target_step_index": target_index,
               "target_step_calls": target[1], "target_callback_calls": traced["target_calls"],
               "outputs_sha256": output_hash, "model_load_seconds": load_seconds,
@@ -666,7 +687,7 @@ def analyze(args, case, first, second, target_index):
 
 
 def run_ladder(args, case, first, second):
-    """Run/reuse broad, exact, and exact-plus-QKV arms against one vLLM trace."""
+    """Run/reuse a mixed-step ablation against one saved vLLM trace."""
     if args.kind != "mixed" or args.vllm_reference_dir is None:
         raise ValueError("run-ladder requires --kind mixed and --vllm-reference-dir")
     vllm_dir = args.vllm_reference_dir / "vllm"
@@ -676,7 +697,9 @@ def run_ladder(args, case, first, second):
     if saved_vllm["model"] != resolve_model_source(args):
         raise ValueError("saved vLLM model does not match selected model snapshot")
     verify_vllm_target(saved_vllm, first, second, "mixed")
-    arms = ("packed", "packed-exact", "packed-exact-qkv")
+    attention_ladder = getattr(args, "action", None) == "run-attention-ladder"
+    arms = (("packed-exact", "packed-exact-varlen", "packed-exact-varlen-full")
+            if attention_ladder else ("packed", "packed-exact", "packed-exact-qkv"))
     common = ["--kind", "mixed", "--shape-id", args.shape_id,
               "--suite-dir", str(args.suite_dir), "--model", args.model,
               "--device", args.device, "--seed", str(args.seed),
@@ -709,15 +732,21 @@ def run_ladder(args, case, first, second):
                 or result["vllm_wall_ms"] != saved_vllm["unprofiled_median_wall_ms"]):
             raise ValueError(f"{arm} comparison has mismatched work or vLLM reference")
         bucket, qkv = capture_configuration(arm_args, case, first, second)
+        local_reports = list((directory / "local").glob("*-report.json"))
+        local_report = json.loads(local_reports[0].read_text())
         categories = {row["category"]: row["total_us"]
                       for row in result["local_cuda_activity"]["categories"]}
         rows.append({"arm": arm, "capture_bucket_tokens": bucket,
                      "prefill_qkv_rope_cache": qkv,
+                     "whole_mixed_graph_hits": local_report.get("whole_mixed_graph_hits", 0),
                      "local_wall_ms": result["local_wall_ms"],
                      "local_over_vllm": result["local_over_vllm"],
                      "profiled_gemm_us": categories.get("gemm", 0.0),
                      "profiled_attention_us": categories.get("attention", 0.0),
                      "profiled_rope_us": categories.get("rope", 0.0),
+                     "profiled_cuda_activities": result["local_cuda_activity"]["activity_count"],
+                     "profiled_cuda_activity_us": result["local_cuda_activity"][
+                         "summed_cuda_activity_us"],
                      "target_correctness": result.get("same_history_target_correctness"),
                      "exact_control_correctness": result.get(
                          "same_history_exact_control_correctness"),
@@ -725,37 +754,43 @@ def run_ladder(args, case, first, second):
     broad = rows[0]["local_wall_ms"]
     exact = rows[1]["local_wall_ms"]
     for row in rows:
+        row["speedup_vs_control"] = broad / row["local_wall_ms"]
         row["speedup_vs_broad"] = broad / row["local_wall_ms"]
         row["speedup_vs_exact"] = exact / row["local_wall_ms"]
     valid = all(row["target_correctness"] is not None and
                 row["target_correctness"]["status"] == "pass" for row in rows)
-    valid = valid and rows[-1]["exact_control_correctness"] is not None and \
-        rows[-1]["exact_control_correctness"]["status"] == "pass"
+    if attention_ladder:
+        valid = valid and rows[-1]["whole_mixed_graph_hits"] > 0
+    else:
+        valid = valid and rows[-1]["exact_control_correctness"] is not None and \
+            rows[-1]["exact_control_correctness"]["status"] == "pass"
     report = {"status": "complete" if valid else "numerical_difference",
               "shape_id": args.shape_id, "vllm_wall_ms": saved_vllm["unprofiled_median_wall_ms"],
               "notes": ["Existing arm reports are reused; wall medians may be from "
                         "different runs and should be reconfirmed if close.",
                         "Numerical differences are reported without suppressing timings."],
               "rows": rows}
-    destination = (ROOT / "experiments/results/matched-phase-profile/mixed-ladder"
+    ladder_name = "mixed-attention-ladder" if attention_ladder else "mixed-ladder"
+    destination = (ROOT / "experiments/results/matched-phase-profile" / ladder_name
                    / args.shape_id)
     destination.mkdir(parents=True, exist_ok=True)
     path = destination / "ladder.json"
     path.write_text(json.dumps(report, indent=2) + "\n")
-    print("arm                 bucket   local ms   GEMM us   vs broad   vs vLLM   logits")
+    print("arm                         bucket   local ms  attn us  activities  vs control  vs vLLM  logits")
     for row in rows:
         checks = row["target_correctness"] or {}
-        print(f"{row['arm']:<19} {row['capture_bucket_tokens']:>6} "
-              f"{row['local_wall_ms']:>10.3f} {row['profiled_gemm_us']:>9.0f} "
-              f"{row['speedup_vs_broad']:>10.3f}x "
-              f"{row['local_over_vllm']:>10.3f}x {checks.get('status', 'missing')}")
+        print(f"{row['arm']:<27} {row['capture_bucket_tokens']:>6} "
+              f"{row['local_wall_ms']:>10.3f} {row['profiled_attention_us']:>8.0f} "
+              f"{row['profiled_cuda_activities']:>11} "
+              f"{row['speedup_vs_control']:>10.3f}x "
+              f"{row['local_over_vllm']:>8.3f}x {checks.get('status', 'missing')}")
     print(f"ladder: {path} ({report['status']})")
 
 
 def main():
     args = build_parser().parse_args()
-    if args.action == "run-ladder" and args.output_dir is not None:
-        raise ValueError("run-ladder uses fixed per-arm output directories; omit --output-dir")
+    if args.action in ("run-ladder", "run-attention-ladder") and args.output_dir is not None:
+        raise ValueError("ladder actions use fixed per-arm directories; omit --output-dir")
     case, requests, first, second, target_index = validate(args)
     if args.action == "plan":
         print(json.dumps(plan(args, case, first, second, target_index), indent=2))
@@ -769,7 +804,7 @@ def main():
         run_vllm(args, case, requests, first, second, target_index)
     elif args.action == "analyze":
         analyze(args, case, first, second, target_index)
-    elif args.action == "run-ladder":
+    elif args.action in ("run-ladder", "run-attention-ladder"):
         run_ladder(args, case, first, second)
     else:
         configure_vllm_step_mode()

@@ -269,11 +269,17 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
     Pure decode and pure prefill retain their established dispatch paths.
     """
 
-    def __init__(self, *args, mixed_attention_policy="packed_paged", **kwargs):
+    def __init__(self, *args, mixed_attention_policy="packed_paged",
+                 full_mixed_graph=False, **kwargs):
         super().__init__(*args, **kwargs)
-        if mixed_attention_policy not in ("packed_paged", "fa3_hybrid"):
-            raise ValueError("mixed attention policy must be packed_paged or fa3_hybrid")
+        if mixed_attention_policy not in ("packed_paged", "fa3_hybrid", "fa3_varlen"):
+            raise ValueError("unsupported mixed attention policy")
         self.mixed_attention_policy = mixed_attention_policy
+        if full_mixed_graph and mixed_attention_policy != "fa3_varlen":
+            raise ValueError("full mixed graph currently requires packed varlen FA3")
+        self.full_mixed_graph = bool(full_mixed_graph)
+        self.full_mixed_graphs = {}
+        self.full_mixed_hits = 0
         self._pending_mixed = None
         self.enable_packed_mixed = True
 
@@ -302,10 +308,28 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
         self._pending_mixed = None
         combined = combine_mixed_metadata(decode_args, args)
         decode_rows = decode_args[0].numel()
-        logits = self.piecewise_prefill.forward(
-            *combined, mixed_decode_count=(decode_rows
-                                           if self.mixed_attention_policy == "fa3_hybrid"
-                                           else 0))
+        logits = None
+        if self.full_mixed_graph:
+            key = (combined[0].numel(), combined[3].numel(),
+                   combined[5].shape, combined[6])
+            graph = self.full_mixed_graphs.get(key)
+            if graph is None and len(self.full_mixed_graphs) < 4:
+                from full_mixed import FullMixedGraph
+                graph = FullMixedGraph(
+                    self.model, self.pool, *combined,
+                    enable_packed_qkv_rope_cache=self.enable_prefill_packed_qkv_rope_cache,
+                    enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm,
+                    enable_swiglu_fusion=self.enable_prefill_swiglu_fusion)
+                self.full_mixed_graphs[key] = graph
+            if graph is not None:
+                logits = graph.forward(*combined)
+                self.full_mixed_hits += 1
+        if logits is None:
+            logits = self.piecewise_prefill.forward(
+                *combined, mixed_decode_count=(decode_rows
+                                               if self.mixed_attention_policy == "fa3_hybrid"
+                                               else 0),
+                mixed_attention_policy=self.mixed_attention_policy)
         if logits is None:
             observer = self.observer
             self.observer = None
