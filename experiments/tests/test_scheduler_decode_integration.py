@@ -26,6 +26,50 @@ except ImportError:
 
 
 class GraphAdapterTests(unittest.TestCase):
+    def test_varlen_attention_uses_only_live_rows_from_padded_graph(self):
+        import piecewise_prefill
+
+        tokens, bucket = 258, 512
+        cfg = SimpleNamespace(n_heads=2, d_head=2)
+        model = SimpleNamespace(cfg=cfg, layers=[object()], lm_head=lambda x: x)
+        pool = SimpleNamespace(k_pool=[torch.zeros(1)], v_pool=[torch.zeros(1)])
+        prefill = piecewise_prefill.PiecewisePrefill.__new__(
+            piecewise_prefill.PiecewisePrefill)
+        prefill.model, prefill.pool = model, pool
+        prefill.enable_residual_rmsnorm = True
+        prefill.graph_replays = 0
+        initial = SimpleNamespace(
+            positions=torch.zeros(bucket, dtype=torch.long),
+            slots=torch.zeros(bucket, dtype=torch.long),
+            valid_tokens=torch.zeros((), dtype=torch.int32),
+            run_initial=lambda ids, count: (
+                torch.zeros((1, cfg.n_heads, bucket, cfg.d_head)),
+                torch.zeros((bucket, cfg.n_heads * cfg.d_head))),
+        )
+
+        def from_attention(residual, attention, count):
+            self.assertEqual(attention.shape, (tokens, cfg.n_heads * cfg.d_head))
+            return torch.zeros((bucket, cfg.n_heads * cfg.d_head))
+
+        prefill.pieces = lambda count: [initial, SimpleNamespace(
+            run_from_attention=from_attention)]
+
+        def varlen_attention(query, *args, **kwargs):
+            self.assertEqual(query.shape, (tokens, cfg.n_heads, cfg.d_head))
+            return torch.zeros_like(query)
+
+        with mock.patch("kernel_dispatch.fa3_paged_varlen_attention",
+                        side_effect=varlen_attention):
+            logits = prefill.forward(
+                torch.zeros(tokens, dtype=torch.long),
+                torch.arange(tokens), torch.arange(tokens),
+                torch.tensor([0, 1, tokens], dtype=torch.int32),
+                torch.tensor([1, tokens - 1], dtype=torch.int32),
+                torch.zeros((2, 1), dtype=torch.int32), tokens - 1,
+                mixed_attention_policy="fa3_varlen")
+        self.assertEqual(logits.shape, (2, cfg.n_heads * cfg.d_head))
+        self.assertEqual(prefill.graph_replays, 2)
+
     def test_piecewise_prefill_shape_limit_is_explicit(self):
         import piecewise_prefill
 
