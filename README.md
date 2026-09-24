@@ -56,13 +56,11 @@ flowchart LR
     R --> N
 ```
 
-The scheduler owns request state, admission, prefill chunks, decode cohorts, and
+The scheduler dictates request state, admission, prefill chunks, decode cohorts, and
 the paged block table. The model adapter receives one planned iteration and chooses
 the specialized path: an exact-batch decode graph, a piecewise packed-prefill graph,
 or the packed mixed callback. Every path reads and writes the same paged KV pools;
 sampling returns token IDs to the scheduler, which advances or completes requests.
-The K-step unrolled graph prototype is intentionally not shown as the production
-path; it sits behind the future chunked-decode/fallback design documented below.
 
 ## Empirical evidence
 

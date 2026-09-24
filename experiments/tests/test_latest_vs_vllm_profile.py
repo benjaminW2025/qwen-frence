@@ -119,6 +119,16 @@ class MatchedProfileTests(unittest.TestCase):
         self.assertEqual(categories["attention"]["total_us"], 120)
         self.assertEqual(categories["gemm"]["total_us"], 80)
 
+    def test_saved_trace_can_be_relocated_with_result_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "trace" / "profile.json.gz"
+            trace.parent.mkdir()
+            trace.write_bytes(b"trace")
+            resolved = MODULE.resolve_saved_trace(
+                "/workspace/old/results/trace/profile.json.gz", root)
+        self.assertEqual(resolved.name, "profile.json.gz")
+
     def test_category_comparison_uses_union_and_reports_ratios(self):
         local = {"categories": [
             {"category": "attention", "total_us": 120, "percent_of_cuda_activity": 60},
@@ -158,6 +168,18 @@ class MatchedProfileTests(unittest.TestCase):
                 target, policy="fa3", qkv_mode="native", residual_rmsnorm=False))
             self.assertFalse(MODULE.complete_local(
                 target, policy="splitk", qkv_mode="native", residual_rmsnorm=False))
+
+    def test_completion_survives_relocated_trace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            trace = target / "trace" / "profile.json.gz"
+            trace.parent.mkdir()
+            trace.write_bytes(b"trace")
+            (target / "report.json").write_text(json.dumps({
+                "status": "complete",
+                "trace": "/workspace/old/trace/profile.json.gz",
+            }))
+            self.assertTrue(MODULE.complete_vllm(target))
 
 
 if __name__ == "__main__":

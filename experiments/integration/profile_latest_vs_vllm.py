@@ -123,13 +123,18 @@ def json_files(directory):
     return sorted(directory.glob("*-report.json"))
 
 
+def recorded_trace_exists(recorded, directory):
+    path = Path(recorded)
+    return path.is_file() or len(list(directory.rglob(path.name))) == 1
+
+
 def complete_local(directory, *, policy=None, qkv_mode=None, residual_rmsnorm=None):
     files = json_files(directory)
     if len(files) != 1:
         return False
     report = json.loads(files[0].read_text())
     complete = (report.get("schema_version") == 1
-                and Path(report.get("trace", "missing")).is_file())
+                and recorded_trace_exists(report.get("trace", "missing"), directory))
     if policy is not None:
         complete = complete and report.get("decode_attention_policy") == policy
     if qkv_mode is not None:
@@ -146,7 +151,7 @@ def complete_vllm(directory):
         return False
     report = json.loads(path.read_text())
     return (report.get("status") == "complete"
-            and Path(report.get("trace", "missing")).is_file())
+            and recorded_trace_exists(report.get("trace", "missing"), directory))
 
 
 def prepare_destination(directory, complete, retry_failed):
@@ -332,6 +337,19 @@ def summarize_chrome_trace(path):
             "categories": category_rows, "kernels": kernels}
 
 
+def resolve_saved_trace(recorded, search_root):
+    """Resolve a trace after result artifacts have moved off the GPU host."""
+    path = Path(recorded)
+    if path.is_file():
+        return path
+    matches = list(search_root.rglob(path.name))
+    if len(matches) != 1:
+        raise ValueError(
+            f"cannot resolve recorded trace {recorded}; found {[str(row) for row in matches]}"
+        )
+    return matches[0]
+
+
 def run_vllm(args, case, num_blocks):
     output = args.output_dir / "vllm"
     if not prepare_destination(output, complete_vllm, args.retry_failed):
@@ -441,6 +459,13 @@ def analyze(args, num_blocks):
         raise ValueError("both local and vLLM reports must be complete")
     local = json.loads(local_files[0].read_text())
     vllm = json.loads((args.output_dir / "vllm/report.json").read_text())
+    # Rebuild both summaries from raw Chrome traces.  Older local reports used
+    # torch.profiler event totals and accidentally counted enclosing NVTX/
+    # record_function ranges in addition to their child CUDA kernels.
+    local_cuda = summarize_chrome_trace(resolve_saved_trace(
+        local["trace"], args.output_dir / "local"))
+    vllm_cuda = summarize_chrome_trace(resolve_saved_trace(
+        vllm["trace"], args.output_dir / "vllm"))
     if local["case"]["id"] != args.shape_id or vllm["shape_id"] != args.shape_id:
         raise ValueError("profile reports do not match requested shape")
     expected_call = [[True, vllm["max_num_seqs"], vllm["max_num_seqs"], 1]]
@@ -466,29 +491,30 @@ def analyze(args, num_blocks):
         raise ValueError("profile execution settings do not match the requested contract")
     local_contexts = local_callbacks[0]["context_lengths"]
     vllm_contexts = list(vllm["target_context_lengths"].values())
-    category_comparison = compare_categories(local["cuda_activity"],
-                                             vllm["cuda_activity"])
+    category_comparison = compare_categories(local_cuda, vllm_cuda)
     summary = {
         "schema_version": 1, "status": "complete", "shape_id": args.shape_id,
         "occurrence": args.occurrence,
         "local_policy": args.local_policy, "qkv_mode": args.qkv_mode,
         "enable_residual_rmsnorm": args.enable_residual_rmsnorm,
         "local": {"median_wall_ms": local["unprofiled_median_wall_ms"],
-                  "cuda_activity": local["cuda_activity"],
+                  "cuda_activity": local_cuda,
                   "target_callback_calls": local_callbacks,
                   "context_lengths": context_summary(local_contexts)},
         "vllm": {"median_wall_ms": vllm["unprofiled_median_wall_ms"],
-                 "cuda_activity": vllm["cuda_activity"],
+                 "cuda_activity": vllm_cuda,
                  "target_progress_before": vllm["target_progress_before"],
                  "context_lengths": context_summary(vllm_contexts)},
         "wall_time_ratio_local_over_vllm": (
             local["unprofiled_median_wall_ms"] / vllm["unprofiled_median_wall_ms"]),
         "summed_cuda_activity_ratio_local_over_vllm": (
-            local["cuda_activity"]["summed_cuda_activity_us"]
-            / vllm["cuda_activity"]["summed_cuda_activity_us"]),
+            local_cuda["summed_cuda_activity_us"]
+            / vllm_cuda["summed_cuda_activity_us"]),
         "category_comparison": category_comparison,
         "notes": [
             "Wall medians are uninstrumented; traced CUDA activity is diagnostic only.",
+            "CUDA totals are rebuilt from raw Chrome-trace kernel/memcpy/memset leaf "
+            "activities; enclosing profiler and record_function ranges are excluded.",
             "Both targets are pure full-cohort decode steps at the same occurrence, but each "
             "scheduler's earlier mixed prefill/decode history can produce different per-request contexts.",
         ],
