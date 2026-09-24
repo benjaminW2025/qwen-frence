@@ -402,7 +402,8 @@ class MatchedSchedulerTests(unittest.TestCase):
             for case in make_plan(preset):
                 requests = [{"id": i, "prompt": [1] * length, "output": case["outputs"][i],
                              "arrival": case["arrivals"][i]} for i, length in enumerate(case["lengths"])]
-                result = execute(fake_torch, cpp.IterationLoop(make_config(cpp, case), torch.device("cpu")), Adapter(), requests)
+                result = execute(fake_torch, cpp.IterationLoop(make_config(cpp, case), torch.device("cpu")), Adapter(), requests,
+                                 synchronize_steps=True)
                 self.assertEqual([len(result["outputs"][i]) for i in range(len(requests))], case["outputs"])
                 if case["kind"] == "saturated":
                     self.assertEqual(result["max_actual_decode_batch"], case["max_running"])

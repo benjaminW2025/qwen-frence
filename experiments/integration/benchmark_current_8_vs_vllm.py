@@ -443,6 +443,16 @@ def mixed_forwarded(args, shape_id):
     return command
 
 
+def phase_forwarded(args, shape_id):
+    return [sys.executable, str(HERE / "benchmark_current_phases_vs_vllm.py"),
+            "run-cell", "--suite-dir", str(args.suite_dir),
+            "--output-dir", str(args.output_dir), "--shape-id", shape_id,
+            "--model", args.model, "--device", args.device,
+            "--seed", str(args.seed), "--warmups", str(args.warmups),
+            "--repetitions", str(args.repetitions),
+            *resume_options(args.resume_commit)]
+
+
 def main():
     args = parser().parse_args()
     if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
@@ -459,6 +469,7 @@ def main():
     from benchmark_current_mixed_8_vs_vllm import (
         mixed_plan, adapter_options as mixed_adapter_options,
         analyze as analyze_mixed)
+    from benchmark_current_phases_vs_vllm import analyze as analyze_phases
     if args.action == "plan":
         shapes = {}
         for shape_id in selected:
@@ -532,14 +543,18 @@ def main():
             burst = analyze_cell(args, shape_id, model_source)
             subprocess.run(mixed_forwarded(args, shape_id), cwd=ROOT, check=True)
             mixed = analyze_mixed(args, shape_id, model_source)
-            reports.append({"shape_id": shape_id, "burst": burst, "mixed": mixed})
+            subprocess.run(phase_forwarded(args, shape_id), cwd=ROOT, check=True)
+            phases = analyze_phases(args, shape_id, model_source)
+            reports.append({"shape_id": shape_id, "burst": burst,
+                            "mixed": mixed, "phases": phases})
         if args.action == "run-table":
             atomic_json(args.output_dir / "summary.json", {"status": "complete",
                          "rows": reports})
     if args.action == "analyze":
         reports = [{"shape_id": shape_id,
                     "burst": analyze_cell(args, shape_id, model_source),
-                    "mixed": analyze_mixed(args, shape_id, model_source)}
+                    "mixed": analyze_mixed(args, shape_id, model_source),
+                    "phases": analyze_phases(args, shape_id, model_source)}
                    for shape_id in selected]
         if args.shape_id is None:
             atomic_json(args.output_dir / "summary.json", {"status": "complete",

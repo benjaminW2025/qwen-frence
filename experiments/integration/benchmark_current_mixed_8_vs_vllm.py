@@ -188,7 +188,19 @@ def run_local(args, shape_id, model_source):
                                  adapter.piecewise_prefill.shapes)})
 
 
-def vllm_once(llm, requests, first, arrival, run_id):
+def phase_kind(progress, expected):
+    active = [progress[key] for key, length in expected.items()
+              if progress[key] < length]
+    if not active:
+        raise AssertionError("vLLM step has no active requests")
+    if all(value == 0 for value in active):
+        return "prefill"
+    if all(value > 0 for value in active):
+        return "decode"
+    return "mixed"
+
+
+def vllm_once(llm, requests, first, arrival, run_id, *, synchronize_steps=False):
     import torch
     from profile_latest_vs_vllm import add_vllm_requests
 
@@ -197,10 +209,11 @@ def vllm_once(llm, requests, first, arrival, run_id):
     expected = add_vllm_requests(llm, requests[:first], run_id, cumulative=True)
     progress = {key: 0 for key in expected}
     outputs = {}
-    injected = False
+    injected = first == len(requests)
     step = 0
-    limit = sum(len(row["prompt"]) + row["output"] for row in requests) + arrival + 1
-    target_advanced = False
+    limit = sum(len(row["prompt"]) + row["output"] for row in requests) + (arrival or 0) + 1
+    target_advanced = injected
+    phase_steps = []
     while llm.llm_engine.has_unfinished_requests() or not injected:
         if step == arrival:
             if not all(0 < progress[key] < length for key, length in expected.items()):
@@ -210,7 +223,14 @@ def vllm_once(llm, requests, first, arrival, run_id):
             progress.update({key: 0 for key in later})
             injected = True
             before = dict(progress)
-        for row in llm.llm_engine.step():
+        kind = phase_kind(progress, expected) if synchronize_steps else None
+        step_started = time.perf_counter() if synchronize_steps else None
+        step_outputs = llm.llm_engine.step()
+        if synchronize_steps:
+            torch.cuda.synchronize()
+            phase_steps.append({"kind": kind,
+                                "wall_ms": (time.perf_counter() - step_started) * 1000})
+        for row in step_outputs:
             key = str(row.request_id)
             if key not in progress:
                 raise AssertionError(f"unexpected vLLM request {key}")
@@ -239,7 +259,8 @@ def vllm_once(llm, requests, first, arrival, run_id):
             "output_tokens_per_s": sum(request["output"] for request in requests)
             * 1000 / wall_ms,
             "total_steps": step, "outputs": outputs,
-            "first_wave_advanced_on_injection": True}
+            "first_wave_advanced_on_injection": True,
+            **({"phase_steps": phase_steps} if synchronize_steps else {})}
 
 
 def run_vllm(args, shape_id, model_source):

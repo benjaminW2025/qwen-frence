@@ -94,7 +94,7 @@ class TraceCheck:
             raise AssertionError("missing callback in candidate")
 
 
-def execute(torch, loop, adapter, requests):
+def execute(torch, loop, adapter, requests, *, synchronize_steps=False):
     """One fully drained workload. Arrivals use iteration indices, not wall time."""
     adapter.loop = loop
     pending = sorted(requests, key=lambda r: (r["arrival"], r["id"]))
@@ -114,6 +114,8 @@ def execute(torch, loop, adapter, requests):
         adapter.step_calls = []
         step_start = time.perf_counter()
         completed = loop.step(adapter)
+        if synchronize_steps:
+            torch.cuda.synchronize()
         elapsed = (time.perf_counter() - step_start) * 1000
         if not adapter.step_calls:
             raise RuntimeError("scheduler made no progress")
