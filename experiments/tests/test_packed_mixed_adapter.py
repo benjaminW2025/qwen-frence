@@ -16,6 +16,7 @@ for directory in (ROOT / "experiments/integration", ROOT / "baseline",
     sys.path.insert(0, str(directory))
 
 from model_adapter import (PackedMixedPiecewiseGraphModelAdapter,
+                           CppPackedMixedModelAdapter,
                            combine_mixed_metadata)
 
 
@@ -36,6 +37,32 @@ def inputs():
 
 
 class PackedMixedTests(unittest.TestCase):
+    def test_cpp_single_callback_dispatches_packed_varlen_once(self):
+        adapter = object.__new__(CppPackedMixedModelAdapter)
+        adapter.loop = SimpleNamespace(
+            current_step_is_mixed=lambda: True,
+            uses_packed_mixed_step=lambda: True,
+            current_mixed_decode_rows=lambda: 2)
+        adapter.step_calls = []
+        adapter.decisions = {}
+        seen = []
+        adapter.piecewise_prefill = SimpleNamespace(
+            forward=lambda *_args, **kwargs: (
+                seen.append(kwargs) or torch.arange(20.).view(4, 5)))
+        observer_rows = []
+        adapter.observer = lambda args, logits: observer_rows.append(
+            (args[-1], logits.shape[0], args[3].tolist()))
+        decode, prefill = inputs()
+        ids, positions, slots, cu, context, table, max_query = combine_mixed_metadata(
+            decode, prefill)
+        logits = adapter(ids, positions, slots, cu, context, table,
+                         max_query, False)
+        self.assertEqual(logits.shape, (4, 5))
+        self.assertEqual(seen, [{"mixed_attention_policy": "fa3_varlen"}])
+        self.assertEqual(adapter.step_calls, [(True, 2, 2, 1),
+                                             (False, 3, 2, 2)])
+        self.assertEqual(observer_rows, [(True, 2, []), (False, 2, [0, 2, 3])])
+
     def test_whole_mixed_graph_dispatch_fills_deferred_decode_logits(self):
         adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
         adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),

@@ -276,6 +276,61 @@ class IterationLoopTests(unittest.TestCase):
         self.assertEqual(dict(loop.pop_completed()), {0: [2, 3, 4], 1: [6, 7]})
         self.assertEqual(modes, [False, True, False, True])
 
+    def test_single_callback_mixed_metadata_matches_two_callback_contract(self):
+        def run(packed):
+            loop = cpp.IterationLoop(
+                make_cpp_config(max_prefill_tokens_per_iter=2,
+                                block_size=2,
+                                packed_mixed_step=packed), torch.device("cpu"))
+            loop.submit_request([1], 5)
+            loop.step(cpp_forward())
+            loop.submit_request([5, 6, 7, 8, 9, 10, 11], 2)
+            seen = []
+
+            def forward(ids, positions, slots, cu, context, table,
+                        max_query, is_decode):
+                if loop.current_step_is_mixed():
+                    seen.append((ids.clone(), positions.clone(), slots.clone(),
+                                 cu.clone(), context.clone(), table.clone(),
+                                 max_query, is_decode))
+                if packed and loop.current_step_is_mixed():
+                    self.assertEqual(loop.current_mixed_decode_rows(), 1)
+                    ends = cu[1:].to(torch.long) - 1
+                    return deterministic_logits(ids.index_select(0, ends))
+                return cpp_forward()(ids, positions, slots, cu, context,
+                                     table, max_query, is_decode)
+
+            while loop.num_pending() or loop.num_running():
+                loop.step(forward)
+            return seen, dict(loop.pop_completed())
+
+        separate, separate_outputs = run(False)
+        packed, packed_outputs = run(True)
+        self.assertEqual(separate_outputs, packed_outputs)
+        self.assertEqual(len(separate), 8)  # Four mixed steps, two callbacks each.
+        self.assertEqual(len(packed), 4)
+        for index, combined in enumerate(packed):
+            decode, prefill = separate[2 * index:2 * index + 2]
+            decode_rows = decode[0].numel()
+            expected = (
+                torch.cat((decode[0], prefill[0])),
+                torch.cat((decode[1], prefill[1])),
+                torch.cat((decode[2], prefill[2])),
+                torch.cat((torch.arange(decode_rows + 1, dtype=torch.int32),
+                           prefill[3][1:] + decode_rows)),
+                torch.cat((decode[4], prefill[4])),
+            )
+            for actual, want in zip(combined[:5], expected):
+                self.assertTrue(torch.equal(actual, want))
+            width = max(decode[5].shape[1], prefill[5].shape[1])
+            expected_table = torch.cat((
+                torch.nn.functional.pad(decode[5], (0, width - decode[5].shape[1])),
+                torch.nn.functional.pad(prefill[5], (0, width - prefill[5].shape[1]))),
+                dim=0)
+            self.assertTrue(torch.equal(combined[5], expected_table))
+            self.assertEqual(combined[6], prefill[6])
+            self.assertFalse(combined[7])
+
     def test_mixed_plan_bit_is_visible_to_both_callbacks_only(self):
         loop = cpp.IterationLoop(make_cpp_config(), torch.device("cpu"))
         loop.submit_request([1], 3)
