@@ -27,7 +27,8 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
 
 from benchmark_current_8_vs_vllm import (ENGINE_FLAGS, SHAPES, atomic_json,
                                          commit_matches, input_contract,
-                                         repository_commit, validate_capture_options)
+                                         repository_commit, resume_options,
+                                         validate_capture_options)
 from fixed_regime import PREFILL_TOKENS_PER_STEP
 
 
@@ -334,8 +335,7 @@ def forward(args, action, shape_id):
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
-    if args.resume_commit is not None:
-        command += ["--resume-commit", args.resume_commit]
+    command += resume_options(args.resume_commit)
     return command
 
 
@@ -351,10 +351,11 @@ def main():
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--resume-commit")
+    parser.add_argument("--resume-commit", action="append")
     args = parser.parse_args()
-    if args.resume_commit is not None and (len(args.resume_commit) < 7 or
-            any(char not in "0123456789abcdef" for char in args.resume_commit.lower())):
+    if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
+                                   for char in prefix.lower())
+           for prefix in (args.resume_commit or [])):
         raise ValueError("--resume-commit must be at least seven hexadecimal characters")
     if args.device != "cuda:0" or args.warmups < 1 or args.repetitions < 1:
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")

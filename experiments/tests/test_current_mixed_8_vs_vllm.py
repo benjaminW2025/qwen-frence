@@ -35,6 +35,10 @@ class MixedEightTests(unittest.TestCase):
                 self.assertIsNotNone(mixed.validate_saved(
                     path, shape_id="shape", fingerprint="frozen", model="model",
                     args=args))
+                args.resume_commit = ["2627dcc", "f318493"]
+                self.assertIsNotNone(mixed.validate_saved(
+                    path, shape_id="shape", fingerprint="frozen", model="model",
+                    args=args))
 
     def test_real_graph_constructor_accepts_every_planned_bucket(self):
         args = SimpleNamespace(suite_dir=SUITE, seed=20260914)
