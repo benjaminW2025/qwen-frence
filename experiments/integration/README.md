@@ -774,3 +774,31 @@ intervals, dispatch/fallback coverage,
 and raw step timings. A whole-workload gain can be diluted by prefill even when
 decode-only steps improve. No artifact from this harness is automatically
 production-ready, and the program never modifies production dispatch defaults.
+
+## Current eight-cell FA3/graph versus vLLM checkpoint
+
+`benchmark_current_8_vs_vllm.py` runs the eight frozen factorial burst workloads
+through the current C++ scheduler, exact-batch FA3 decode graph, 2048-token
+piecewise prefill graph, residual/RMSNorm decode fusion, native decode QKV
+postprocessing, and prefill SwiGLU fusion. vLLM 0.10.2 runs in a separate
+process with the same prompt IDs, concurrency and token budget, and matched
+logical KV capacity. The packed mixed callback is enabled but these uniform
+burst workloads have no mixed steps; use the staggered mixed experiment for it.
+
+```bash
+python3 experiments/integration/benchmark_current_8_vs_vllm.py plan \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --output-dir experiments/results/current-eight-vs-vllm-v1
+python3 experiments/integration/benchmark_current_8_vs_vllm.py check \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --output-dir experiments/results/current-eight-vs-vllm-v1
+python3 experiments/integration/benchmark_current_8_vs_vllm.py run-table \
+  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
+  --output-dir experiments/results/current-eight-vs-vllm-v1
+```
+
+The table resumes completed local and vLLM stages after interruption. It rejects
+stale or mismatched results rather than overwriting them. Each cell writes
+`comparison.json`, and the full table writes `summary.json`. A CPU-only `plan`
+validates all eight frozen inputs; `check` validates the pinned model cache,
+extension, vLLM package and a tiny FA3 GPU call before loading model weights.
