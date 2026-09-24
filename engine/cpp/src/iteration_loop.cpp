@@ -80,7 +80,8 @@ BatchMetadata BatchMetadata::allocate(
     int64_t max_prefill_seqs,
     int64_t max_blocks,
     torch::Device device,
-    bool pinned_memory
+    bool pinned_memory,
+    bool allocate_packed_mixed
 ) {
     BatchMetadata meta;
 
@@ -102,6 +103,15 @@ BatchMetadata BatchMetadata::allocate(
     meta.prefill_context_lens = torch::empty({max_prefill_seqs}, opts_int);
     meta.prefill_block_table = torch::empty({max_prefill_seqs, max_blocks}, opts_int);
 
+    if (allocate_packed_mixed) {
+        meta.mixed_input_ids = torch::empty({max_prefill_tokens + max_decode_batch}, opts_long);
+        meta.mixed_positions = torch::empty({max_prefill_tokens + max_decode_batch}, opts_long);
+        meta.mixed_slot_mapping = torch::empty({max_prefill_tokens + max_decode_batch}, opts_long);
+        meta.mixed_cu_seqlens = torch::empty({max_decode_batch + 1}, opts_int);
+        meta.mixed_context_lens = torch::empty({max_decode_batch}, opts_int);
+        meta.mixed_block_table = torch::empty({max_decode_batch, max_blocks}, opts_int);
+    }
+
     meta.reset();
     return meta;
 }
@@ -113,6 +123,11 @@ void BatchMetadata::reset() {
     num_prefill_seqs = 0;
     num_prefill_blocks = 0;
     max_prefill_chunk_length = 0;
+    num_mixed_tokens = 0;
+    num_mixed_seqs = 0;
+    num_mixed_decode_rows = 0;
+    num_mixed_blocks = 0;
+    max_mixed_query_length = 0;
 }
 
 // =============================================================================
@@ -157,7 +172,9 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
             config_.max_prefill_tokens_per_iter,
             config_.max_batch_size,  // max prefill seqs
             max_blocks,
-            device_
+            device_,
+            /*pinned_memory=*/false,
+            /*allocate_packed_mixed=*/config_.packed_mixed_step
         );
     }
 
@@ -167,7 +184,8 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
         config_.max_batch_size,
         max_blocks,
         torch::Device(torch::kCPU),
-        /*pinned_memory=*/device_.is_cuda()
+        /*pinned_memory=*/device_.is_cuda(),
+        /*allocate_packed_mixed=*/config_.packed_mixed_step
     );
     if (device_.is_cuda()) {
         metadata_transfer_ = std::make_unique<MetadataTransfer>(device_);
@@ -575,7 +593,88 @@ void IterationLoop::build_prefill_batch(const IterationPlan& plan) {
     }
 }
 
-void IterationLoop::copy_batch(bool decode, bool prefill) {
+void IterationLoop::build_mixed_batch(const IterationPlan& plan) {
+    RECORD_FUNCTION("cpp/build_packed_mixed_batch", {});
+    const int64_t decode_rows = static_cast<int64_t>(plan.decode_requests.size());
+    const int64_t prefill_rows = static_cast<int64_t>(plan.prefill_requests.size());
+    const int64_t seqs = decode_rows + prefill_rows;
+    int64_t tokens = decode_rows;
+    int64_t max_blocks = 0;
+    int64_t max_query = 1;
+    for (const Request* req : plan.decode_requests) {
+        max_blocks = std::max(max_blocks,
+            (req->total_tokens() + config_.block_size - 1) / config_.block_size);
+    }
+    for (int64_t row = 0; row < prefill_rows; ++row) {
+        const Request* req = plan.prefill_requests[row];
+        const int64_t chunk = plan.prefill_chunk_sizes[row];
+        tokens += chunk;
+        max_query = std::max(max_query, chunk);
+        max_blocks = std::max(max_blocks,
+            (req->num_prompt_tokens_computed + chunk + config_.block_size - 1)
+            / config_.block_size);
+    }
+    if (seqs > config_.max_batch_size ||
+        tokens > config_.max_prefill_tokens_per_iter + config_.max_batch_size) {
+        throw std::runtime_error("packed mixed batch exceeds preallocated capacity");
+    }
+    auto& meta = host_metadata_;
+    meta.num_mixed_tokens = tokens;
+    meta.num_mixed_seqs = seqs;
+    meta.num_mixed_decode_rows = decode_rows;
+    meta.num_mixed_blocks = max_blocks;
+    meta.max_mixed_query_length = max_query;
+
+    auto ids = meta.mixed_input_ids.accessor<int64_t, 1>();
+    auto positions = meta.mixed_positions.accessor<int64_t, 1>();
+    auto slots = meta.mixed_slot_mapping.accessor<int64_t, 1>();
+    auto cu = meta.mixed_cu_seqlens.accessor<int32_t, 1>();
+    auto contexts = meta.mixed_context_lens.accessor<int32_t, 1>();
+    auto table = meta.mixed_block_table.accessor<int32_t, 2>();
+    cu[0] = 0;
+    int64_t token_row = 0;
+    auto write_blocks = [&](int64_t row, const Request* req, int64_t visible) {
+        for (int64_t column = 0; column < max_blocks; ++column) {
+            table[row][column] = column < visible
+                ? static_cast<int32_t>(req->block_ids[column]) : 0;
+        }
+    };
+    for (int64_t row = 0; row < decode_rows; ++row) {
+        const Request* req = plan.decode_requests[row];
+        const int64_t position = req->total_tokens() - 1;
+        ids[token_row] = req->output_ids.empty()
+            ? req->prompt_ids.back() : req->output_ids.back();
+        positions[token_row] = position;
+        slots[token_row] = req->block_ids[position / config_.block_size]
+            * config_.block_size + position % config_.block_size;
+        ++token_row;
+        cu[row + 1] = static_cast<int32_t>(token_row);
+        contexts[row] = static_cast<int32_t>(req->total_tokens());
+        write_blocks(row, req,
+            (req->total_tokens() + config_.block_size - 1) / config_.block_size);
+        max_decode_context_length_ = std::max(max_decode_context_length_, req->total_tokens());
+    }
+    for (int64_t prefill_row = 0; prefill_row < prefill_rows; ++prefill_row) {
+        const Request* req = plan.prefill_requests[prefill_row];
+        const int64_t start = req->num_prompt_tokens_computed;
+        const int64_t chunk = plan.prefill_chunk_sizes[prefill_row];
+        for (int64_t offset = 0; offset < chunk; ++offset) {
+            const int64_t position = start + offset;
+            ids[token_row] = req->prompt_ids[position];
+            positions[token_row] = position;
+            slots[token_row] = req->block_ids[position / config_.block_size]
+                * config_.block_size + position % config_.block_size;
+            ++token_row;
+        }
+        const int64_t row = decode_rows + prefill_row;
+        cu[row + 1] = static_cast<int32_t>(token_row);
+        contexts[row] = static_cast<int32_t>(start + chunk);
+        write_blocks(row, req,
+            (start + chunk + config_.block_size - 1) / config_.block_size);
+    }
+}
+
+void IterationLoop::copy_batch(bool decode, bool prefill, bool mixed) {
     RECORD_FUNCTION("cpp/copy_batch_enqueue", {});
     auto& dst = device_metadata();
     const auto& src = host_metadata_;
@@ -585,6 +684,11 @@ void IterationLoop::copy_batch(bool decode, bool prefill) {
     dst.num_prefill_seqs = src.num_prefill_seqs;
     dst.num_prefill_blocks = src.num_prefill_blocks;
     dst.max_prefill_chunk_length = src.max_prefill_chunk_length;
+    dst.num_mixed_tokens = src.num_mixed_tokens;
+    dst.num_mixed_seqs = src.num_mixed_seqs;
+    dst.num_mixed_decode_rows = src.num_mixed_decode_rows;
+    dst.num_mixed_blocks = src.num_mixed_blocks;
+    dst.max_mixed_query_length = src.max_mixed_query_length;
 
     auto copy = [this](torch::Tensor to, const torch::Tensor& from, int64_t n) {
         to.slice(0, 0, n).copy_(from.slice(0, 0, n), /*non_blocking=*/device_.is_cuda());
@@ -609,6 +713,18 @@ void IterationLoop::copy_batch(bool decode, bool prefill) {
         copy(dst.prefill_context_lens, src.prefill_context_lens, seqs);
         dst.prefill_block_table.slice(0, 0, seqs).slice(1, 0, src.num_prefill_blocks)
             .copy_(src.prefill_block_table.slice(0, 0, seqs).slice(1, 0, src.num_prefill_blocks),
+                   /*non_blocking=*/device_.is_cuda());
+    }
+    if (mixed && src.num_mixed_tokens > 0) {
+        const auto tokens = src.num_mixed_tokens;
+        const auto seqs = src.num_mixed_seqs;
+        copy(dst.mixed_input_ids, src.mixed_input_ids, tokens);
+        copy(dst.mixed_positions, src.mixed_positions, tokens);
+        copy(dst.mixed_slot_mapping, src.mixed_slot_mapping, tokens);
+        copy(dst.mixed_cu_seqlens, src.mixed_cu_seqlens, seqs + 1);
+        copy(dst.mixed_context_lens, src.mixed_context_lens, seqs);
+        dst.mixed_block_table.slice(0, 0, seqs).slice(1, 0, src.num_mixed_blocks)
+            .copy_(src.mixed_block_table.slice(0, 0, seqs).slice(1, 0, src.num_mixed_blocks),
                    /*non_blocking=*/device_.is_cuda());
     }
 }
@@ -799,10 +915,11 @@ int64_t IterationLoop::step(
     max_decode_context_length_ = 0;
 
     try {
-        auto transfer_phase = [&](bool decode) {
-            RECORD_FUNCTION(decode ? "cpp/transfer_decode" : "cpp/transfer_prefill", {});
+        auto transfer_phase = [&](int phase) {
+            RECORD_FUNCTION(phase == 0 ? "cpp/transfer_decode"
+                : phase == 1 ? "cpp/transfer_prefill" : "cpp/transfer_packed_mixed", {});
             if (!metadata_transfer_) {
-                copy_batch(decode, !decode);
+                copy_batch(phase == 0, phase == 1, phase == 2);
                 return;
             }
             auto& transfer = *metadata_transfer_;
@@ -813,13 +930,36 @@ int64_t IterationLoop::step(
                 if (transfer.consumed_valid[active_batch_metadata_]) {
                     transfer.consumed[active_batch_metadata_].block(transfer.copy_stream);
                 }
-                copy_batch(decode, !decode);
+                copy_batch(phase == 0, phase == 1, phase == 2);
                 transfer.copied.record(transfer.copy_stream);
             }
             transfer.copied.block(*compute_stream);
         };
 
         torch::Tensor logits;
+
+        if (config_.packed_mixed_step && current_step_is_mixed_) {
+            build_mixed_batch(plan);
+            transfer_phase(2);
+            auto& metadata = device_metadata();
+            const int64_t tokens = metadata.num_mixed_tokens;
+            const int64_t seqs = metadata.num_mixed_seqs;
+            {
+                RECORD_FUNCTION("cpp/callback_packed_mixed", {});
+                logits = forward_fn(
+                    metadata.mixed_input_ids.slice(0, 0, tokens),
+                    metadata.mixed_positions.slice(0, 0, tokens),
+                    metadata.mixed_slot_mapping.slice(0, 0, tokens),
+                    metadata.mixed_cu_seqlens.slice(0, 0, seqs + 1),
+                    metadata.mixed_context_lens.slice(0, 0, seqs),
+                    metadata.mixed_block_table.slice(0, 0, seqs)
+                        .slice(1, 0, metadata.num_mixed_blocks),
+                    metadata.max_mixed_query_length,
+                    /*is_decode=*/false
+                );
+            }
+            validate_logits(logits, seqs, "packed mixed");
+        } else {
 
         if (!config_.overlap_prefill_build && !plan.prefill_requests.empty()) {
             build_prefill_batch(plan);
@@ -831,7 +971,7 @@ int64_t IterationLoop::step(
                     config_.reuse_stable_decode_metadata
                     && plan.prefill_requests.empty();
                 build_decode_batch(plan, seed_stable_state);
-                transfer_phase(/*decode=*/true);
+                transfer_phase(0);
                 if (seed_stable_state) {
                     remember_decode_state(plan);
                 } else {
@@ -880,7 +1020,7 @@ int64_t IterationLoop::step(
             if (config_.overlap_prefill_build) {
                 build_prefill_batch(plan);
             }
-            transfer_phase(/*decode=*/false);
+            transfer_phase(1);
             auto& metadata = device_metadata();
             int64_t num_tokens = metadata.num_prefill_tokens;
             int64_t num_seqs = metadata.num_prefill_seqs;
@@ -908,6 +1048,8 @@ int64_t IterationLoop::step(
                 logits = prefill_logits;
             }
         }
+
+        }  // Existing separate decode/prefill callback path.
 
         // Sample
         torch::Tensor next_tokens = sample(logits);

@@ -71,6 +71,14 @@ struct BatchMetadata {
     torch::Tensor prefill_context_lens;   // prefix + current chunk: (max_prefill_seqs,)
     torch::Tensor prefill_block_table;    // temporary padded view: (max_prefill_seqs, max_blocks)
 
+    // Optional single-callback mixed batch: decode rows precede prefill rows.
+    torch::Tensor mixed_input_ids;        // (max_prefill_tokens + max_decode_batch,)
+    torch::Tensor mixed_positions;
+    torch::Tensor mixed_slot_mapping;
+    torch::Tensor mixed_cu_seqlens;       // (max_batch_size + 1,)
+    torch::Tensor mixed_context_lens;     // (max_batch_size,)
+    torch::Tensor mixed_block_table;      // (max_batch_size, max_blocks)
+
     // Current batch sizes (updated each iteration)
     int64_t num_decode_tokens;
     int64_t num_decode_blocks;
@@ -78,6 +86,11 @@ struct BatchMetadata {
     int64_t num_prefill_seqs;
     int64_t num_prefill_blocks;
     int64_t max_prefill_chunk_length;
+    int64_t num_mixed_tokens;
+    int64_t num_mixed_seqs;
+    int64_t num_mixed_decode_rows;
+    int64_t num_mixed_blocks;
+    int64_t max_mixed_query_length;
 
     // Pre-allocate buffers
     static BatchMetadata allocate(
@@ -86,7 +99,8 @@ struct BatchMetadata {
         int64_t max_prefill_seqs,
         int64_t max_blocks,
         torch::Device device,
-        bool pinned_memory = false
+        bool pinned_memory = false,
+        bool allocate_packed_mixed = false
     );
 
     // Reset for new iteration (just reset counts, don't reallocate)
@@ -117,6 +131,7 @@ struct SchedulerConfig {
     // Experimental fixed-cohort fast path. Seed complete decode metadata once,
     // then retain sampled IDs and advance positions/lengths/slots on device.
     bool reuse_stable_decode_metadata = false;
+    bool packed_mixed_step = false;  // one packed H2D phase and model callback
 };
 
 // The main C++ iteration loop
@@ -166,6 +181,10 @@ public:
     }
     // Host-only plan bit for callback dispatch. No CUDA metadata readback.
     bool current_step_is_mixed() const { return current_step_is_mixed_; }
+    bool uses_packed_mixed_step() const { return config_.packed_mixed_step; }
+    int64_t current_mixed_decode_rows() const {
+        return host_metadata_.num_mixed_decode_rows;
+    }
 
 private:
     SchedulerConfig config_;
@@ -198,7 +217,8 @@ private:
     IterationPlan schedule();
     void build_decode_batch(const IterationPlan& plan, bool include_reserved_blocks = false);
     void build_prefill_batch(const IterationPlan& plan);
-    void copy_batch(bool decode, bool prefill);
+    void build_mixed_batch(const IterationPlan& plan);
+    void copy_batch(bool decode, bool prefill, bool mixed = false);
     bool can_reuse_decode_state(const IterationPlan& plan) const;
     void remember_decode_state(const IterationPlan& plan);
     void advance_decode_state(const IterationPlan& plan);

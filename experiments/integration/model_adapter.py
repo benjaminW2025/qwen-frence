@@ -369,3 +369,53 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
         action = "packed_mixed_" + self.mixed_attention_policy
         self.decisions[action] = self.decisions.get(action, 0) + 1
         return prefill_logits
+
+
+class CppPackedMixedModelAdapter(PiecewiseGraphModelAdapter):
+    """One C++-assembled mixed callback; no Python metadata concatenation.
+
+    ``step_calls`` retains the two logical cohorts for the existing workload
+    checker. The C++ trace has one ``cpp/callback_packed_mixed`` range.
+    """
+
+    @torch.no_grad()
+    def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):
+        if (decode or self.loop is None or not self.loop.current_step_is_mixed()
+                or not self.loop.uses_packed_mixed_step()):
+            return super().__call__(ids, positions, slots, cu, context,
+                                    table, max_query, decode)
+        decode_rows = self.loop.current_mixed_decode_rows()
+        sequences = context.numel()
+        if not 0 < decode_rows < sequences or cu.numel() != sequences + 1:
+            raise ValueError("C++ packed mixed metadata has invalid cohort boundaries")
+        self.step_calls.extend(((True, decode_rows, decode_rows, 1),
+                                (False, ids.numel() - decode_rows,
+                                 sequences - decode_rows, max_query)))
+        self.decisions["packed_mixed_cpp_varlen"] = (
+            self.decisions.get("packed_mixed_cpp_varlen", 0) + 1)
+        logits = self.piecewise_prefill.forward(
+            ids, positions, slots, cu, context, table, max_query,
+            mixed_attention_policy="fa3_varlen")
+        if logits is None:
+            observer = self.observer
+            self.observer = None
+            logical_calls = len(self.step_calls)
+            try:
+                logits = ModelAdapter.__call__(self, ids, positions, slots, cu,
+                                               context, table, max_query, False)
+            finally:
+                self.observer = observer
+                del self.step_calls[logical_calls:]
+        if self.observer is not None:
+            # Reconstruct logical views only for untimed validation. The hot
+            # path returns one packed logits tensor without a cat/copy.
+            decode_args = (ids[:decode_rows], positions[:decode_rows],
+                           slots[:decode_rows], cu[:0], context[:decode_rows],
+                           table[:decode_rows], 1, True)
+            prefill_args = (ids[decode_rows:], positions[decode_rows:],
+                            slots[decode_rows:], cu[decode_rows:] - decode_rows,
+                            context[decode_rows:], table[decode_rows:],
+                            max_query, False)
+            self.observer(decode_args, logits[:decode_rows])
+            self.observer(prefill_args, logits[decode_rows:])
+        return logits
