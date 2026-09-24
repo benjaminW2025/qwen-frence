@@ -45,7 +45,9 @@ class PackedMixedTests(unittest.TestCase):
         adapter.enable_packed_mixed = True
         adapter.mixed_attention_policy = "fa3_varlen"
         adapter.full_mixed_graph = True
+        adapter.clone_decode_metadata = True
         adapter.full_mixed_hits = 0
+        adapter.full_mixed_events = []
         adapter.step_calls = []
         adapter.decisions = {}
         adapter.observer = None
@@ -64,6 +66,9 @@ class PackedMixedTests(unittest.TestCase):
         prefill_logits = adapter(*prefill)
         self.assertEqual(seen, [(5, 5, 2)])
         self.assertEqual(adapter.full_mixed_hits, 1)
+        self.assertEqual(adapter.full_mixed_events[0]["outcome"], "replay")
+        self.assertEqual(adapter.full_mixed_events[0]["decode_tokens"], 2)
+        self.assertEqual(adapter.full_mixed_events[0]["prefill_tokens"], 3)
         self.assertEqual(placeholder.tolist(), [[0., 1., 2., 3.], [4., 5., 6., 7.]])
         self.assertEqual(prefill_logits.shape, (3, 4))
 
@@ -75,6 +80,30 @@ class PackedMixedTests(unittest.TestCase):
         self.assertEqual(combined[5].tolist(), [[4, 5], [6, 7], [8, 0], [9, 0]])
         self.assertEqual(combined[6], 2)
 
+    def test_full_graph_cache_limit_records_piecewise_fallback(self):
+        adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
+        adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),
+                                        lm_head=SimpleNamespace(weight=torch.empty(4)))
+        adapter.loop = SimpleNamespace(current_step_is_mixed=lambda: True)
+        adapter._pending_mixed = None
+        adapter.enable_packed_mixed = True
+        adapter.mixed_attention_policy = "fa3_varlen"
+        adapter.full_mixed_graph = True
+        adapter.clone_decode_metadata = True
+        adapter.full_mixed_hits = 0
+        adapter.full_mixed_events = []
+        adapter.full_mixed_graphs = {(i, i, (i, 1), 1): object() for i in range(4)}
+        adapter.step_calls = []
+        adapter.decisions = {}
+        adapter.observer = None
+        adapter.piecewise_prefill = SimpleNamespace(
+            forward=lambda *_args, **_kwargs: torch.arange(20.).view(5, 4))
+        decode, prefill = inputs()
+        adapter(*decode)
+        adapter(*prefill)
+        self.assertEqual(adapter.full_mixed_hits, 0)
+        self.assertEqual(adapter.full_mixed_events[0]["outcome"], "cache_full")
+
     def test_decode_logits_are_filled_after_prefill_without_stale_metadata(self):
         adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
         adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),
@@ -84,6 +113,7 @@ class PackedMixedTests(unittest.TestCase):
         adapter.enable_packed_mixed = True
         adapter.mixed_attention_policy = "packed_paged"
         adapter.full_mixed_graph = False
+        adapter.clone_decode_metadata = True
         adapter.step_calls = []
         adapter.decisions = {}
         adapter.observer = None
@@ -107,6 +137,28 @@ class PackedMixedTests(unittest.TestCase):
                                                    [16., 17., 18., 19.]])
         self.assertEqual(adapter.step_calls, [(True, 2, 2, 1), (False, 3, 2, 2)])
 
+    def test_opt_in_no_clone_keeps_decode_views_until_prefill_callback(self):
+        adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
+        adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),
+                                        lm_head=SimpleNamespace(weight=torch.empty(4)))
+        adapter.loop = SimpleNamespace(current_step_is_mixed=lambda: True)
+        adapter._pending_mixed = None
+        adapter.enable_packed_mixed = True
+        adapter.mixed_attention_policy = "fa3_varlen"
+        adapter.full_mixed_graph = False
+        adapter.clone_decode_metadata = False
+        adapter.step_calls = []
+        adapter.decisions = {}
+        adapter.observer = None
+        adapter.piecewise_prefill = SimpleNamespace(
+            forward=lambda *_args, **_kwargs: torch.arange(20.).view(5, 4))
+        decode, prefill = inputs()
+        placeholder = adapter(*decode)
+        self.assertIs(adapter._pending_mixed[0][0], decode[0])
+        adapter(*prefill)
+        self.assertEqual(placeholder.tolist(), [[0., 1., 2., 3.],
+                                                 [4., 5., 6., 7.]])
+
     def test_fa3_hybrid_receives_decode_row_count(self):
         adapter = object.__new__(PackedMixedPiecewiseGraphModelAdapter)
         adapter.model = SimpleNamespace(cfg=SimpleNamespace(vocab=4),
@@ -116,6 +168,7 @@ class PackedMixedTests(unittest.TestCase):
         adapter.enable_packed_mixed = True
         adapter.mixed_attention_policy = "fa3_hybrid"
         adapter.full_mixed_graph = False
+        adapter.clone_decode_metadata = True
         adapter.step_calls = []
         adapter.decisions = {}
         adapter.observer = None

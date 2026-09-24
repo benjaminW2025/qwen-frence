@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 import torch
 
@@ -270,7 +271,7 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
     """
 
     def __init__(self, *args, mixed_attention_policy="packed_paged",
-                 full_mixed_graph=False, **kwargs):
+                 full_mixed_graph=False, clone_decode_metadata=True, **kwargs):
         super().__init__(*args, **kwargs)
         if mixed_attention_policy not in ("packed_paged", "fa3_hybrid", "fa3_varlen"):
             raise ValueError("unsupported mixed attention policy")
@@ -278,8 +279,10 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
         if full_mixed_graph and mixed_attention_policy != "fa3_varlen":
             raise ValueError("full mixed graph currently requires packed varlen FA3")
         self.full_mixed_graph = bool(full_mixed_graph)
+        self.clone_decode_metadata = bool(clone_decode_metadata)
         self.full_mixed_graphs = {}
         self.full_mixed_hits = 0
+        self.full_mixed_events = []
         self._pending_mixed = None
         self.enable_packed_mixed = True
 
@@ -292,10 +295,11 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
             if (not self.enable_packed_mixed or self.loop is None
                     or not self.loop.current_step_is_mixed()):
                 return super().__call__(*args)
-            # The C++ transfer stream will reuse the active metadata buffer for
-            # prefill after this callback. Snapshot all decode views now, on
-            # the compute stream, before the consumed event is recorded.
-            saved = tuple(tensor.clone() for tensor in args[:6]) + (max_query, True)
+            # Default to defensive snapshots. The opt-in no-clone arm relies on
+            # C++ keeping decode and prefill in separate tensors and retaining
+            # the active decode buffer until this mixed step completes.
+            saved = (tuple(tensor.clone() for tensor in args[:6])
+                     if self.clone_decode_metadata else args[:6]) + (max_query, True)
             placeholder = torch.empty((ids.numel(), self.model.cfg.vocab),
                                       device=ids.device, dtype=self.model.lm_head.weight.dtype)
             self._pending_mixed = (saved, placeholder)
@@ -313,17 +317,32 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
             key = (combined[0].numel(), combined[3].numel(),
                    combined[5].shape, combined[6])
             graph = self.full_mixed_graphs.get(key)
+            capture_ms = 0.0
+            outcome = "replay" if graph is not None else "cache_full"
             if graph is None and len(self.full_mixed_graphs) < 4:
                 from full_mixed import FullMixedGraph
+                started = time.perf_counter()
                 graph = FullMixedGraph(
                     self.model, self.pool, *combined,
                     enable_packed_qkv_rope_cache=self.enable_prefill_packed_qkv_rope_cache,
                     enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm,
                     enable_swiglu_fusion=self.enable_prefill_swiglu_fusion)
+                capture_ms = (time.perf_counter() - started) * 1000
                 self.full_mixed_graphs[key] = graph
+                outcome = "capture"
             if graph is not None:
                 logits = graph.forward(*combined)
-                self.full_mixed_hits += 1
+                if logits is None:
+                    outcome = "incompatible"
+                else:
+                    self.full_mixed_hits += 1
+            self.full_mixed_events.append({
+                "key": (key[0], key[1], tuple(key[2]), key[3]),
+                "decode_tokens": decode_rows,
+                "prefill_tokens": combined[0].numel() - decode_rows,
+                "outcome": outcome,
+                "capture_ms": capture_ms,
+            })
         if logits is None:
             logits = self.piecewise_prefill.forward(
                 *combined, mixed_decode_count=(decode_rows
