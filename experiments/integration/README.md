@@ -777,8 +777,9 @@ production-ready, and the program never modifies production dispatch defaults.
 
 ## Current eight-cell FA3/graph versus vLLM checkpoint
 
-`benchmark_current_8_vs_vllm.py` runs both the frozen burst workload and a
-staggered two-wave mixed workload for each of the eight factorial shapes. The
+`benchmark_current_8_vs_vllm.py` runs the frozen burst workload, a
+staggered two-wave mixed workload, and a separate synchronized phase-timing
+pass for each of the eight factorial shapes. The
 local arm uses the C++ scheduler, FA3 decode graphs, bucketed piecewise prefill
 graphs, the C++ packed mixed callback, residual/RMSNorm decode fusion, native
 decode QKV postprocessing, and conditional prefill SwiGLU fusion. Capture
@@ -789,34 +790,36 @@ logical KV capacity. The staggered comparator uses in-process vLLM step mode
 so the second wave can be injected at the same logical iteration index.
 
 ```bash
-python3 experiments/integration/benchmark_current_8_vs_vllm.py plan \
-  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v2
-python3 experiments/integration/benchmark_current_8_vs_vllm.py check \
-  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v2 \
-  --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1 \
-  --resume-commit f318493 --resume-commit 2627dcc
-python3 experiments/integration/benchmark_current_8_vs_vllm.py run-table \
-  --suite-dir experiments/results/full-checkpoint-20260916T033540Z \
-  --output-dir experiments/results/current-eight-vs-vllm-v2 \
-  --reuse-vllm-from experiments/results/current-eight-vs-vllm-v1 \
-  --resume-commit f318493 --resume-commit 2627dcc
+bash experiments/integration/run_current_eight_checkpoint.sh plan
+bash experiments/integration/run_current_eight_checkpoint.sh check
+bash experiments/integration/run_current_eight_checkpoint.sh run-table
 ```
+
+The wrapper uses `/root/vllm-bench-env/bin/python` or
+`/workspace/vllm-bench-env/bin/python` when present; otherwise it uses
+`python3`. Set `PYTHON_BIN` to override this choice.
 
 The table resumes completed local and vLLM stages after interruption. It rejects
 stale or mismatched results rather than overwriting them. Each cell writes a
-burst `comparison.json` and a `mixed/<shape>/comparison.json`; the full table
-writes `summary.json` with both results per shape. A CPU-only `plan` validates
+burst `comparison.json`, a `mixed/<shape>/comparison.json`, and a
+`phases/<shape>/comparison.json` with pure-prefill and pure-decode steps from
+the full-batch burst workload and mixed steps from the staggered workload,
+including median step latency and step counts for both engines. The full table writes
+`summary.json` with all results per shape. A CPU-only `plan` validates
 all eight frozen inputs and schedules; `check` validates the pinned model cache,
 extension, vLLM package and tiny decode/varlen FA3 GPU calls before loading
 model weights. Mixed whole-workload timing includes both arrival waves; it is
-not a one-step attention microbenchmark.
+not a one-step attention microbenchmark. The phase pass deliberately synchronizes
+after each step; it is a separate diagnostic rather than the throughput run.
+Its phase labels come from local callback kinds and vLLM request-progress state.
+Because schedulers can perform different work in a step, phase medians must be
+read with their step counts and total phase wall times, not as normalized
+kernel speedups.
 `--reuse-vllm-from` is optional; use it only for prior burst results from the
 same pod. It validates workload, model, vLLM version, KV capacity, run counts
 and GPU model before reuse. Staggered mixed vLLM results are always measured
 fresh.
 The repeated `--resume-commit` flags explicitly retain completed `v2` cells
-from both prior runner revisions; their workload, model, optimization
+from prior runner revisions; their workload, model, optimization
 flags, graph-bucket plan and run counts must still validate. It does not turn
 the failed mixed B8/L2048 run into a result.

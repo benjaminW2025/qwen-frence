@@ -106,6 +106,10 @@ class CurrentEightTests(unittest.TestCase):
         self.assertNotIn("--reuse-vllm-from", child)
         self.assertIn("--resume-commit", child)
         self.assertEqual(child[2], "run-cell")
+        phase = benchmark.phase_forwarded(args, args.shape_id)
+        self.assertIn("benchmark_current_phases_vs_vllm.py", phase[1])
+        self.assertEqual(phase[2], "run-cell")
+        self.assertNotIn("--reuse-vllm-from", phase)
 
     def test_analysis_joins_local_and_vllm_by_request_id(self):
         shape = benchmark.SHAPES[0]

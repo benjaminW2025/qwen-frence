@@ -126,10 +126,24 @@ class MixedEightTests(unittest.TestCase):
               mock.patch("profile_latest_vs_vllm.add_vllm_requests",
                          side_effect=add_requests)):
             row = mixed.vllm_once(SimpleNamespace(llm_engine=engine), requests,
-                                  first=2, arrival=3, run_id="test")
+                                  first=2, arrival=3, run_id="test",
+                                  synchronize_steps=True)
         self.assertEqual(len(row["outputs"]), 4)
         self.assertTrue(row["first_wave_advanced_on_injection"])
         self.assertEqual(row["total_steps"], 11)
+        self.assertEqual(len(row["phase_steps"]), row["total_steps"])
+        self.assertEqual({step["kind"] for step in row["phase_steps"]},
+                         {"prefill", "decode", "mixed"})
+        engine = Engine()
+        with (mock.patch("torch.cuda.synchronize"),
+              mock.patch("profile_latest_vs_vllm.add_vllm_requests",
+                         side_effect=add_requests)):
+            burst = mixed.vllm_once(SimpleNamespace(llm_engine=engine), requests,
+                                    first=4, arrival=None, run_id="burst",
+                                    synchronize_steps=True)
+        self.assertEqual(len(burst["outputs"]), 4)
+        self.assertEqual({step["kind"] for step in burst["phase_steps"]},
+                         {"prefill", "decode"})
 
 
 if __name__ == "__main__":
