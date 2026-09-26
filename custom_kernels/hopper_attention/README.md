@@ -11,9 +11,12 @@ there is no external-attention fallback.
 The attention implementation is project-owned. NVIDIA CUTLASS v3.9.2 supplies
 CuTe layouts and WGMMA instruction wrappers, not an attention implementation.
 Algorithm reference: [FlashAttention-3](https://tridao.me/publications/flash3/flash3.pdf).
-It uses double-buffered TMA, warp specialization and asynchronous WGMMA,
-overlapping next-tile QK with softmax. These features alone do not establish
-performance parity with FA3. The initial split schedule is not tuned.
+It uses double-buffered, cooperative paged-KV gathers into CuTe's exact
+shared-memory layouts, warp specialization and asynchronous WGMMA, overlapping
+next-tile QK with softmax. The initial page-wise TMA implementation was removed:
+its 128-byte swizzle disagreed with the WGMMA K layout. This correctness-first
+gather may be slower than TMA and does not establish performance parity with
+FA3. The initial split schedule is not tuned.
 
 ## Qualification gates
 
@@ -50,14 +53,14 @@ whole-forward mixed-graph prototype is rejected for this backend until migrated.
 | Intervention | Current candidate | Next controlled comparison |
 |---|---|---|
 | FP16 / D128 / 12:2 heads / page16 specialization | Compiled constants | Keep identical math and precision |
-| TMA + producer/consumer WGMMA/softmax overlap | Written, unvalidated | Validate before measuring |
+| Cooperative paged gather + producer/consumer WGMMA/softmax overlap | Written, unvalidated | Validate before measuring; a compatible TMA path remains future work |
 | Causal tile skipping | Written, unvalidated | Fresh and resumed prefill, including partial tiles |
 | Register-fed PV instead of shared-memory P | Written, unvalidated; shared-P control retained | Avoid P shared-memory traffic; measure register pressure and latency |
 | Regime-specific tile configuration | M64/N64 and M64/N128 written; fixed warp count | Larger KV tile amortizes work but uses more shared memory/registers |
 | Packed mixed work scheduling | GPU-built compact query worklist written | Reduce rectangular-grid empty CTAs; include construction cost |
 | Split-K schedule | Initial decode heuristic; varlen K1 | Tune B8/B64 and context, including partial/reduction traffic |
-| Small-page loading | Page-wise TMA | Compare vector asynchronous loads; TMA is not automatically best |
-| Metadata/descriptors shared across layers | Optional prepared query-worklist API; not integrated | Rebuild when query offsets change; TMA descriptor reuse still pending |
+| Small-page loading | CuTe-addressed cooperative gather | Compare vector asynchronous loads and layout-compatible TMA after correctness qualification |
+| Metadata shared across layers | Optional prepared query-worklist API; not integrated | Rebuild when query offsets change |
 
 vLLM 0.30.0 pins its attention fork at
 `506341a143fcabd4bb79052a7605ada727d6b3f5`. Its

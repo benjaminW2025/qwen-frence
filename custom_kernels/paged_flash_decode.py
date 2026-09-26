@@ -1,4 +1,4 @@
-"""Independent SM90a TMA/WGMMA attention candidate; no external attention imports.
+"""Independent SM90a WGMMA attention candidate; no external attention imports.
 
 The CUDA implementation is in hopper_attention/attention.cu. It implements a
 two-stage producer/consumer pipeline and overlaps next-QK WGMMA with softmax.
@@ -21,7 +21,7 @@ def _extension():
         raise RuntimeError('Build custom_kernels/hopper_attention/setup.py with CUTLASS_PATH set '
                            'to CUTLASS v3.9.2; this candidate has no external attention fallback') from error
     inference_hopper_attention.validate_layouts()
-    if getattr(inference_hopper_attention, 'abi_version', None) != 3:
+    if getattr(inference_hopper_attention, 'abi_version', None) != 4:
         raise RuntimeError('Hopper extension ABI changed; rebuild custom_kernels/hopper_attention')
     expected = hashlib.sha256((Path(__file__).parent / 'hopper_attention/attention.cu').read_bytes()).hexdigest()
     if getattr(inference_hopper_attention, 'source_sha256', None) != expected:
@@ -81,7 +81,7 @@ def prepare_flash_worklist(cu_seqlens_q, total_queries):
 def flash_decode(q, k_pool, v_pool, block_table, seq_lens, *, split_k=None,
                  scale=None, max_context_length=None, tile_n=64,
                  register_pv=False, overlap_qk=True, compact=False, worklist=None):
-    """One query per sequence through the same TMA/WGMMA pipeline as varlen."""
+    """One query per sequence through the same paged-KV/WGMMA pipeline as varlen."""
     if q.ndim != 3 or q.shape[0] < 1:
         raise ValueError('decode Q must have nonempty shape [batch,12,128]')
     if block_table.ndim != 2 or block_table.shape[0] != q.shape[0]:

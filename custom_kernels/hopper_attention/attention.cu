@@ -1,6 +1,8 @@
 // Project-owned Hopper attention candidate. NOT yet GPU-validated or performance-qualified.
 // CuTe supplies WGMMA instruction/layout primitives; no upstream attention kernel is used.
 // Algorithm attribution: FlashAttention-3 (Shah et al., 2024), FP16 asynchronous pipeline.
+// Paged KV is gathered into the exact CuTe layout consumed by WGMMA. The former
+// hand-encoded TMA copy used a different 128-byte swizzle and was incorrect.
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
@@ -12,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <type_traits>
+#include <vector>
 
 using namespace cute;
 using H = cutlass::half_t;
@@ -48,6 +51,7 @@ __device__ uint32_t shared_address(void const* pointer) {
     return static_cast<uint32_t>(__cvta_generic_to_shared(pointer));
 }
 __device__ void consumer_sync() { asm volatile("bar.sync 1, 128;" ::: "memory"); }
+__device__ void producer_sync() { asm volatile("bar.sync 2, 128;" ::: "memory"); }
 __device__ void async_fence() { asm volatile("fence.proxy.async.shared::cta;" ::: "memory"); }
 __device__ void barrier_init(uint64_t* barrier) {
     asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" :: "r"(shared_address(barrier)) : "memory");
@@ -63,19 +67,6 @@ __device__ void wait_phase(uint64_t* barrier, int phase) {
 __device__ void arrive(uint64_t* barrier) {
     asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];" :: "r"(shared_address(barrier)) : "memory");
 }
-template<int N>
-__device__ void expect_bytes(uint64_t* barrier) {
-    asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;"
-                 :: "r"(shared_address(barrier)), "r"(2 * N * D * int(sizeof(H))) : "memory");
-}
-__device__ void load_page(CUtensorMap const* map, H* dest, uint64_t* barrier,
-                         int feature, int head, int physical_page) {
-    asm volatile("cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes "
-                 "[%0], [%1, {%3, %4, %5, %6}], [%2];"
-                 :: "r"(shared_address(dest)), "l"(map), "r"(shared_address(barrier)),
-                    "r"(feature), "r"(head), "r"(0), "r"(physical_page) : "memory");
-}
-
 // row distribution of SM90 m64 WGMMA accumulators: four adjacent lanes share
 // each row, and each thread holds two rows separated by eight.
 __device__ float row_max(float value) {
@@ -89,12 +80,11 @@ __device__ float row_sum(float value) {
 
 template<int N, bool RegisterPV>
 __global__ __launch_bounds__(256)
-void attention(H const* q, int const* cu, int const* table, int const* lengths,
+void attention(H const* q, H const* k_pool, H const* v_pool,
+               int const* cu, int const* table, int const* lengths,
                H* output, float* partial, float* stats, int width, int splits,
                int query_tiles, float scale, bool causal, bool overlap_qk,
-               int64_t qs0, int64_t qs1, int64_t qs2, int const* worklist,
-               const __grid_constant__ CUtensorMap km,
-               const __grid_constant__ CUtensorMap vm) {
+               int64_t qs0, int64_t qs1, int64_t qs2, int const* worklist) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
     using T = Traits<N, RegisterPV>;
     using LK = typename T::LK;
@@ -115,7 +105,7 @@ void attention(H const* q, int const* cu, int const* table, int const* lengths,
     if (begin_row >= q_len * G) return;
     int length = lengths[sequence];
     // Entire future tiles are invisible to every row in this query CTA. Avoid
-    // their TMA loads and both WGMMA operations, not merely their softmax terms.
+    // their KV gathers and both WGMMA operations, not merely their softmax terms.
     int last_query_exclusive = min(q_len, (begin_row + M + G - 1) / G);
     int visible_length = causal ? max(0, min(length, length - q_len + last_query_exclusive)) : length;
     int tiles = (visible_length + N - 1) / N;
@@ -156,24 +146,29 @@ void attention(H const* q, int const* cu, int const* table, int const* lengths,
     __syncthreads();
     if (threadIdx.x < 128) {
         cutlass::arch::warpgroup_reg_dealloc<32>();
-        if (threadIdx.x == 0) {
-            for (int tile = first; tile < last; ++tile) {
-                int i = tile - first, stage = i % 2;
-                if (i >= 2) wait_phase(&sm.empty[stage], (i / 2 - 1) % 2);
-                expect_bytes<N>(&sm.ready[stage]);
-                // Page-wise TMA, two feature blocks and two tensors.
-                // Invalid pages use page zero; the consumer masks token tails.
-                for (int page = 0; page < N / 16; ++page) {
-                    int logical = tile * (N / 16) + page;
-                    int physical = logical * 16 < length ? table[sequence * width + logical] : 0;
-                    for (int chunk = 0; chunk < 2; ++chunk) {
-                        load_page(&km, sm.k[stage] + LK{}(page * 16, chunk * 64),
-                                  &sm.ready[stage], chunk * 64, kv_head, physical);
-                        load_page(&vm, sm.v[stage] + LV{}(chunk * 64, page * 16),
-                                  &sm.ready[stage], chunk * 64, kv_head, physical);
-                    }
+        for (int tile = first; tile < last; ++tile) {
+            int i = tile - first, stage = i % 2;
+            if (i >= 2) wait_phase(&sm.empty[stage], (i / 2 - 1) % 2);
+            // Each producer owns distinct logical (token, feature) elements.
+            // Write using the same CuTe layouts that the consumer passes to
+            // WGMMA. This avoids assuming that a page-wise TMA tensor map's
+            // swizzle happens to match a GMMA K/MN swizzle.
+            for (int element = threadIdx.x; element < N * D; element += 128) {
+                int token = element / D, feature = element % D;
+                int absolute = tile * N + token;
+                H key = H(0.f), value = H(0.f);
+                if (absolute < length) {
+                    int physical = table[sequence * width + absolute / 16];
+                    int pool_offset = ((physical * 16 + absolute % 16) * HKV + kv_head) * D + feature;
+                    key = k_pool[pool_offset];
+                    value = v_pool[pool_offset];
                 }
+                sm.k[stage][LK{}(token, feature)] = key;
+                sm.v[stage][LV{}(feature, token)] = value;
             }
+            async_fence();
+            producer_sync();
+            if (threadIdx.x == 0) arrive(&sm.ready[stage]);
         }
         return;
     }
@@ -316,19 +311,6 @@ __global__ void combine(float const* partial, float const* stats, H* output, int
     output[id * D + dim] = H(value / fmaxf(sum, 1.e-30f));
 }
 
-CUtensorMap tensor_map(torch::Tensor const& pool) {
-    CUtensorMap map{};
-    uint64_t dims[4] = {D, HKV, 16, uint64_t(pool.size(0))};
-    uint64_t strides[3] = {D * 2, HKV * D * 2, 16 * HKV * D * 2};
-    uint32_t box[4] = {64, 1, 16, 1}, element_strides[4] = {1,1,1,1};
-    auto result = cuTensorMapEncodeTiled(&map, CU_TENSOR_MAP_DATA_TYPE_FLOAT16, 4,
-        pool.data_ptr(), dims, strides, box, element_strides,
-        CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
-        CU_TENSOR_MAP_L2_PROMOTION_NONE, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
-    TORCH_CHECK(result == CUDA_SUCCESS, "TMA descriptor encoding failed: ", int(result));
-    return map;
-}
-
 template<int N, bool RegisterPV>
 bool validate_layouts_for() {
     using T = Traits<N, RegisterPV>;
@@ -336,24 +318,21 @@ bool validate_layouts_for() {
     using LV = typename T::LV;
     using QKMma = typename T::QKMma;
     using PVMma = typename T::PVMma;
-    // Check the exact layout assumed by the sixteen page-wise TMA transfers.
-    // These checks are host-only and also guard changes to the CuTe version.
+    // The producer addresses shared memory through these same CuTe layouts.
+    // Prove they cover each tile exactly once, including all page boundaries.
+    std::vector<uint8_t> k_seen(cosize_v<LK>, 0), v_seen(cosize_v<LV>, 0);
     for (int token = 0; token < N; ++token) {
         for (int feature = 0; feature < D; ++feature) {
-            int physical = (feature / 64) * N * 64 + token * 64
-                           + ((feature % 64) ^ ((token % 8) * 8));
             auto k_offset = int(LK{}(token, feature));
             auto v_offset = int(LV{}(feature, token));
-            TORCH_CHECK(k_offset == physical,
-                        "K TMA/WGMMA layout mismatch: N=", N,
-                        " register_pv=", RegisterPV, " token=", token,
-                        " feature=", feature, " CuTe offset=", k_offset,
-                        " expected TMA offset=", physical);
-            TORCH_CHECK(v_offset == physical,
-                        "V TMA/WGMMA layout mismatch: N=", N,
-                        " register_pv=", RegisterPV, " token=", token,
-                        " feature=", feature, " CuTe offset=", v_offset,
-                        " expected TMA offset=", physical);
+            TORCH_CHECK(k_offset >= 0 && k_offset < int(k_seen.size()) && !k_seen[k_offset],
+                        "K shared layout is not one-to-one: N=", N,
+                        " token=", token, " feature=", feature);
+            TORCH_CHECK(v_offset >= 0 && v_offset < int(v_seen.size()) && !v_seen[v_offset],
+                        "V shared layout is not one-to-one: N=", N,
+                        " token=", token, " feature=", feature);
+            k_seen[k_offset] = 1;
+            v_seen[v_offset] = 1;
         }
     }
     for (int lane = 0; lane < 128; ++lane) {
@@ -434,18 +413,20 @@ torch::Tensor prepare_worklist(torch::Tensor cu, int64_t total_queries) {
 
 template<int N, bool RegisterPV>
 void launch_attention(torch::Tensor q, torch::Tensor cu, torch::Tensor table, torch::Tensor lengths,
+                      torch::Tensor k, torch::Tensor v,
                       torch::Tensor out, torch::Tensor partial, torch::Tensor stats,
                       torch::Tensor work, int splits, int query_tiles, float scale,
-                      bool causal, bool overlap_qk, CUtensorMap km, CUtensorMap vm) {
+                      bool causal, bool overlap_qk) {
     C10_CUDA_CHECK(cudaFuncSetAttribute(attention<N, RegisterPV>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, sizeof(Shared<N, RegisterPV>)));
     dim3 grid(work.defined() ? work.size(0) : lengths.numel(), HKV,
               work.defined() ? splits : query_tiles * splits);
     attention<N, RegisterPV><<<grid, 256, sizeof(Shared<N, RegisterPV>), at::cuda::getCurrentCUDAStream()>>>(
-        reinterpret_cast<H const*>(q.data_ptr()), cu.data_ptr<int>(), table.data_ptr<int>(),
+        reinterpret_cast<H const*>(q.data_ptr()), reinterpret_cast<H const*>(k.data_ptr()),
+        reinterpret_cast<H const*>(v.data_ptr()), cu.data_ptr<int>(), table.data_ptr<int>(),
         lengths.data_ptr<int>(), reinterpret_cast<H*>(out.data_ptr()), partial.data_ptr<float>(),
         stats.data_ptr<float>(), table.size(1), splits, query_tiles, scale, causal, overlap_qk,
-        q.stride(0), q.stride(1), q.stride(2), work.defined() ? work.data_ptr<int>() : nullptr, km, vm);
+        q.stride(0), q.stride(1), q.stride(2), work.defined() ? work.data_ptr<int>() : nullptr);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
@@ -487,16 +468,15 @@ torch::Tensor hopper_attention_forward(torch::Tensor q, torch::Tensor k, torch::
     auto out = torch::empty(q.sizes(), q.options());
     auto partial = torch::empty({splits > 1 ? q.numel() * splits : 0}, q.options().dtype(at::kFloat));
     auto stats = torch::empty({splits > 1 ? q.size(0) * HQ * splits * 2 : 0}, q.options().dtype(at::kFloat));
-    CUtensorMap km = tensor_map(k), vm = tensor_map(v);
     int query_tiles = (max_query * G + M - 1) / M;
     TORCH_CHECK(int64_t(query_tiles) * splits <= 65535, "query grid exceeds CUDA z limit");
     auto stream = at::cuda::getCurrentCUDAStream();
     if (tile_n == 64) {
-        if (register_pv) launch_attention<64, true>(q,cu,table,lengths,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk,km,vm);
-        else launch_attention<64, false>(q,cu,table,lengths,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk,km,vm);
+        if (register_pv) launch_attention<64, true>(q,cu,table,lengths,k,v,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk);
+        else launch_attention<64, false>(q,cu,table,lengths,k,v,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk);
     } else {
-        if (register_pv) launch_attention<128, true>(q,cu,table,lengths,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk,km,vm);
-        else launch_attention<128, false>(q,cu,table,lengths,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk,km,vm);
+        if (register_pv) launch_attention<128, true>(q,cu,table,lengths,k,v,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk);
+        else launch_attention<128, false>(q,cu,table,lengths,k,v,out,partial,stats,work,splits,query_tiles,scale,causal,overlap_qk);
     }
     if (splits > 1) {
         combine<<<q.size(0)*HQ, D, 0, stream>>>(partial.data_ptr<float>(), stats.data_ptr<float>(),
@@ -531,7 +511,7 @@ pybind11::list kernel_info() {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-    module.attr("abi_version") = 3;
+    module.attr("abi_version") = 4;
     module.attr("source_sha256") = HOPPER_SOURCE_HASH;
     module.def("forward", &::hopper_attention_forward);
     module.def("validate_layouts", &validate_layouts);

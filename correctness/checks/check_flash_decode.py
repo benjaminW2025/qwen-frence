@@ -139,7 +139,8 @@ def run_checks():
                         raise
                 else:
                     raise AssertionError('strided KV/metadata must fail, not silently copy')
-                # TMA requires contiguous KV; strided Q is supported directly.
+                # The candidate's paged-gather contract requires contiguous KV;
+                # strided Q is supported directly.
                 tensors = (tensors[0], *(t.contiguous() for t in tensors[1:]))
                 name = 'ragged_strided_q_contiguous_kv'
             reference = attention_reference(*tensors, **options)

@@ -1,4 +1,4 @@
-"""CPU contracts only: these tests do not validate TMA/WGMMA execution."""
+"""CPU contracts only: these tests do not validate Hopper WGMMA execution."""
 import ast
 from contextlib import redirect_stdout
 import importlib.util

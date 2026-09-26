@@ -416,11 +416,12 @@ def main():
     common = ['--output-dir', str(args.output_dir), '--seed', str(args.seed),
               '--repetitions', str(args.repetitions), '--tune-repetitions', str(args.tune_repetitions)]
     try:
-        # Check external environment before spending time building/tuning local.
-        run([args.vllm_python, str(Path(__file__)), '_check', '--arm', 'reference', *common], limit=90)
+        # The candidate must pass its layout and ragged correctness gates before
+        # starting a second Python/vLLM process or any tuning measurements.
         if args.build:
             run([sys.executable, 'setup.py', 'build_ext', '--inplace'], ROOT / 'custom_kernels/hopper_attention')
         run([sys.executable, str(Path(__file__)), '_check', '--arm', 'local', *common], limit=90)
+        run([args.vllm_python, str(Path(__file__)), '_check', '--arm', 'reference', *common], limit=90)
         for executable, arm in ((sys.executable, 'local'), (args.vllm_python, 'reference')):
             run([executable, str(Path(__file__)), '_worker', '--arm', arm, *common])
     except (subprocess.TimeoutExpired, TimeoutError):

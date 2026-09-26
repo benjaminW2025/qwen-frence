@@ -139,7 +139,7 @@ def run_arm(args, reference=False):
         print(f'{kind} B={batch} C={context}: {row["warm"]["median_ms"]:.6f} ms; correct={row["correct"]}', flush=True)
         write_json(args.output_dir / ('reference.json' if reference else 'local.json'),
                    dict(status='complete' if len(rows) == len(SHAPES) else 'partial',
-                        implementation='external_vllm_FA3' if reference else 'project_owned_SM90a_TMA_WGMMA_candidate',
+                        implementation='external_vllm_FA3' if reference else 'project_owned_SM90a_paged_gather_WGMMA_candidate',
                         vllm_version=version, torch_version=torch.__version__,
                         gpu=dict(name=props.name, memory=props.total_memory, sm=props.major * 10 + props.minor),
                         repetitions=args.repetitions, seed=args.seed, rows=rows))
