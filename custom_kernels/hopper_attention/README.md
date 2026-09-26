@@ -13,16 +13,22 @@ CuTe layouts and WGMMA instruction wrappers, not an attention implementation.
 Algorithm reference: [FlashAttention-3](https://tridao.me/publications/flash3/flash3.pdf).
 It uses double-buffered, cooperative paged-KV gathers into CuTe's exact
 shared-memory layouts, warp specialization and asynchronous WGMMA, overlapping
-next-tile QK with softmax. The initial page-wise TMA implementation was removed:
-its 128-byte swizzle disagreed with the WGMMA K layout. This correctness-first
-gather may be slower than TMA and does not establish performance parity with
-FA3. The initial split schedule is not tuned.
+next-tile QK with softmax. The current loader is a cooperative gather; a restored
+TMA path still needs validation. The earlier claim that the TMA layout itself
+was incompatible was unsupported: the check compared an element index with a
+physical byte-swizzled address. Subsequent raw-array K/V stores bypassed CuTe's
+pointer swizzle. Stores now use CuTe tensor views, and a host regression checks
+their actual addresses against the hardware swizzle. This does not establish
+performance parity with FA3. The initial split schedule is not tuned.
 
 ## Qualification gates
 
 1. Build with CUDA 12.8+ and `CUTLASS_PATH` pointing at CUTLASS v3.9.2.
    From `custom_kernels/hopper_attention`, run
    `python setup.py build_ext --inplace`, then return to the repository root.
+   Import checks validate Q/K/V/P tensor addresses for both tile sizes at all
+   eight 128-byte base alignments in a swizzle period. The standalone CPU test
+   `correctness/checks/check_hopper_layouts.cpp` also reproduces the old store bug.
 2. Run `correctness/checks/check_flash_decode.py`: independent FP32 oracle,
    poisoned KV padding, empty partitions, ragged causal masks, strided Q and
    graph replay after changing all address-backed inputs. Run under Compute

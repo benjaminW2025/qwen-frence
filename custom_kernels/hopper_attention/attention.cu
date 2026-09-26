@@ -1,8 +1,9 @@
 // Project-owned Hopper attention candidate. NOT yet GPU-validated or performance-qualified.
 // CuTe supplies WGMMA instruction/layout primitives; no upstream attention kernel is used.
 // Algorithm attribution: FlashAttention-3 (Shah et al., 2024), FP16 asynchronous pipeline.
-// Paged KV is gathered into the exact CuTe layout consumed by WGMMA. The former
-// hand-encoded TMA copy used a different 128-byte swizzle and was incorrect.
+// Paged KV uses CuTe tensor views for both stores and WGMMA reads. GMMA layout
+// flags move the byte-address swizzle into the tensor pointer; raw-array stores
+// indexed by Layout{}(coord) do NOT implement that address transformation.
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
@@ -14,18 +15,18 @@
 #include <cmath>
 #include <cstdint>
 #include <type_traits>
-#include <vector>
+#include "shared_layouts.cuh"
 
 using namespace cute;
 using H = cutlass::half_t;
 constexpr int M = 64, D = 128, G = 6, HQ = 12, HKV = 2;
-using LQ = decltype(tile_to_shape(GMMA::Layout_K_SW128_Atom<H>{}, Shape<_64,_128>{}, Step<_1,_2>{}));
+using LQ = hopper_layouts::Q<H>;
 template<int N, bool RegisterPV>
 struct Traits {
     static_assert(N == 64 || N == 128);
-    using LK = decltype(tile_to_shape(GMMA::Layout_K_SW128_Atom<H>{}, Shape<Int<N>,_128>{}, Step<_1,_2>{}));
-    using LV = decltype(tile_to_shape(GMMA::Layout_MN_SW128_Atom<H>{}, Shape<_128,Int<N>>{}, Step<_2,_1>{}));
-    using LP = decltype(tile_to_shape(GMMA::Layout_K_SW128_Atom<H>{}, Shape<_64,Int<N>>{}));
+    using LK = hopper_layouts::K<N, H>;
+    using LV = hopper_layouts::V<N, H>;
+    using LP = hopper_layouts::P<N, H>;
     using QKOp = std::conditional_t<N == 64,
         SM90_64x64x16_F32F16F16_SS<GMMA::Major::K, GMMA::Major::K>,
         SM90_64x128x16_F32F16F16_SS<GMMA::Major::K, GMMA::Major::K>>;
@@ -149,10 +150,11 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
         for (int tile = first; tile < last; ++tile) {
             int i = tile - first, stage = i % 2;
             if (i >= 2) wait_phase(&sm.empty[stage], (i / 2 - 1) % 2);
+            auto sk = make_tensor(make_smem_ptr(sm.k[stage]), LK{});
+            auto sv = make_tensor(make_smem_ptr(sm.v[stage]), LV{});
             // Each producer owns distinct logical (token, feature) elements.
-            // Write using the same CuTe layouts that the consumer passes to
-            // WGMMA. This avoids assuming that a page-wise TMA tensor map's
-            // swizzle happens to match a GMMA K/MN swizzle.
+            // Index the TENSORS, not raw arrays with LK/LV offsets: CuTe's
+            // smem_ptr_flag transfers the swizzle into the pointer engine.
             for (int element = threadIdx.x; element < N * D; element += 128) {
                 int token = element / D, feature = element % D;
                 int absolute = tile * N + token;
@@ -163,8 +165,8 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
                     key = k_pool[pool_offset];
                     value = v_pool[pool_offset];
                 }
-                sm.k[stage][LK{}(token, feature)] = key;
-                sm.v[stage][LV{}(feature, token)] = value;
+                sk(token, feature) = key;
+                sv(feature, token) = value;
             }
             async_fence();
             producer_sync();
@@ -318,23 +320,7 @@ bool validate_layouts_for() {
     using LV = typename T::LV;
     using QKMma = typename T::QKMma;
     using PVMma = typename T::PVMma;
-    // The producer addresses shared memory through these same CuTe layouts.
-    // Prove they cover each tile exactly once, including all page boundaries.
-    std::vector<uint8_t> k_seen(cosize_v<LK>, 0), v_seen(cosize_v<LV>, 0);
-    for (int token = 0; token < N; ++token) {
-        for (int feature = 0; feature < D; ++feature) {
-            auto k_offset = int(LK{}(token, feature));
-            auto v_offset = int(LV{}(feature, token));
-            TORCH_CHECK(k_offset >= 0 && k_offset < int(k_seen.size()) && !k_seen[k_offset],
-                        "K shared layout is not one-to-one: N=", N,
-                        " token=", token, " feature=", feature);
-            TORCH_CHECK(v_offset >= 0 && v_offset < int(v_seen.size()) && !v_seen[v_offset],
-                        "V shared layout is not one-to-one: N=", N,
-                        " token=", token, " feature=", feature);
-            k_seen[k_offset] = 1;
-            v_seen[v_offset] = 1;
-        }
-    }
+    hopper_layouts::validate_storage<N>();
     for (int lane = 0; lane < 128; ++lane) {
         auto score_coord = QKMma{}.get_slice(lane).partition_C(make_identity_tensor(Shape<_64,Int<N>>{}));
         auto out_coord = PVMma{}.get_slice(lane).partition_C(make_identity_tensor(Shape<_64,_128>{}));

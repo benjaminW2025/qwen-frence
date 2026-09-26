@@ -9,11 +9,14 @@ cutlass = Path(os.environ.get('CUTLASS_PATH', '/nonexistent'))
 if not (cutlass / 'include/cute/tensor.hpp').is_file():
     raise RuntimeError('Set CUTLASS_PATH to a CUTLASS v3.9.2 checkout (CuTe primitives only)')
 
+sources = [Path(__file__).with_name(name) for name in ('attention.cu', 'shared_layouts.cuh')]
+source_hash = hashlib.sha256(b'\0'.join(path.read_bytes() for path in sources)).hexdigest()
+
 setup(name='inference_hopper_attention', ext_modules=[CUDAExtension(
     'inference_hopper_attention', [str(Path(__file__).with_name('attention.cu'))],
+    depends=[str(sources[1])],
     include_dirs=[str(cutlass / 'include')], libraries=['cuda'],
-    define_macros=[('HOPPER_SOURCE_HASH', '"' + hashlib.sha256(
-        Path(__file__).with_name('attention.cu').read_bytes()).hexdigest() + '"')],
+    define_macros=[('HOPPER_SOURCE_HASH', '"' + source_hash + '"')],
     extra_compile_args={'cxx': ['-O3', '-std=c++17'],
                         'nvcc': ['-O3', '-std=c++17', '--expt-relaxed-constexpr',
                                  '-gencode=arch=compute_90a,code=sm_90a', '-lineinfo']})],

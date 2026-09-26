@@ -25,7 +25,9 @@ def _extension():
         raise RuntimeError(f'Stale Hopper extension at {binary}: expected ABI 4, got '
                            f'{getattr(inference_hopper_attention, "abi_version", None)}. '
                            'Rebuild custom_kernels/hopper_attention with build_ext --inplace --force')
-    expected = hashlib.sha256((Path(__file__).parent / 'hopper_attention/attention.cu').read_bytes()).hexdigest()
+    source_dir = Path(__file__).parent / 'hopper_attention'
+    expected = hashlib.sha256(b'\0'.join((source_dir / name).read_bytes()
+        for name in ('attention.cu', 'shared_layouts.cuh'))).hexdigest()
     if getattr(inference_hopper_attention, 'source_sha256', None) != expected:
         raise RuntimeError(f'Stale Hopper extension at {binary}: CUDA source hash differs. '
                            'Rebuild custom_kernels/hopper_attention with build_ext --inplace --force')

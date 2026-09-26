@@ -20,6 +20,10 @@ def main():
 
     cases = [
         (1, False, 64, False, "uniform"),
+        (16, False, 64, False, "ones"),
+        (16, False, 64, False, "impulse"),
+        (16, True, 64, False, "ones"),
+        (16, True, 64, False, "impulse"),
         (16, False, 64, False, "uniform"),
         (17, False, 64, False, "uniform"),
         (64, False, 64, False, "uniform"),
@@ -39,9 +43,14 @@ def main():
         q, k, v, table, lengths = make_inputs([context], seed=103 + context)
         # Zero Q/K gives exactly uniform scores. A failure here isolates the
         # softmax/PV path from the QK GEMM itself.
-        if mode == "uniform":
+        if mode in ("uniform", "ones", "impulse"):
             q.zero_()
             k.zero_()
+        if mode == "ones":
+            v.fill_(1)
+        elif mode == "impulse":
+            v.zero_()
+            v[table[0, 0].item(), 0].fill_(1)
         expected = attention_reference(q, k, v, table, lengths)
         actual = flash_decode(q, k, v, table, lengths, split_k=1,
                               tile_n=tile_n, register_pv=register_pv,
@@ -51,7 +60,9 @@ def main():
         close = bool(torch.allclose(actual, expected, atol=0.002, rtol=0.002))
         failed |= not close
         print(f"C={context:3} mode={mode:7} N={tile_n:3} register_pv={int(register_pv)} "
-              f"overlap={int(overlap)} close={close} max_abs={maximum:.6f}", flush=True)
+              f"overlap={int(overlap)} close={close} max_abs={maximum:.6f} "
+              f"actual[0,0,0]={actual[0,0,0].item():.6f} "
+              f"expected[0,0,0]={expected[0,0,0].item():.6f}", flush=True)
     if failed:
         raise SystemExit("Hopper diagnostic found numerical errors; do not benchmark")
 

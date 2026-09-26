@@ -33,6 +33,7 @@ def digest(value):
 def source_digest():
     files = [Path(__file__), ROOT / 'custom_kernels/paged_flash_decode.py',
              ROOT / 'custom_kernels/hopper_attention/attention.cu',
+             ROOT / 'custom_kernels/hopper_attention/shared_layouts.cuh',
              ROOT / 'custom_kernels/hopper_attention/setup.py',
              ROOT / 'correctness/checks/check_flash_decode.py',
              ROOT / 'experiments/decode/qualify_flash_decode.py']
