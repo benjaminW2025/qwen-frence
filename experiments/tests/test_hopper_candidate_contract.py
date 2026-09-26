@@ -72,6 +72,25 @@ class HopperCandidateContract(unittest.TestCase):
         self.assertIn('inference_hopper_attention', names)
         self.assertFalse(any('vllm' in name or 'flash_attn' in name for name in names))
 
+    def test_stale_binary_is_rejected_before_layout_execution(self):
+        path = ROOT / 'custom_kernels/paged_flash_decode.py'
+        spec = importlib.util.spec_from_file_location('hopper_stale_binary_contract', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        layout_check = mock.Mock(side_effect=RuntimeError('old TMA layout error'))
+        binary = SimpleNamespace(__file__='/tmp/stale-hopper.so', abi_version=3,
+                                 source_sha256='old', validate_layouts=layout_check)
+        with mock.patch.dict('sys.modules', {'inference_hopper_attention': binary}):
+            with self.assertRaisesRegex(RuntimeError, 'Stale Hopper extension at /tmp/stale-hopper.so'):
+                module._extension()
+        layout_check.assert_not_called()
+
+        binary.abi_version = 4
+        with mock.patch.dict('sys.modules', {'inference_hopper_attention': binary}):
+            with self.assertRaisesRegex(RuntimeError, 'CUDA source hash differs'):
+                module._extension()
+        layout_check.assert_not_called()
+
     def test_qualification_does_not_promote_microbenchmark_to_full_model(self):
         path = ROOT / 'experiments/decode/qualify_flash_decode.py'
         spec = importlib.util.spec_from_file_location('hopper_qualification_contract', path)

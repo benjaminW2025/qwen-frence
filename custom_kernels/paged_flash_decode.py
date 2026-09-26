@@ -20,12 +20,16 @@ def _extension():
     except ImportError as error:
         raise RuntimeError('Build custom_kernels/hopper_attention/setup.py with CUTLASS_PATH set '
                            'to CUTLASS v3.9.2; this candidate has no external attention fallback') from error
-    inference_hopper_attention.validate_layouts()
+    binary = Path(inference_hopper_attention.__file__)
     if getattr(inference_hopper_attention, 'abi_version', None) != 4:
-        raise RuntimeError('Hopper extension ABI changed; rebuild custom_kernels/hopper_attention')
+        raise RuntimeError(f'Stale Hopper extension at {binary}: expected ABI 4, got '
+                           f'{getattr(inference_hopper_attention, "abi_version", None)}. '
+                           'Rebuild custom_kernels/hopper_attention with build_ext --inplace --force')
     expected = hashlib.sha256((Path(__file__).parent / 'hopper_attention/attention.cu').read_bytes()).hexdigest()
     if getattr(inference_hopper_attention, 'source_sha256', None) != expected:
-        raise RuntimeError('Hopper extension does not match CUDA source; rebuild before measuring')
+        raise RuntimeError(f'Stale Hopper extension at {binary}: CUDA source hash differs. '
+                           'Rebuild custom_kernels/hopper_attention with build_ext --inplace --force')
+    inference_hopper_attention.validate_layouts()
     return inference_hopper_attention
 
 
