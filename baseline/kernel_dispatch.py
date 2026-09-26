@@ -93,6 +93,16 @@ def fa3_paged_decode_attention(*args, **kwargs):
     return _load("paged_decode_fa3").fa3_paged_decode_attention(*args, **kwargs)
 
 
+def flash_decode(*args, **kwargs):
+    """Project-owned Hopper TMA/WGMMA candidate; no external implementation."""
+    return _load("paged_flash_decode").flash_decode(*args, **kwargs)
+
+
+def flash_varlen(*args, **kwargs):
+    """Project-owned packed Hopper attention with bottom-right causal masking."""
+    return _load("paged_flash_decode").flash_varlen(*args, **kwargs)
+
+
 def fa3_paged_varlen_attention(*args, **kwargs):
     """Run packed mixed attention through vLLM's paged FA3 varlen API."""
     return _load("paged_varlen_fa3").fa3_paged_varlen_attention(*args, **kwargs)

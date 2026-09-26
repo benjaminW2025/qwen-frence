@@ -17,6 +17,10 @@ import time
 HERE = Path(__file__).resolve().parent
 CHECKS_DIR = HERE / "checks"
 CHECKS = {
+    "independent-flash-decode": (
+        "check_flash_decode.py",
+        "independent Hopper decode/varlen: FP32 oracle, strided/ragged/empty inputs, live graph mutation",
+    ),
     "baseline-vs-hf": (
         "check_baseline_vs_hf.py",
         "custom PyTorch Qwen forward versus Hugging Face",

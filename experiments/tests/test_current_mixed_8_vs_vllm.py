@@ -25,6 +25,7 @@ class MixedEightTests(unittest.TestCase):
             path.write_text(json.dumps({"status": "complete", "shape_id": "shape",
                                         "workload_sha256": "frozen", "model": "model",
                                         "repository_commit": "f318493" + "0" * 33,
+                                        "engine_flags": mixed.ENGINE_FLAGS,
                                         "warmups": 1, "repetitions": 3}))
             args = SimpleNamespace(warmups=1, repetitions=3, resume_commit=None)
             with mock.patch.object(mixed, "repository_commit", return_value="newcommit"):

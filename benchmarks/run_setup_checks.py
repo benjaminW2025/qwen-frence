@@ -19,8 +19,7 @@ from packaging.version import Version
 HERE = Path(__file__).resolve().parent
 RUN_BENCHMARKS = HERE / "run_benchmarks.py"
 DEFAULT_MODEL = "Qwen/Qwen2.5-1.5B"
-VLLM_VERSION = "0.10.2"
-TRANSFORMERS_VERSION = "4.55.2"
+from reference_version import VLLM_VERSION
 
 
 @dataclass(frozen=True)
@@ -57,11 +56,10 @@ def version_contract(suite: str, versions: dict[str, str | None]) -> list[CheckR
         transformers = versions.get("transformers")
         results.append(CheckResult(
             "vllm-version-contract",
-            vllm == VLLM_VERSION and transformers == TRANSFORMERS_VERSION,
+            vllm is not None and Version(vllm).base_version == VLLM_VERSION,
             f"vllm={vllm}, transformers={transformers}",
             (
-                "install benchmarks/requirements-vllm-cu128.txt; the exact pin avoids "
-                "the Qwen2Tokenizer compatibility failure"
+                "install benchmarks/requirements-vllm-current.txt in the reference environment"
             ),
         ))
     return results
@@ -203,22 +201,8 @@ def run_checks(args: argparse.Namespace) -> list[CheckResult]:
             results,
             "tokenizer",
             lambda: _load_tokenizer(transformers, args.model),
-            (
-                "confirm model access and, for vLLM 0.10.2, pin "
-                f"transformers=={TRANSFORMERS_VERSION}"
-            ),
+            "confirm model access and install the dependencies required by current vLLM",
         )
-        if tokenizer is not None and args.suite == "vllm":
-            compatible = hasattr(tokenizer, "all_special_tokens_extended")
-            results.append(CheckResult(
-                "vllm-tokenizer-api",
-                compatible,
-                (
-                    f"{type(tokenizer).__name__}; "
-                    f"all_special_tokens_extended={compatible}"
-                ),
-                f"pin transformers=={TRANSFORMERS_VERSION}",
-            ))
 
     prerequisites_pass = all(result.passed for result in results)
     if not args.skip_smoke and prerequisites_pass:

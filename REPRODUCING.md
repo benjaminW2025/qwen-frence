@@ -1,5 +1,11 @@
 # Reproducing correctness and performance
 
+> The published artifacts are historical vLLM 0.10.2 comparisons using external
+> FA3 in local FA3 paths. They do not qualify the new independent Hopper backend.
+> See [its qualification gates](custom_kernels/hopper_attention/README.md) before
+> running the new candidate. Historical intervention runners are not yet all
+> migrated; do not treat the recipes below as a completed current-version rerun.
+
 The published measurements target one NVIDIA H100 80 GB and
 `Qwen/Qwen2.5-1.5B` in FP16. Run commands from the repository root. Every GPU workflow
 starts with a preflight and writes machine-readable results under one artifact root.
@@ -71,18 +77,16 @@ vLLM uses a separate pinned environment because it owns its PyTorch/CUDA depende
 stack:
 
 ```bash
-uv venv --python 3.12 /root/vllm-bench-env
-uv pip install \
-  --python /root/vllm-bench-env/bin/python \
-  --torch-backend=cu128 \
-  -r benchmarks/requirements-vllm-cu128.txt
+python3.12 -m venv /root/vllm-current-env
+/root/vllm-current-env/bin/python -m pip install --no-cache-dir \
+  -r benchmarks/requirements-vllm-current.txt
 ```
 
 Replay the exact saved local workloads and matched KV-cache capacities:
 
 ```bash
 make reproduce-vllm \
-  VLLM_PYTHON=/root/vllm-bench-env/bin/python \
+  VLLM_PYTHON=/root/vllm-current-env/bin/python \
   LOCAL_SUITE=artifacts/reproduction/h100-local/regime-scorecard/suite-TIMESTAMP \
   ARTIFACT_DIR=artifacts/reproduction/h100-vllm
 ```

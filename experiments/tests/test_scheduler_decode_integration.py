@@ -147,7 +147,7 @@ class GraphAdapterTests(unittest.TestCase):
         adapter = PiecewiseGraphModelAdapter.__new__(PiecewiseGraphModelAdapter)
         calls = []
         adapter.piecewise_prefill = SimpleNamespace(
-            forward=lambda *args: calls.append(args) or torch.ones(2, 7))
+            forward=lambda *args, **kwargs: calls.append(args) or torch.ones(2, 7))
         adapter.step_calls = []
         adapter.observer = lambda args, logits: calls.append((args, logits))
         ids = torch.tensor([1, 2, 3])

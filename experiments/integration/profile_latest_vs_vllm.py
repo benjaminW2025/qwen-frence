@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched one-step decode profiles for the latest local engine and vLLM 0.10.2.
+"""Matched one-step decode profiles for the local engine and current vLLM.
 
 Both arms consume the same frozen checkpoint workload.  Each is advanced to the
 same zero-based occurrence of a pure, full-cohort decode step.  Model processes
@@ -31,7 +31,7 @@ from benchmark_latest_vs_vllm import (MODEL, contract, load_frozen,
 from fixed_regime import FIXED_SHAPES, PREFILL_TOKENS_PER_STEP, get_fixed_shape, shape_summary
 from profile_cpp_control import cuda_kernel_category
 
-PINNED_VLLM = "0.10.2"
+from reference_version import VLLM_VERSION as PINNED_VLLM, require_vllm_version
 
 
 def build_parser():
@@ -50,8 +50,8 @@ def build_parser():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--prefill-budget", type=int,
                         help="local piecewise bucket; defaults to 4096 for B8 and 8192 for B64")
-    parser.add_argument("--local-policy", choices=("splitk", "fa3"), default="fa3",
-                        help="local decode attention implementation (default: current FA3 path)")
+    parser.add_argument("--local-policy", choices=("splitk", "fa3", "flash"), default="flash",
+                        help="flash is project-owned; fa3 is an external reference")
     parser.add_argument("--qkv-mode",
                         choices=("none", "native-k", "native", "packed", "full"),
                         default="native",
@@ -92,8 +92,7 @@ def verify_external_setup(args):
         version = importlib.metadata.version("vllm")
     except importlib.metadata.PackageNotFoundError as error:
         raise ValueError("vLLM is not installed in this interpreter") from error
-    if version != PINNED_VLLM:
-        raise ValueError(f"requires vLLM {PINNED_VLLM}, found {version}")
+    require_vllm_version(version)
     model = resolve_model_source(args)
     from vllm import LLM, SamplingParams
     from vllm.sampling_params import RequestOutputKind

@@ -9,7 +9,7 @@ from run_setup_checks import smoke_command, version_contract
 
 
 class SetupChecksTests(unittest.TestCase):
-    def test_vllm_contract_rejects_unbounded_transformers_upgrade(self):
+    def test_vllm_contract_rejects_historical_reference(self):
         results = version_contract("vllm", {
             "torch": "2.8.0",
             "transformers": "5.0.0",
@@ -20,12 +20,12 @@ class SetupChecksTests(unittest.TestCase):
         self.assertFalse(contract.passed)
         self.assertIn("transformers=5.0.0", contract.detail)
 
-    def test_vllm_contract_accepts_pinned_pair(self):
+    def test_vllm_contract_accepts_current_reference_cuda_variant(self):
         results = version_contract("vllm", {
             "torch": "2.8.0",
-            "transformers": "4.55.2",
+            "transformers": "5.10.4",
             "triton": "3.4.0",
-            "vllm": "0.10.2",
+            "vllm": "0.30.0+cu129",
         })
         self.assertTrue(all(result.passed for result in results))
 

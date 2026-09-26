@@ -66,9 +66,15 @@ class ModelAdapter:
                         num_warps=4, pipelined=action[1] > 1)
                 attention = attention.reshape(tokens, heads * dim)
             else:
-                attention = packed_paged_prefill_attention(
-                    q, pool.k_pool[i], pool.v_pool[i], cu, table, context,
-                    max_query_len=max_query, page_size=16, tile_policy="static")
+                if getattr(self, "decode_attention_policy", None) == "flash":
+                    from kernel_dispatch import flash_varlen
+                    rows = flash_varlen(q[0].transpose(0, 1), pool.k_pool[i], pool.v_pool[i],
+                                        cu, table, context, max_query_len=max_query)
+                    attention = rows.transpose(0, 1).unsqueeze(0)
+                else:
+                    attention = packed_paged_prefill_attention(
+                        q, pool.k_pool[i], pool.v_pool[i], cu, table, context,
+                        max_query_len=max_query, page_size=16, tile_policy="static")
                 attention = attention.transpose(1, 2).reshape(tokens, heads * dim)
             x = residual + layer.o_proj(attention)
             residual = x
@@ -103,8 +109,8 @@ class GraphModelAdapter(ModelAdapter):
                  enable_packed_qkv_rope_cache=False,
                  enable_stable_decode_table_cache=False):
         super().__init__(model, pool, loop)
-        if decode_attention_policy not in ("production", "splitk", "fa3"):
-            raise ValueError("graph decode policy must be 'production', 'splitk', or 'fa3'")
+        if decode_attention_policy not in ("production", "splitk", "fa3", "flash"):
+            raise ValueError("graph decode policy must be 'production', 'splitk', 'fa3', or 'flash'")
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))
@@ -131,6 +137,8 @@ class GraphModelAdapter(ModelAdapter):
             self.action = f"H1-K{config['split_k']}-S{config['num_stages']}"
         elif effective == "fa3":
             self.action = "FA3-auto"
+        elif effective == "flash":
+            self.action = "flash-local"
         else:
             self.action = "production"
         self.graph_decoder = BucketedGraphDecoder(
@@ -220,7 +228,10 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
             return super().__call__(ids, positions, slots, cu, context, table,
                                     max_query, decode)
         logits = self.piecewise_prefill.forward(
-            ids, positions, slots, cu, context, table, max_query)
+            ids, positions, slots, cu, context, table, max_query,
+            mixed_attention_policy=("flash_varlen"
+                                    if getattr(self, "decode_attention_policy", None) == "flash"
+                                    else "packed_paged"))
         if logits is None:
             return ModelAdapter.__call__(self, ids, positions, slots, cu, context,
                                          table, max_query, False)
@@ -273,7 +284,11 @@ class PackedMixedPiecewiseGraphModelAdapter(PiecewiseGraphModelAdapter):
     def __init__(self, *args, mixed_attention_policy="packed_paged",
                  full_mixed_graph=False, clone_decode_metadata=True, **kwargs):
         super().__init__(*args, **kwargs)
-        if mixed_attention_policy not in ("packed_paged", "fa3_hybrid", "fa3_varlen"):
+        if self.decode_attention_policy == "flash":
+            if full_mixed_graph:
+                raise ValueError("whole-forward mixed graph is not yet qualified for independent Hopper attention")
+            mixed_attention_policy = "flash_varlen"
+        if mixed_attention_policy not in ("packed_paged", "fa3_hybrid", "fa3_varlen", "flash_varlen"):
             raise ValueError("unsupported mixed attention policy")
         self.mixed_attention_policy = mixed_attention_policy
         if full_mixed_graph and mixed_attention_policy != "fa3_varlen":
@@ -395,7 +410,8 @@ class CppPackedMixedModelAdapter(PiecewiseGraphModelAdapter):
             self.decisions.get("packed_mixed_cpp_varlen", 0) + 1)
         logits = self.piecewise_prefill.forward(
             ids, positions, slots, cu, context, table, max_query,
-            mixed_attention_policy="fa3_varlen")
+            mixed_attention_policy=("flash_varlen" if self.decode_attention_policy == "flash"
+                                    else "fa3_varlen"))
         if logits is None:
             observer = self.observer
             self.observer = None
