@@ -17,6 +17,7 @@ for directory in (ROOT / "experiments/integration", ROOT / "baseline",
 
 from model_adapter import (PackedMixedPiecewiseGraphModelAdapter,
                            CppPackedMixedModelAdapter,
+                           PiecewiseGraphModelAdapter,
                            combine_mixed_metadata)
 
 
@@ -37,8 +38,21 @@ def inputs():
 
 
 class PackedMixedTests(unittest.TestCase):
+    def test_pure_prefill_uses_independent_varlen_when_flash_selected(self):
+        adapter = object.__new__(PiecewiseGraphModelAdapter)
+        adapter.decode_attention_policy = "flash"
+        adapter.step_calls = []
+        adapter.observer = None
+        seen = []
+        adapter.piecewise_prefill = SimpleNamespace(
+            forward=lambda *args, **kwargs: (seen.append(kwargs) or torch.zeros(2, 5)))
+        _, prefill = inputs()
+        self.assertEqual(adapter(*prefill).shape, (2, 5))
+        self.assertEqual(seen, [{"mixed_attention_policy": "flash_varlen"}])
+
     def test_cpp_single_callback_dispatches_packed_varlen_once(self):
         adapter = object.__new__(CppPackedMixedModelAdapter)
+        adapter.decode_attention_policy = "flash"
         adapter.loop = SimpleNamespace(
             current_step_is_mixed=lambda: True,
             uses_packed_mixed_step=lambda: True,
@@ -58,7 +72,7 @@ class PackedMixedTests(unittest.TestCase):
         logits = adapter(ids, positions, slots, cu, context, table,
                          max_query, False)
         self.assertEqual(logits.shape, (4, 5))
-        self.assertEqual(seen, [{"mixed_attention_policy": "fa3_varlen"}])
+        self.assertEqual(seen, [{"mixed_attention_policy": "flash_varlen"}])
         self.assertEqual(adapter.step_calls, [(True, 2, 2, 1),
                                              (False, 3, 2, 2)])
         self.assertEqual(observer_rows, [(True, 2, []), (False, 2, [0, 2, 3])])

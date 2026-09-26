@@ -54,6 +54,12 @@ class CurrentEightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / "reference.json"
             destination.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ValueError, "requires vLLM"):
+                benchmark.vllm_result(
+                    destination.parent, workload, digest, case, blocks, model, 1, 3)
+            # Synthetic schema fixture only: never modify the saved measurements.
+            payload["system"]["packages"]["vllm"] = benchmark.VLLM_VERSION
+            destination.write_text(json.dumps(payload))
             self.assertIsNotNone(benchmark.vllm_result(
                 destination.parent, workload, digest, case, blocks, model, 1, 3))
             payload["configuration"]["num_blocks"] += 1
@@ -115,6 +121,7 @@ class CurrentEightTests(unittest.TestCase):
         shape = benchmark.SHAPES[0]
         source = next((SUITE / shape / "reference").glob("*.json"))
         payload = json.loads(source.read_text())
+        payload["system"]["packages"]["vllm"] = benchmark.VLLM_VERSION
         model = payload["configuration"]["model"]
         commit = payload["system"]["repository"]["commit"]
         args_for_input = SimpleNamespace(suite_dir=SUITE, seed=20260914)
@@ -127,7 +134,7 @@ class CurrentEightTests(unittest.TestCase):
                                    reuse_vllm_from=None, resume_commit=None)
             local_path, reference_dir, comparison = benchmark.stage_paths(args, shape)
             reference_dir.mkdir(parents=True)
-            (reference_dir / "reference.json").write_bytes(source.read_bytes())
+            (reference_dir / "reference.json").write_text(json.dumps(payload))
             benchmark.atomic_json(local_path, {
                 "status": "complete", "shape_id": shape, "model": model,
                 "workload_sha256": digest, "engine_flags": benchmark.ENGINE_FLAGS,

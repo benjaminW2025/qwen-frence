@@ -62,6 +62,7 @@ class PhaseTests(unittest.TestCase):
         payload = {"status": "complete", "timing_scheme": phases.TIMING_SCHEME,
                    "shape_id": shape, "workload_sha256": "frozen", "model": "model",
                    "warmups": 1, "repetitions": 3, "repository_commit": "oldcommit",
+                   "engine_flags": phases.ENGINE_FLAGS,
                    "phases": {kind: {} for kind in phases.KINDS},
                    "runs": [{}, {}, {}]}
         with tempfile.TemporaryDirectory() as directory:

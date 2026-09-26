@@ -1,5 +1,13 @@
 # Qwen-frence
 
+> **Results scope:** The recorded scorecard below is historical: vLLM **0.10.2**,
+> with local FA3 paths calling vLLM's bundled external FlashAttention kernels.
+> It is not evidence of independently implemented FA3 or a win over current vLLM.
+> Replacement work targets vLLM **0.30.0** in a separate environment. The new
+> project-owned Hopper TMA/WGMMA decode/varlen implementation is an **unvalidated
+> candidate**, not yet a measured replacement. Historical artifacts are retained
+> unchanged; new results must use fresh output directories.
+
 Given Qwen2.5-1.5B and some bounded input regime, how fast can we push inference on one H100? This project wraps a specialized inference engine around Qwen2.5-1.5B and benchmarks it against the general-purpose engine vLLM. We build a grid of inputs spanning short/long contexts and small/large batches, then measure pure prefill, pure decode, and mixed iterations on this fixed model and bounded input scenario. In the end, across three runs per cell our engine's slowest run exceeded vLLM's fastest run by at least 1.139× under both burst and staggered arrivals. The output token counts are identical within each cell.
 
 ## Workload matrix

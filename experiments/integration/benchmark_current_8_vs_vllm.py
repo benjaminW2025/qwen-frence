@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eight frozen burst workloads: current C++/FA3/graph engine versus vLLM.
+"""Eight frozen workloads: independent C++/tensor-core/graph engine versus current vLLM.
 
 Each backend runs in its own process. Completed cell stages can be resumed; an
 incomplete or mismatched result is never silently treated as a measurement.
@@ -26,6 +26,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
     sys.path.insert(0, str(directory))
 
 from benchmark_latest_vs_vllm import load_frozen, resolve_model_source
+from reference_version import VLLM_VERSION, require_vllm_version
 from fixed_regime import (FACTORIAL_SHAPES, PREFILL_TOKENS_PER_STEP,
                           get_fixed_case, shape_summary, verify_fixed_result)
 
@@ -33,7 +34,10 @@ SHAPES = tuple(row["id"] for row in FACTORIAL_SHAPES)
 ENGINE_FLAGS = {
     "cpp_scheduler": True,
     "packed_mixed_step": True,
-    "decode_attention_policy": "fa3",
+    "decode_attention_policy": "flash",
+    "mixed_attention_policy": "flash_varlen",
+    "prefill_attention_policy": "flash_varlen",
+    "attention_implementation": "project_owned_sm90a_tma_wgmma_candidate_unqualified",
     "decode_graph_bucket": "exact_batch",
     "prefill_graph_buckets": "CPU-scheduled pure/mixed exact upper bounds",
     "residual_rmsnorm": True,
@@ -57,6 +61,7 @@ def parser():
     result.add_argument("--seed", type=int, default=20260914)
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
+    result.add_argument("--vllm-python", help="interpreter in the separate current-vLLM environment")
     result.add_argument("--reuse-vllm-from", type=Path,
                         help="explicitly reuse validated burst vLLM results from a prior "
                              "output directory on the same GPU pod")
@@ -142,7 +147,7 @@ def adapter_options(case, buckets):
     return dict(max_running=case["max_running"],
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
-                decode_attention_policy="fa3",
+                decode_attention_policy="flash",
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
@@ -213,8 +218,7 @@ def vllm_result(directory, workload, digest, case, blocks, model,
     result = payload.get("backends", {}).get("vllm")
     if result is None or len(result.get("runs", [])) != repetitions:
         raise ValueError(f"{files[0]}: missing measured vLLM repetitions")
-    if payload.get("system", {}).get("packages", {}).get("vllm") != "0.10.2":
-        raise ValueError(f"{files[0]}: expected pinned vLLM 0.10.2")
+    require_vllm_version(payload.get("system", {}).get("packages", {}).get("vllm"))
     if (commit is not None and not commit_matches(
             payload.get("system", {}).get("repository", {}).get("commit"),
             commit, resume_commit)):
@@ -325,7 +329,7 @@ def run_local(args, shape_id, model_source):
               f"{result['output_tokens_per_s']:.1f} tok/s", flush=True)
     if any(row["outputs"] != runs[0]["outputs"] for row in runs):
         raise AssertionError(f"{shape_id}: local generated tokens differ between repetitions")
-    if (not adapter.decisions.get("FA3-auto")
+    if (not adapter.decisions.get("flash-local")
             or not adapter.piecewise_prefill.graph_replays):
         raise AssertionError(f"{shape_id}: requested CUDA graph path did not replay")
     if sorted(adapter.piecewise_prefill.shapes) != buckets:
@@ -339,12 +343,13 @@ def run_local(args, shape_id, model_source):
                              "runs": runs,
                              "median_output_tokens_per_s": statistics.median(
                                  row["output_tokens_per_s"] for row in runs),
-                             "decode_graph_calls_last_run": adapter.decisions["FA3-auto"],
+                             "decode_graph_calls_last_run": adapter.decisions["flash-local"],
                              "piecewise_graph_replays": adapter.piecewise_prefill.graph_replays,
                              "piecewise_graph_buckets": sorted(adapter.piecewise_prefill.shapes)})
 
 
 def run_vllm(args, shape_id, model_source):
+    require_vllm_version(importlib.metadata.version("vllm"))
     case, _, workload, digest, blocks = input_contract(args, shape_id)
     _, directory, _ = stage_paths(args, shape_id)
     existing, source = selected_vllm_result(
@@ -421,7 +426,8 @@ def analyze_cell(args, shape_id, model_source):
 
 
 def forwarded(args, action, shape_id):
-    command = [sys.executable, str(Path(__file__)), action,
+    interpreter = (getattr(args, "vllm_python", None) or sys.executable) if action == "run-vllm" else sys.executable
+    command = [interpreter, str(Path(__file__)), action,
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
@@ -440,17 +446,22 @@ def mixed_forwarded(args, shape_id):
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions)]
     command += resume_options(args.resume_commit)
+    if getattr(args, "vllm_python", None):
+        command += ["--vllm-python", args.vllm_python]
     return command
 
 
 def phase_forwarded(args, shape_id):
-    return [sys.executable, str(HERE / "benchmark_current_phases_vs_vllm.py"),
+    command = [sys.executable, str(HERE / "benchmark_current_phases_vs_vllm.py"),
             "run-cell", "--suite-dir", str(args.suite_dir),
             "--output-dir", str(args.output_dir), "--shape-id", shape_id,
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions),
             *resume_options(args.resume_commit)]
+    if getattr(args, "vllm_python", None):
+        command += ["--vllm-python", args.vllm_python]
+    return command
 
 
 def main():
@@ -509,23 +520,18 @@ def main():
         from kernel_dispatch import _load
         if not hasattr(cpp.SchedulerConfig(), "packed_mixed_step"):
             raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
-        decode_fa3 = _load("paged_decode_fa3")
-        decode_fa3._load_fa3()
-        _load("paged_varlen_fa3").smoke_varlen_fa3(args.device)
-        version = importlib.metadata.version("vllm")
-        if version != "0.10.2":
-            raise ValueError(f"expected vLLM 0.10.2, got {version}")
+        local_attention = _load("paged_flash_decode")
         query = torch.zeros((1, 12, 128), device=args.device, dtype=torch.float16)
         kv = torch.zeros((1, 16, 2, 128), device=args.device, dtype=torch.float16)
         table = torch.zeros((1, 1), device=args.device, dtype=torch.int32)
         lengths = torch.ones(1, device=args.device, dtype=torch.int32)
-        smoke = decode_fa3.fa3_paged_decode_attention(
+        smoke = local_attention.flash_decode(
             query, kv, kv, table, lengths)
         torch.cuda.synchronize()
         if smoke.shape != query.shape or not torch.isfinite(smoke).all():
-            raise AssertionError("FA3 decode smoke did not return finite query-shaped output")
+            raise AssertionError("local attention did not return finite query-shaped output")
         print(json.dumps({"status": "pass", "model": model_source,
-                          "startup": setup, "vllm_version": version,
+                          "startup": setup, "reference_version": VLLM_VERSION,
                           "model_loaded": False}, indent=2))
         return
     if args.action == "run-local":

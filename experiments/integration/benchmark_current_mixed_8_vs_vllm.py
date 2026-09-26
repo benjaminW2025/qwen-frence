@@ -30,9 +30,10 @@ from benchmark_current_8_vs_vllm import (ENGINE_FLAGS, SHAPES, atomic_json,
                                          repository_commit, resume_options,
                                          validate_capture_options)
 from fixed_regime import PREFILL_TOKENS_PER_STEP
+from reference_version import require_vllm_version
 
 
-def mixed_plan(args, shape_id):
+def mixed_plan(args, shape_id, *, validate_schedule=True):
     case, frozen, _, _, blocks = input_contract(args, shape_id)
     first = case["max_running"] // 2
     prompt = case["lengths"][0]
@@ -43,6 +44,12 @@ def mixed_plan(args, shape_id):
                      arrival=0 if row["id"] < first else arrival) for row in frozen]
     mixed_case = {**case, "id": f"mixed-{shape_id}",
                   "arrivals": [row["arrival"] for row in requests]}
+    fingerprint = hashlib.sha256(json.dumps(requests, sort_keys=True,
+                               separators=(",", ":")).encode()).hexdigest()
+    # The reference interpreter must never load our torch-linked C++ extension.
+    # Workload construction is deterministic Python; bucket planning is local-only.
+    if not validate_schedule:
+        return mixed_case, requests, first, arrival, None, fingerprint, blocks
     import torch
     import inference_engine_cpp as cpp
     from benchmark_integrated_graph import dry_schedule
@@ -73,7 +80,7 @@ def adapter_options(case, buckets):
     return dict(max_running=case["max_running"],
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
-                decode_attention_policy="fa3",
+                decode_attention_policy="flash",
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
@@ -96,6 +103,10 @@ def validate_saved(path, *, shape_id, fingerprint, model, args):
                           args.resume_commit):
         raise ValueError(f"{path}: source commit differs; use --resume-commit only "
                          "if this prior result is known valid")
+    if path.name == "vllm.json":
+        require_vllm_version(row.get("vllm_version"))
+    elif row.get("engine_flags") != ENGINE_FLAGS:
+        raise ValueError(f"{path}: local implementation differs; use a new output directory")
     return row
 
 
@@ -128,8 +139,6 @@ def run_local(args, shape_id, model_source):
     from naive_forward import SWIGLU_FUSION_ROW_THRESHOLD
 
     setup = check_startup(args.device)
-    from kernel_dispatch import _load
-    _load("paged_varlen_fa3").smoke_varlen_fa3(args.device)
     engine, _, _ = load_model_only(model_source, args.device, "float16",
                                    hub_transfer=setup["hub_transfer"])
     config = make_config(cpp, case)
@@ -154,8 +163,8 @@ def run_local(args, shape_id, model_source):
             raise AssertionError(f"{shape_id}: piecewise graph missed mixed token bucket")
         if not adapter.decisions.get("packed_mixed_cpp_varlen"):
             raise AssertionError(f"{shape_id}: C++ packed mixed dispatch was not used")
-        if not adapter.decisions.get("FA3-auto"):
-            raise AssertionError(f"{shape_id}: FA3 decode graph was not used")
+        if not adapter.decisions.get("flash-local"):
+            raise AssertionError(f"{shape_id}: independent decode graph was not used")
         actual_signature = [(step["kind"], step["calls"]) for step in row["steps"]]
         if signature is None:
             signature, expected_outputs = actual_signature, row["outputs"]
@@ -264,7 +273,9 @@ def vllm_once(llm, requests, first, arrival, run_id, *, synchronize_steps=False)
 
 
 def run_vllm(args, shape_id, model_source):
-    case, requests, first, arrival, _, fingerprint, blocks = mixed_plan(args, shape_id)
+    require_vllm_version(importlib.metadata.version("vllm"))
+    case, requests, first, arrival, _, fingerprint, blocks = mixed_plan(
+        args, shape_id, validate_schedule=False)
     _, result_path, _ = paths(args, shape_id)
     if validate_saved(result_path, shape_id=shape_id, fingerprint=fingerprint,
                       model=model_source, args=args):
@@ -277,8 +288,7 @@ def run_vllm(args, shape_id, model_source):
     from vllm import LLM
 
     version = importlib.metadata.version("vllm")
-    if version != "0.10.2":
-        raise ValueError(f"requires vLLM 0.10.2; got {version}")
+    require_vllm_version(version)
     kv_bytes = _matched_kv_cache_bytes(model_source, dtype="float16",
                                        block_size=16, num_blocks=blocks)
     llm = LLM(model=model_source, dtype="float16", seed=args.seed,
@@ -321,10 +331,11 @@ def analyze(args, shape_id, model_source):
                           model=model_source, args=args)
     if local is None or vllm is None:
         raise ValueError(f"{shape_id}: missing local or vLLM mixed result")
+    require_vllm_version(vllm["vllm_version"])
     if (local["num_blocks"] != blocks or vllm["num_blocks"] != blocks
             or local["prefill_buckets"] != buckets or local["arrival_step"] != arrival
             or vllm["arrival_step"] != arrival or local["first_wave"] != first
-            or vllm["first_wave"] != first or vllm["vllm_version"] != "0.10.2"):
+            or vllm["first_wave"] != first or local.get("engine_flags") != ENGINE_FLAGS):
         raise ValueError(f"{shape_id}: mixed comparator configurations differ")
     local_outputs, vllm_outputs = (local["runs"][0]["outputs"],
                                    vllm["runs"][0]["outputs"])
@@ -351,7 +362,8 @@ def analyze(args, shape_id, model_source):
 
 
 def forward(args, action, shape_id):
-    command = [sys.executable, str(Path(__file__)), action,
+    interpreter = (getattr(args, "vllm_python", None) or sys.executable) if action == "run-vllm" else sys.executable
+    command = [interpreter, str(Path(__file__)), action,
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
@@ -372,6 +384,7 @@ def main():
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--vllm-python")
     parser.add_argument("--resume-commit", action="append")
     args = parser.parse_args()
     if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
@@ -380,9 +393,10 @@ def main():
         raise ValueError("--resume-commit must be at least seven hexadecimal characters")
     if args.device != "cuda:0" or args.warmups < 1 or args.repetitions < 1:
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")
-    case, _, first, arrival, buckets, _, _ = mixed_plan(args, args.shape_id)
-    options = adapter_options(case, buckets)
-    validate_capture_options(options)
+    if args.action != "run-vllm":
+        case, _, first, arrival, buckets, _, _ = mixed_plan(args, args.shape_id)
+        options = adapter_options(case, buckets)
+        validate_capture_options(options)
     if args.action == "plan":
         print(json.dumps({"shape_id": args.shape_id, "batch": case["max_running"],
                           "prompt_length": case["lengths"][0],

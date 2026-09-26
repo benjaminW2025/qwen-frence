@@ -34,6 +34,7 @@ from benchmark_current_mixed_8_vs_vllm import (adapter_options, check_local_resu
                                                mixed_plan, vllm_once)
 from benchmark_latest_vs_vllm import resolve_model_source
 from fixed_regime import PREFILL_TOKENS_PER_STEP, verify_fixed_result
+from reference_version import require_vllm_version
 
 KINDS = ("prefill", "decode", "mixed")
 TIMING_SCHEME = "synchronized-burst-and-mixed-step-wall-v1"
@@ -51,6 +52,7 @@ def parser():
     result.add_argument("--seed", type=int, default=20260914)
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
+    result.add_argument("--vllm-python")
     result.add_argument("--resume-commit", action="append")
     return result
 
@@ -105,6 +107,10 @@ def validate_saved(path, args, shape_id, fingerprint, model):
         raise ValueError(f"stale or mismatched phase result: {path}")
     if set(row.get("phases", {})) != set(KINDS) or len(row.get("runs", [])) != args.repetitions:
         raise ValueError(f"incomplete phase result: {path}")
+    if path.name == "vllm.json":
+        require_vllm_version(row.get("vllm_version"))
+    elif row.get("engine_flags") != ENGINE_FLAGS:
+        raise ValueError(f"stale local implementation in phase result: {path}")
     return row
 
 
@@ -126,7 +132,6 @@ def run_local(args, shape_id, model_source):
     import torch
 
     setup = check_startup(args.device)
-    _load("paged_varlen_fa3").smoke_varlen_fa3(args.device)
     engine, _, _ = load_model_only(model_source, args.device, "float16",
                                    hub_transfer=setup["hub_transfer"])
     pool = allocate_pool(engine.cfg, blocks, engine.device)
@@ -153,7 +158,7 @@ def run_local(args, shape_id, model_source):
             burst_digest = digest
         elif digest != burst_digest:
             raise AssertionError(f"{shape_id}: phase burst outputs changed across runs")
-        if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get("FA3-auto"):
+        if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get("flash-local"):
             raise AssertionError(f"{shape_id}: phase burst missed graph dispatch")
         if index >= args.warmups:
             burst_rows.append(phase_summary(row["steps"], ("prefill", "decode")))
@@ -174,7 +179,7 @@ def run_local(args, shape_id, model_source):
                       adapter, requests, synchronize_steps=True)
         check_local_result(row, requests, arrival)
         if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get(
-                "packed_mixed_cpp_varlen") or not adapter.decisions.get("FA3-auto"):
+                "packed_mixed_cpp_varlen") or not adapter.decisions.get("flash-local"):
             raise AssertionError(f"{shape_id}: phase mixed missed graph dispatch")
         digest = output_digest(row["outputs"])
         if mixed_digest is None:
@@ -202,7 +207,9 @@ def run_local(args, shape_id, model_source):
 
 
 def run_vllm(args, shape_id, model_source):
-    case, requests, first, arrival, _, fingerprint, blocks = mixed_plan(args, shape_id)
+    require_vllm_version(importlib.metadata.version("vllm"))
+    case, requests, first, arrival, _, fingerprint, blocks = mixed_plan(
+        args, shape_id, validate_schedule=False)
     _, burst_requests, _, _, burst_blocks = input_contract(args, shape_id)
     if blocks != burst_blocks:
         raise AssertionError(f"{shape_id}: burst/mixed KV capacities differ")
@@ -216,8 +223,7 @@ def run_vllm(args, shape_id, model_source):
     from vllm import LLM
 
     version = importlib.metadata.version("vllm")
-    if version != "0.10.2":
-        raise ValueError(f"requires vLLM 0.10.2; got {version}")
+    require_vllm_version(version)
     kv_bytes = _matched_kv_cache_bytes(model_source, dtype="float16",
                                        block_size=16, num_blocks=blocks)
     llm = LLM(model=model_source, dtype="float16", seed=args.seed,
@@ -265,6 +271,7 @@ def analyze(args, shape_id, model_source):
     vllm = validate_saved(vllm_path, args, shape_id, fingerprint, model_source)
     if local is None or vllm is None:
         raise ValueError(f"{shape_id}: missing local or vLLM phase result")
+    require_vllm_version(vllm["vllm_version"])
     burst_case, burst_requests, _, _, _ = input_contract(args, shape_id)
     expected_burst_buckets = dispatch_plan(
         burst_case, burst_requests, args.seed)["prefill_buckets"]
@@ -273,7 +280,7 @@ def analyze(args, shape_id, model_source):
             or local["prefill_buckets"] != buckets
             or local["burst_prefill_buckets"] != expected_burst_buckets
             or local["engine_flags"] != ENGINE_FLAGS
-            or vllm["vllm_version"] != "0.10.2" or not vllm["vllm_step_mode"]):
+            or not vllm["vllm_step_mode"]):
         raise ValueError(f"{shape_id}: phase comparator configurations differ")
     rows = {}
     for kind in KINDS:
@@ -305,7 +312,8 @@ def analyze(args, shape_id, model_source):
 
 
 def forwarded(args, action, shape_id):
-    return [sys.executable, str(Path(__file__)), action,
+    interpreter = (getattr(args, "vllm_python", None) or sys.executable) if action == "run-vllm" else sys.executable
+    return [interpreter, str(Path(__file__)), action,
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),

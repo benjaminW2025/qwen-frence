@@ -77,13 +77,11 @@ python3 benchmarks/run_setup_checks.py --suite local
 Create the external-reference environment from the checked-in pins and confirm it:
 
 ```bash
-uv venv --python 3.12 /root/vllm-bench-env
-uv pip install \
-  --python /root/vllm-bench-env/bin/python \
-  --torch-backend=cu128 \
-  -r benchmarks/requirements-vllm-cu128.txt
+python3.12 -m venv /root/vllm-current-env
+/root/vllm-current-env/bin/python -m pip install --no-cache-dir \
+  -r benchmarks/requirements-vllm-current.txt
 
-/root/vllm-bench-env/bin/python benchmarks/run_setup_checks.py --suite vllm
+/root/vllm-current-env/bin/python benchmarks/run_setup_checks.py --suite vllm
 ```
 
 Use `--skip-smoke` for a fast package/model metadata inspection, or `--json-out PATH`

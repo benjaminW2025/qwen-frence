@@ -194,7 +194,13 @@ class PiecewisePrefill:
         q, residual = pieces[0].run_initial(ids, tokens)
         self.graph_replays += 1
         for i in range(len(model.layers)):
-            if mixed_attention_policy == "fa3_varlen":
+            if mixed_attention_policy == "flash_varlen":
+                from kernel_dispatch import flash_varlen
+                query = q[0, :, :tokens, :].transpose(0, 1)
+                rows = flash_varlen(query, pool.k_pool[i], pool.v_pool[i], cu, table, context,
+                                    max_query_len=max_query)
+                attention = rows.transpose(0, 1).unsqueeze(0)
+            elif mixed_attention_policy == "fa3_varlen":
                 from kernel_dispatch import fa3_paged_varlen_attention
                 query = q[0, :, :tokens, :].transpose(0, 1).contiguous()
                 rows = fa3_paged_varlen_attention(

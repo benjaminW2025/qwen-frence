@@ -48,7 +48,10 @@ PREFILL_FUSION_ARMS = (
 )
 PHASES = ("wall_ms", "decode_wall_ms", "prefill_wall_ms", "mixed_wall_ms",
           "prefill_plus_mixed_ms")
-COMPARISONS = (("decode_graph", "eager"),
+COMPARISONS = (("piecewise_flash", "piecewise"),
+               ("piecewise_flash", "piecewise_splitk"),
+               ("piecewise_flash", "eager"),
+               ("decode_graph", "eager"),
                ("piecewise", "decode_graph"),
                ("piecewise_splitk", "piecewise"),
                ("piecewise_fa3", "piecewise_splitk"),
@@ -75,15 +78,62 @@ class NumericalMismatch(AssertionError):
     """Finite candidate logits exceeded the established numerical tolerance."""
 
 
+class KVWriteCheck:
+    """Direct untimed comparison of every newly written K/V row in every layer.
+
+    Compare only written slots: the rest of either cache may deliberately contain
+    NaNs. This checks writes, not all past live rows for accidental corruption.
+    """
+
+    def __init__(self, torch, candidate, reference, *, atol=.05, rtol=.01):
+        self.torch, self.candidate, self.reference = torch, candidate, reference
+        self.atol, self.rtol = atol, rtol
+        self.elements = self.outside = 0
+        self.max_error = 0.
+        self.first_failure = None
+
+    def __call__(self, slots, callback):
+        slots = slots.to(dtype=self.torch.long)
+        for kind in ('k_pool', 'v_pool'):
+            actual_layers = getattr(self.candidate, kind)
+            expected_layers = getattr(self.reference, kind)
+            if len(actual_layers) != len(expected_layers):
+                raise AssertionError('KV layer counts differ')
+            for layer, (actual, expected) in enumerate(zip(actual_layers, expected_layers)):
+                if actual.shape != expected.shape or actual.dtype != expected.dtype:
+                    raise AssertionError('KV pool shape/dtype differs')
+                actual = actual.flatten(0, 1).index_select(0, slots)
+                expected = expected.flatten(0, 1).index_select(0, slots)
+                if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
+                    raise AssertionError(f'nonfinite written {kind} at layer {layer}, callback {callback}')
+                error = (actual.float() - expected.float()).abs()
+                outside = int((error > self.atol + self.rtol * expected.float().abs()).sum())
+                maximum = float(error.max()) if error.numel() else 0.
+                self.elements += error.numel()
+                self.outside += outside
+                self.max_error = max(self.max_error, maximum)
+                if outside and self.first_failure is None:
+                    self.first_failure = dict(callback=callback, tensor=kind, layer=layer,
+                                              outside=outside, max_absolute_error=maximum)
+
+    def result(self):
+        return dict(scope='newly_written_KV_all_layers', atol=self.atol, rtol=self.rtol,
+                    elements_compared=self.elements, elements_outside_tolerance=self.outside,
+                    max_absolute_error=self.max_error, first_failure=self.first_failure,
+                    passed=self.elements > 0 and self.outside == 0)
+
+
 class SameHistoryCheck:
     """Untimed full-logit validation using an independent eager KV pool.
 
     Returning eager logits makes the scheduler sample the reference token, so
     rounding at an argmax boundary cannot change subsequent validation inputs.
-    The candidate still computes and validates every layer and KV write.
+    The candidate executes every layer and KV write, but this observer compares
+    final logits, plus newly written KV when an explicit KV checker is supplied.
     """
 
-    def __init__(self, torch, eager, reference, arm, *, atol=.05, rtol=.01, report_only=False):
+    def __init__(self, torch, eager, reference, arm, *, atol=.05, rtol=.01, report_only=False,
+                 kv_checker=None):
         self.torch, self.eager, self.arm = torch, eager, arm
         self.trace = TraceCheck(torch, reference)
         self.max_logit_error = 0.0
@@ -93,10 +143,13 @@ class SameHistoryCheck:
         self.report_only = report_only
         self.logits_compared = self.logits_outside_tolerance = self.callbacks_outside_tolerance = 0
         self.first_tolerance_failure = None
+        self.kv_checker = kv_checker
 
     def __call__(self, args, actual):
         expected = self.eager(*args)
         self.trace(args, expected)
+        if self.kv_checker is not None:
+            self.kv_checker(args[2], self.trace.cursor - 1)
         if actual.shape != expected.shape or actual.dtype != expected.dtype:
             raise AssertionError(f"{self.arm}: logit shape/dtype differs from reference")
         if not self.torch.isfinite(actual).all() or not self.torch.isfinite(expected).all():
@@ -145,6 +198,8 @@ def build_parser():
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmups", type=int, default=1)
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--flash-compare", action="store_true",
+                      help="validate project-owned tensor-core attention against eager and compare graph controls")
     mode.add_argument("--splitk-only", action="store_true",
                       help="validate against eager, then time only the split-K arm")
     mode.add_argument("--fa3-only", action="store_true",
@@ -364,6 +419,12 @@ def run_case(torch, cpp, engine, case, args, requests):
     common = dict(max_running=config.max_batch_size,
                   max_context_length=config.max_context_length)
     adapters = {"eager": ModelAdapter(engine.model, pool, None)}
+    if getattr(args, "flash_compare", False):
+        adapters["piecewise_flash"] = PiecewiseGraphModelAdapter(
+            engine.model, pool, None, **common, decode_attention_policy="flash",
+            max_capture_tokens=args.max_capture_tokens,
+            max_prefill_shapes=args.max_prefill_shapes,
+            prefill_buckets=args.prefill_buckets)
     if (not args.splitk_only and not args.fa3_only and not args.fa3_compare
             and not args.fa3_fusions and not args.prefill_fusions):
         adapters["decode_graph"] = GraphModelAdapter(engine.model, pool, None, **common)
@@ -463,9 +524,11 @@ def run_case(torch, cpp, engine, case, args, requests):
         print(f"{case['id']}: correctness {arm}", flush=True)
         for tensor in reference_pool.k_pool + reference_pool.v_pool:
             tensor.fill_(float("nan"))
+        kv_checker = (KVWriteCheck(torch, pool, reference_pool)
+                      if getattr(args, 'flash_compare', False) and reference is not None else None)
         checker = (TraceCheck(torch) if reference is None else
                    SameHistoryCheck(torch, reference_adapter, reference, arm,
-                                    atol=args.logit_atol, report_only=True))
+                                    atol=args.logit_atol, report_only=True, kv_checker=kv_checker))
         try:
             result = execute_arm(arm, observer=checker)
         except Exception as error:
@@ -486,7 +549,9 @@ def run_case(torch, cpp, engine, case, args, requests):
                        "logits_outside_tolerance": getattr(checker, "logits_outside_tolerance", 0),
                        "callbacks_outside_tolerance": getattr(checker, "callbacks_outside_tolerance", 0),
                        "first_tolerance_failure": getattr(checker, "first_tolerance_failure", None),
-                       "numerical_validation_passed": getattr(checker, "logits_outside_tolerance", 0) == 0,
+                       "numerical_validation_passed": (getattr(checker, "logits_outside_tolerance", 0) == 0
+                            and (kv_checker is None or kv_checker.result()['passed'])),
+                       "kv_write_validation": kv_checker.result() if kv_checker else {"status": "not_run"},
                        "argmax_differences_on_reference_history": getattr(checker, "argmax_differences", 0),
                        "first_argmax_difference": getattr(checker, "first_argmax_difference", None),
                        "decisions": result["decisions"], "actual_work": work}
@@ -498,7 +563,9 @@ def run_case(torch, cpp, engine, case, args, requests):
     # Free generation is measured, with each arm checked against its own
     # untimed output. Numerical agreement above is checked on identical history.
     outputs_by_arm = {"eager": expected_outputs}
-    if args.splitk_only:
+    if getattr(args, "flash_compare", False):
+        active_arms = ("piecewise", "piecewise_splitk", "piecewise_flash")
+    elif args.splitk_only:
         active_arms = ("piecewise_splitk",)
     elif args.fa3_only:
         active_arms = ("piecewise_fa3",)
@@ -527,6 +594,10 @@ def run_case(torch, cpp, engine, case, args, requests):
         decisions = checks[arm]["decisions"]
         if not decisions or any(key != "FA3-auto" for key in decisions):
             raise AssertionError(f"{arm} did not exclusively use FA3-auto: {decisions}")
+    if "piecewise_flash" in checks:
+        decisions = checks["piecewise_flash"]["decisions"]
+        if not decisions or any(key != "flash-local" for key in decisions):
+            raise AssertionError(f"independent attention did not execute: {decisions}")
     pieces = {arm: adapters[arm].piecewise_prefill for arm in active_arms
               if hasattr(adapters[arm], "piecewise_prefill")}
     for arm, piece in pieces.items():
@@ -593,6 +664,7 @@ def run_case(torch, cpp, engine, case, args, requests):
             "logit_tolerance": {"atol": args.logit_atol, "rtol": .01},
             "splitk_only": args.splitk_only,
             "fa3_only": args.fa3_only,
+            "flash_compare": getattr(args, "flash_compare", False),
             "fa3_compare": args.fa3_compare,
             "fa3_fusions": args.fa3_fusions,
             "prefill_fusions": args.prefill_fusions,
@@ -627,7 +699,9 @@ def main():
         requests = resolve_requests(args, case)
     except ValueError as error:
         raise SystemExit(f"invalid experiment plan: {error}") from error
-    if args.splitk_only:
+    if args.flash_compare:
+        planned_arms = ("piecewise", "piecewise_splitk", "piecewise_flash")
+    elif args.splitk_only:
         planned_arms = ("piecewise_splitk",)
     elif args.fa3_only:
         planned_arms = ("piecewise_fa3",)
