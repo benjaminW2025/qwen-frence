@@ -342,8 +342,18 @@ bool validate_layouts_for() {
         for (int feature = 0; feature < D; ++feature) {
             int physical = (feature / 64) * N * 64 + token * 64
                            + ((feature % 64) ^ ((token % 8) * 8));
-            TORCH_CHECK(int(LK{}(token, feature)) == physical, "K TMA/WGMMA layout mismatch");
-            TORCH_CHECK(int(LV{}(feature, token)) == physical, "V TMA/WGMMA layout mismatch");
+            auto k_offset = int(LK{}(token, feature));
+            auto v_offset = int(LV{}(feature, token));
+            TORCH_CHECK(k_offset == physical,
+                        "K TMA/WGMMA layout mismatch: N=", N,
+                        " register_pv=", RegisterPV, " token=", token,
+                        " feature=", feature, " CuTe offset=", k_offset,
+                        " expected TMA offset=", physical);
+            TORCH_CHECK(v_offset == physical,
+                        "V TMA/WGMMA layout mismatch: N=", N,
+                        " register_pv=", RegisterPV, " token=", token,
+                        " feature=", feature, " CuTe offset=", v_offset,
+                        " expected TMA offset=", physical);
         }
     }
     for (int lane = 0; lane < 128; ++lane) {
@@ -439,7 +449,7 @@ void launch_attention(torch::Tensor q, torch::Tensor cu, torch::Tensor table, to
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-torch::Tensor forward(torch::Tensor q, torch::Tensor k, torch::Tensor v,
+torch::Tensor hopper_attention_forward(torch::Tensor q, torch::Tensor k, torch::Tensor v,
                       torch::Tensor cu, torch::Tensor table, torch::Tensor lengths,
                       int64_t max_query, int64_t splits, double scale, bool causal, bool overlap_qk,
                       int64_t tile_n, bool register_pv, bool compact, c10::optional<torch::Tensor> prepared_worklist) {
@@ -523,7 +533,7 @@ pybind11::list kernel_info() {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
     module.attr("abi_version") = 3;
     module.attr("source_sha256") = HOPPER_SOURCE_HASH;
-    module.def("forward", &forward);
+    module.def("forward", &::hopper_attention_forward);
     module.def("validate_layouts", &validate_layouts);
     module.def("prepare_worklist", &prepare_worklist);
     module.def("kernel_info", &kernel_info);
