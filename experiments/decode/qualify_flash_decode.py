@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import statistics
 import subprocess
@@ -44,6 +45,17 @@ def write_json(path, value):
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
     temporary.replace(path)
+
+
+def write_fixture(torch, path, value):
+    """Write a fixture atomically so an interrupted run cannot poison it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f'.{path.name}.tmp-{os.getpid()}')
+    try:
+        torch.save(value, temporary)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def measure(torch, fn, repetitions, eviction=None):
@@ -91,14 +103,23 @@ def run_arm(args, reference=False):
         max_query = max(query_lengths)
         if not reference:
             if fixture.exists():
-                raise ValueError(f'fixture already exists; use a fresh directory: {fixture}')
+                # A dropped remote session can leave a zero-length/truncated
+                # fixture.  Rebuild only invalid files; keep the explicit
+                # collision guard for valid fixtures so results are not
+                # silently overwritten.
+                try:
+                    torch.load(fixture, map_location='cpu', weights_only=True)
+                except Exception:
+                    fixture.unlink()
+                else:
+                    raise ValueError(f'fixture already exists; use a fresh directory: {fixture}')
             args.output_dir.mkdir(parents=True, exist_ok=True)
             _, k_cpu, v_cpu, table_cpu, lengths_cpu = make_inputs(
                 [context] * batch, device='cpu', seed=args.seed + batch + context)
             generator = torch.Generator(device='cpu').manual_seed(args.seed + batch + context + 1)
             q_cpu = torch.randn((offsets[-1], 12, 128), dtype=torch.float16, generator=generator)
-            torch.save((q_cpu, k_cpu, v_cpu, table_cpu, lengths_cpu,
-                        torch.tensor(offsets, dtype=torch.int32)), fixture)
+            write_fixture(torch, fixture, (q_cpu, k_cpu, v_cpu, table_cpu, lengths_cpu,
+                                           torch.tensor(offsets, dtype=torch.int32)))
         cpu = torch.load(fixture, map_location='cpu', weights_only=True)
         digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
         q, k, v, table, lengths, cu = [t.to('cuda') for t in cpu]
