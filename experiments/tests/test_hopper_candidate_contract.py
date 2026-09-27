@@ -85,7 +85,7 @@ class HopperCandidateContract(unittest.TestCase):
                 module._extension()
         layout_check.assert_not_called()
 
-        binary.abi_version = 4
+        binary.abi_version = 5
         with mock.patch.dict('sys.modules', {'inference_hopper_attention': binary}):
             with self.assertRaisesRegex(RuntimeError, 'CUDA source hash differs'):
                 module._extension()

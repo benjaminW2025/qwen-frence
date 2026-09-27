@@ -11,10 +11,27 @@ there is no external-attention fallback.
 The attention implementation is project-owned. NVIDIA CUTLASS v3.9.2 supplies
 CuTe layouts and WGMMA instruction wrappers, not an attention implementation.
 Algorithm reference: [FlashAttention-3](https://tridao.me/publications/flash3/flash3.pdf).
-It uses double-buffered, cooperative paged-KV gathers into CuTe's exact
-shared-memory layouts, warp specialization and asynchronous WGMMA, overlapping
-next-tile QK with softmax. The current loader is a cooperative gather; a restored
-TMA path still needs validation. The earlier claim that the TMA layout itself
+A producer warpgroup gathers paged K/V in 16-byte chunks into a two- or
+three-stage ring laid out in CuTe's exact shared-memory layouts. One or two
+consumer warpgroups (64 packed query rows each) run FA3's intra-warpgroup
+pipeline: softmax of tile i executes while the PV GEMM of tile i-1 is still in
+flight, and the running output is rescaled only after that GEMM retires. With
+two consumers a named-barrier ping-pong alternates their GEMM issue, so one
+warpgroup's softmax runs under the other's tensor-core work, and each KV tile
+serves 128 query rows. Tiles every row of a warpgroup sees in full skip the
+causal/length mask. The loader is still a cooperative gather, not TMA.
+
+Why this structure (measured on H100, `experiments/results/hopper-tuning-h100*`):
+the original per-element gather put the kernel 7-23x behind FA3, with the gap
+tracking KV volume. Moving 16-byte chunks lifted decode to 0.52x FA3 but left
+prefill/mixed at 0.19-0.23x, the signature of a consumer that alternates tensor
+and CUDA-core work instead of overlapping them (the tuner rejected the old
+next-QK overlap on every prefill/mixed shape). The compiled variants also
+spilled: per-row softmax state indexed at runtime went to local memory, and
+N=128 shared-P spilled 1,248 bytes/thread. Accumulator rows and columns are now
+compile-time functions of (lane, element), proven exhaustively at import.
+
+The earlier claim that the TMA layout itself
 was incompatible was unsupported: the check compared an element index with a
 physical byte-swizzled address. Subsequent raw-array K/V stores bypassed CuTe's
 pointer swizzle. Stores now use CuTe tensor views, and a host regression checks
@@ -30,9 +47,13 @@ performance parity with FA3. The initial split schedule is not tuned.
    eight 128-byte base alignments in a swizzle period. The standalone CPU test
    `correctness/checks/check_hopper_layouts.cpp` also reproduces the old store bug.
 2. Run `correctness/checks/check_flash_decode.py`: independent FP32 oracle,
-   poisoned KV padding, empty partitions, ragged causal masks, strided Q and
-   graph replay after changing all address-backed inputs. Run under Compute
-   Sanitizer memcheck, racecheck and synccheck before performance qualification.
+   poisoned KV padding, empty partitions, ragged causal masks, fully masked
+   rows, strided Q and graph replay after changing all address-backed inputs,
+   including offsets that cross 64- and 128-row query tiles. Covers every
+   tile/PV/consumer/compact/overlap/split combination (64 varlen variants), and
+   prints each compiled variant's registers, local (spill) bytes and shared
+   memory. Run under Compute Sanitizer memcheck, racecheck and synccheck before
+   performance qualification.
 3. Run `experiments/decode/qualify_flash_decode.py run --output-dir <fresh-dir>
    --vllm-python <separate-vllm-0.30.0-python>` with the local interpreter.
    Shared fixtures cover B8/B64 decode/mixed and resumed prefill at C256/2048/4096,
@@ -59,10 +80,13 @@ whole-forward mixed-graph prototype is rejected for this backend until migrated.
 | Intervention | Current candidate | Next controlled comparison |
 |---|---|---|
 | FP16 / D128 / 12:2 heads / page16 specialization | Compiled constants | Keep identical math and precision |
-| Cooperative paged gather + producer/consumer WGMMA/softmax overlap | Written, unvalidated | Validate before measuring; a compatible TMA path remains future work |
+| 16-byte cooperative paged gather, 3-stage ring (2 for N128 shared-P, two consumers) | Measured: decode 0.14x -> 0.52x FA3 | TMA or asynchronous loads remain the loader's next step |
+| FA3 intra-warpgroup softmax/PV overlap | Written, unvalidated; `overlap_qk=False` is the serialized control | `serialized_only` tuner arm |
+| Two consumer warpgroups (M128) with ping-pong GEMM issue | Written, unvalidated; one consumer retained | `single_consumer_only` tuner arm; prefill/mixed only |
+| Mask-free softmax on fully visible tiles | Written, unvalidated | Long-prompt prefill, where most tiles are fully visible |
 | Causal tile skipping | Written, unvalidated | Fresh and resumed prefill, including partial tiles |
 | Register-fed PV instead of shared-memory P | Written, unvalidated; shared-P control retained | Avoid P shared-memory traffic; measure register pressure and latency |
-| Regime-specific tile configuration | M64/N64 and M64/N128 written; fixed warp count | Larger KV tile amortizes work but uses more shared memory/registers |
+| Regime-specific tile configuration | M64/M128 x N64/N128 compiled; tuner selects per shape | Larger KV tile amortizes work but uses more shared memory/registers |
 | Packed mixed work scheduling | GPU-built compact query worklist written | Reduce rectangular-grid empty CTAs; include construction cost |
 | Split-K schedule | Initial decode heuristic; varlen K1 | Tune B8/B64 and context, including partial/reduction traffic |
 | Small-page loading | CuTe-addressed cooperative gather | Compare vector asynchronous loads and layout-compatible TMA after correctness qualification |

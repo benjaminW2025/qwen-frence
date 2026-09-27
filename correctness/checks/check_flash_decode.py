@@ -29,40 +29,48 @@ def varlen_reference(q, k, v, cu, table, lengths):
 
 
 def variant_configs():
-    """Every compiled tile/PV variant, scheduling mode and pipeline mode."""
+    """Every compiled tile/PV/consumer variant, scheduling mode and pipeline mode."""
     from itertools import product
-    return [dict(tile_n=n, register_pv=registers, compact=compact,
+    return [dict(tile_n=n, register_pv=registers, consumers=consumers, compact=compact,
                  overlap_qk=overlap, split_k=split)
-            for n, registers, compact, overlap, split in product(
-                (64, 128), (False, True), (False, True), (False, True), (1, 4))]
+            for n, registers, consumers, compact, overlap, split in product(
+                (64, 128), (False, True), (1, 2), (False, True), (False, True), (1, 4))]
 
 
 def check_worklist():
     import torch
     from paged_flash_decode import prepare_flash_worklist
-    queries = [0, 1, 10, 11, 64, 255]
-    cu = torch.tensor([0, *torch.tensor(queries).cumsum(0).tolist()], device='cuda', dtype=torch.int32)
-    def expected_work(q):
-        return [[seq, tile] for seq, length in enumerate(q) for tile in range((length * 6 + 63) // 64)]
-    def check(work, q):
-        expected = expected_work(q)
-        rows = work.tolist()
-        assert rows[:len(expected)] == expected, 'compact query tiles differ'
-        assert all(row == [-1, -1] for row in rows[len(expected):]), 'invalid worklist padding'
-    check(prepare_flash_worklist(cu, sum(queries)), queries)
-    stream = torch.cuda.Stream()
-    stream.wait_stream(torch.cuda.current_stream())
-    with torch.cuda.stream(stream):
-        prepare_flash_worklist(cu, sum(queries))
-        graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph):
-            work = prepare_flash_worklist(cu, sum(queries))
-    torch.cuda.current_stream().wait_stream(stream)
-    changed = [0, 10, 1, 11, 64, 255]
-    cu.copy_(torch.tensor([0, *torch.tensor(changed).cumsum(0).tolist()], device='cuda', dtype=torch.int32))
-    graph.replay()
-    check(work, changed)
-    return dict(case='compact_worklist_mutated_offsets', tiles=len(expected_work(changed)))
+    rows_checked = []
+    for consumers in (1, 2):
+        height = 64 * consumers
+        queries = [0, 1, 10, 11, 64, 255]
+        cu = torch.tensor([0, *torch.tensor(queries).cumsum(0).tolist()], device='cuda', dtype=torch.int32)
+        def expected_work(q):
+            return [[seq, tile] for seq, length in enumerate(q)
+                    for tile in range((length * 6 + height - 1) // height)]
+        def check(work, q):
+            expected = expected_work(q)
+            rows = work.tolist()
+            capacity = (sum(q) * 6 + height - 1) // height + len(q) - 1
+            assert rows[0] == [height, capacity], 'worklist header differs'
+            assert len(rows) == capacity + 1, 'worklist capacity differs'
+            assert rows[1:1 + len(expected)] == expected, 'compact query tiles differ'
+            assert all(row == [-1, -1] for row in rows[1 + len(expected):]), 'invalid worklist padding'
+        check(prepare_flash_worklist(cu, sum(queries), consumers=consumers), queries)
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream):
+            prepare_flash_worklist(cu, sum(queries), consumers=consumers)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                work = prepare_flash_worklist(cu, sum(queries), consumers=consumers)
+        torch.cuda.current_stream().wait_stream(stream)
+        changed = [0, 10, 1, 11, 64, 255]
+        cu.copy_(torch.tensor([0, *torch.tensor(changed).cumsum(0).tolist()], device='cuda', dtype=torch.int32))
+        graph.replay()
+        check(work, changed)
+        rows_checked.append(len(expected_work(changed)))
+    return dict(case='compact_worklist_mutated_offsets', tiles_by_consumers=rows_checked)
 
 
 def check_varlen():
@@ -91,7 +99,7 @@ def check_varlen():
         if config['compact']:
             # Also cover caller-managed reuse. Changed offsets below are tested
             # using the graph's rebuilding path, never this now-stale worklist.
-            work = prepare_flash_worklist(cu, q.shape[0])
+            work = prepare_flash_worklist(cu, q.shape[0], consumers=config['consumers'])
             check_output(flash_varlen(q, k, v, cu, table, seq, max_query_len=max(queries),
                                      worklist=work, **config), reference)
         side = torch.cuda.Stream()
@@ -112,13 +120,32 @@ def check_varlen():
         k.copy_(k.flip(0))
         v.copy_(v.flip(0))
         table.copy_(torch.where(table >= 0, k.shape[0] - 1 - table, table))
-        cu[3].add_(1)  # q=10 -> 11 crosses a packed M64 query-tile boundary.
+        cu[3].add_(1)  # q=10 -> 11 crosses a packed 64-row query-tile boundary.
+        # q=31 -> 21 (186 -> 126 rows) crosses a 128-row boundary, and q=17 ->
+        # 26 against 16 keys adds fully masked rows. The longest sequence is
+        # unchanged, so the captured grid still covers every tile.
+        cu[4].add_(10)
         seq[1].sub_(1)
         reference = varlen_reference(q, k, v, cu, table, seq)
         graph.replay()
         error = check_output(output, reference)
         rows.append(dict(case='varlen_mutated_q_k_v_offsets_pages_lengths', config=config, max_abs=error))
     return rows
+
+
+def kernel_resources():
+    """Compiled register/local/shared use for every variant. Local bytes are
+    spills: reported rather than failed, since they are a performance defect,
+    not a numerical one."""
+    from paged_flash_decode import _extension
+    variants = _extension().kernel_info()
+    for variant in variants:
+        print(f"variant N={variant['tile_n']} register_pv={int(variant['register_pv'])} "
+              f"consumers={variant['consumers']} stages={variant['stages']}: "
+              f"{variant['compiler_registers_per_thread']} regs, "
+              f"{variant['local_bytes_per_thread']} local bytes, "
+              f"{variant['dynamic_shared_bytes_per_cta']} shared bytes", flush=True)
+    return dict(case='kernel_resources', variants=[dict(v) for v in variants])
 
 
 def run_checks():
@@ -178,6 +205,7 @@ def run_checks():
                                  batch=batch, context=context, max_abs=error))
     rows.extend(check_varlen())
     rows.append(check_worklist())
+    rows.append(kernel_resources())
     print(f'independent attention: {len(rows)} numerical/graph checks passed', flush=True)
     return rows
 

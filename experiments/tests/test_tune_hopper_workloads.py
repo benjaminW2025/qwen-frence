@@ -32,7 +32,11 @@ class WorkloadTuningTests(TestCase):
             configs = tune.configs(case)
             self.assertLessEqual(len(configs), 10)
             for config in configs:
-                self.assertEqual(set(config), {'split_k', 'overlap_qk', 'tile_n', 'register_pv', 'compact'})
+                self.assertEqual(set(config), {'split_k', 'overlap_qk', 'tile_n', 'register_pv',
+                                               'consumers', 'compact'})
+                self.assertIn(config['consumers'], (1, 2))
+                if case['kind'] == 'decode':
+                    self.assertEqual(config['consumers'], 1)
                 self.assertTrue(1 <= config['split_k'] <= 64)
 
     def test_architecture_search_and_single_change_attribution(self):
@@ -40,7 +44,7 @@ class WorkloadTuningTests(TestCase):
             case = dict(kind=kind, queries=[1, 17], lengths=[128, 64])
             control = tune.configs(case)[0]
             grid = tune.architecture_configs(case, control)
-            self.assertEqual(len(grid), 8 if kind == 'mixed' else 4)
+            self.assertEqual(len(grid), dict(decode=4, prefill=8, mixed=16)[kind])
             for candidate in grid:
                 self.assertEqual(candidate['split_k'], control['split_k'])
                 self.assertEqual(candidate['overlap_qk'], control['overlap_qk'])
@@ -48,7 +52,8 @@ class WorkloadTuningTests(TestCase):
                 if role.endswith('_only'):
                     changed = {k for k in control if candidate[k] != control[k]}
                     self.assertEqual(changed, {dict(register_pv_only='register_pv',
-                        tile_128_only='tile_n', compact_only='compact')[role]})
+                        tile_128_only='tile_n', compact_only='compact', serialized_only='overlap_qk',
+                        single_consumer_only='consumers')[role]})
 
     def test_fast_incorrect_configuration_cannot_win(self):
         rows = [dict(config={'id': 'bad'}, correctness_error='mismatch', cold={'median_ms': .1}),

@@ -101,38 +101,56 @@ def make_plan(args):
                         coverage[tag].append(key)
     return dict(schema=2, shapes=sorted(SHAPES), cases=list(selected.values()), coverage=coverage,
                 scope='representative actual attention shapes, not every iteration or full-engine timing',
-                implemented_controls=['split-K', 'QK/softmax overlap', 'register-fed PV',
-                                      'KV tiles 64/128', 'compact mixed worklist including construction'],
-                pending_features=['wider query tiles', 'loading-strategy variants', 'full-model qualification'])
+                implemented_controls=['split-K', 'intra-warpgroup softmax/PV overlap', 'register-fed PV',
+                                      'KV tiles 64/128', 'one or two ping-pong consumer warpgroups',
+                                      'compact mixed worklist including construction'],
+                pending_features=['TMA or asynchronous KV loading', 'full-model qualification'])
+
+
+ARCHITECTURE_KEYS = ('tile_n', 'register_pv', 'consumers', 'compact')
+
+
+def wrapper_consumers(case):
+    """The wrapper's own default, so the baseline is the untuned call."""
+    from paged_flash_decode import default_consumers
+    return 1 if case['kind'] == 'decode' else default_consumers(max(case['queries']))
 
 
 def configs(case):
     # Cap scratch/reduction cost for large query cohorts; no combinatorial sweep.
     splits = (1, 2, 4, 8, 16) if case['kind'] == 'decode' else (1, 2, 4)
-    return [dict(split_k=k, overlap_qk=overlap, tile_n=64, register_pv=False, compact=False)
+    return [dict(split_k=k, overlap_qk=overlap, tile_n=64, register_pv=False,
+                 consumers=wrapper_consumers(case), compact=False)
             for k in splits for overlap in (True, False)]
 
 
 def baseline_config(case):
     if case['kind'] != 'decode':
-        return dict(split_k=1, overlap_qk=True, tile_n=64, register_pv=False, compact=False)
+        return dict(split_k=1, overlap_qk=True, tile_n=64, register_pv=False,
+                    consumers=wrapper_consumers(case), compact=False)
     batch = len(case['queries'])
     capacity = math.ceil(max(case['lengths']) / 16) * 16
     return dict(split_k=min(32, (capacity + 63) // 64, max(1, (256 + batch * 2 - 1) // (batch * 2))),
-                overlap_qk=True, tile_n=64, register_pv=False, compact=False)
+                overlap_qk=True, tile_n=64, register_pv=False, consumers=1, compact=False)
 
 
 def architecture_configs(case, control):
     # A small interaction grid, not every tile x split x overlap combination.
-    return [{**control, 'tile_n': n, 'register_pv': registers, 'compact': compact}
+    # Decode packs six rows per sequence, so a second consumer is never useful.
+    return [{**control, 'tile_n': n, 'register_pv': registers, 'consumers': consumers,
+             'compact': compact}
             for n in (64, 128) for registers in (False, True)
+            for consumers in ((1,) if case['kind'] == 'decode' else (1, 2))
             for compact in ((False, True) if case['kind'] == 'mixed' else (False,))]
 
 
 def evaluation_configs(case, control, chosen):
     rows = [('baseline', baseline_config(case)), ('tuned_control', control),
             ('register_pv_only', {**control, 'register_pv': True}),
-            ('tile_128_only', {**control, 'tile_n': 128})]
+            ('tile_128_only', {**control, 'tile_n': 128}),
+            ('serialized_only', {**control, 'overlap_qk': False})]
+    if case['kind'] != 'decode':
+        rows.append(('single_consumer_only', {**control, 'consumers': 1}))
     if case['kind'] == 'mixed':
         rows.append(('compact_only', {**control, 'compact': True}))
     return [*rows, ('selected', chosen)]
@@ -297,7 +315,7 @@ def worker(args):
                     control = best_passing(list(measured.values()))
                     sweep(architecture_configs(case, control), 'architecture')
                     architecture = best_passing(list(measured.values()))
-                    sweep([{**c, **{key: architecture[key] for key in ('tile_n', 'register_pv', 'compact')}}
+                    sweep([{**c, **{key: architecture[key] for key in ARCHITECTURE_KEYS}}
                            for c in configs(case)], 'retune_selected_architecture')
                     chosen = best_passing(list(measured.values()))
                 except ValueError:
