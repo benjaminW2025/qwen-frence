@@ -155,18 +155,24 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
             // Each producer owns distinct logical (token, feature) elements.
             // Index the TENSORS, not raw arrays with LK/LV offsets: CuTe's
             // smem_ptr_flag transfers the swizzle into the pointer engine.
-            for (int element = threadIdx.x; element < N * D; element += 128) {
-                int token = element / D, feature = element % D;
+            // One uint4 moves eight halves: the 128B swizzle permutes 16B
+            // chunks without splitting one, and both the paged pool and the
+            // K/V layouts are feature-contiguous within a 64-element block,
+            // so an eight-aligned feature run is 16 contiguous bytes in both.
+            // Threads sharing a token also share its one block-table load.
+            constexpr int VEC = 8, OCTETS = D / VEC;
+            for (int token = threadIdx.x / OCTETS; token < N; token += 128 / OCTETS) {
+                int f8 = int(threadIdx.x % OCTETS) * VEC;
                 int absolute = tile * N + token;
-                H key = H(0.f), value = H(0.f);
+                uint4 key = make_uint4(0, 0, 0, 0), value = key;
                 if (absolute < length) {
                     int physical = table[sequence * width + absolute / 16];
-                    int pool_offset = ((physical * 16 + absolute % 16) * HKV + kv_head) * D + feature;
-                    key = k_pool[pool_offset];
-                    value = v_pool[pool_offset];
+                    int pool_offset = ((physical * 16 + absolute % 16) * HKV + kv_head) * D + f8;
+                    key = *reinterpret_cast<uint4 const*>(k_pool + pool_offset);
+                    value = *reinterpret_cast<uint4 const*>(v_pool + pool_offset);
                 }
-                sk(token, feature) = key;
-                sv(feature, token) = value;
+                *reinterpret_cast<uint4*>(&sk(token, f8)) = key;
+                *reinterpret_cast<uint4*>(&sv(f8, token)) = value;
             }
             async_fence();
             producer_sync();
