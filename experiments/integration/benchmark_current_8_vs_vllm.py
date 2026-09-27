@@ -375,7 +375,8 @@ def run_local(args, shape_id, model_source):
                              "runs": runs,
                              "median_output_tokens_per_s": statistics.median(
                                  row["output_tokens_per_s"] for row in runs),
-                             "decode_graph_calls_last_run": adapter.decisions["flash-local"],
+                             "decode_graph_calls_last_run": adapter.decisions[
+                                 ATTENTION_MODES[args.attention]["decode_decision"]],
                              "piecewise_graph_replays": adapter.piecewise_prefill.graph_replays,
                              "piecewise_graph_buckets": sorted(adapter.piecewise_prefill.shapes)})
 

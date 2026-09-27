@@ -70,3 +70,13 @@ class IndependentRoutingTests(TestCase):
                     phases.forwarded(args, 'run-local', burst.SHAPES[0])]
         for command in commands:
             self.assertEqual(command[command.index('--attention') + 1], 'fa3')
+
+    def test_mode_specific_keys_come_only_from_attention_modes(self):
+        # run_local needs a GPU, so a hard-coded decision key would only fail
+        # after a full local run. Only the ATTENTION_MODES table may name one.
+        for module in (burst, mixed, phases):
+            source = Path(module.__file__).read_text()
+            for mode in burst.ATTENTION_MODES.values():
+                literal = f'"{mode["decode_decision"]}"'
+                self.assertEqual(source.count(literal), int(module is burst),
+                                 f'{module.__name__} hard-codes {literal}')
