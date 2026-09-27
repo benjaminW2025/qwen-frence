@@ -27,7 +27,7 @@ class MixedEightTests(unittest.TestCase):
                                         "repository_commit": "f318493" + "0" * 33,
                                         "engine_flags": mixed.ENGINE_FLAGS,
                                         "warmups": 1, "repetitions": 3}))
-            args = SimpleNamespace(warmups=1, repetitions=3, resume_commit=None)
+            args = SimpleNamespace(warmups=1, repetitions=3, resume_commit=None, attention='project')
             with mock.patch.object(mixed, "repository_commit", return_value="newcommit"):
                 with self.assertRaisesRegex(ValueError, "source commit differs"):
                     mixed.validate_saved(path, shape_id="shape", fingerprint="frozen",

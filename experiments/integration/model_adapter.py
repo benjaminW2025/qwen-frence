@@ -66,10 +66,19 @@ class ModelAdapter:
                         num_warps=4, pipelined=action[1] > 1)
                 attention = attention.reshape(tokens, heads * dim)
             else:
-                if getattr(self, "decode_attention_policy", None) == "flash":
+                policy = getattr(self, "prefill_attention_policy", None) or (
+                    "flash_varlen" if getattr(self, "decode_attention_policy", None) == "flash"
+                    else "packed_paged")
+                if policy == "flash_varlen":
                     from kernel_dispatch import flash_varlen
                     rows = flash_varlen(q[0].transpose(0, 1), pool.k_pool[i], pool.v_pool[i],
                                         cu, table, context, max_query_len=max_query)
+                    attention = rows.transpose(0, 1).unsqueeze(0)
+                elif policy == "fa3_varlen":
+                    from kernel_dispatch import fa3_paged_varlen_attention
+                    rows = fa3_paged_varlen_attention(
+                        q[0].transpose(0, 1).contiguous(), pool.k_pool[i], pool.v_pool[i],
+                        cu, table, context, max_query_len=max_query)
                     attention = rows.transpose(0, 1).unsqueeze(0)
                 else:
                     attention = packed_paged_prefill_attention(
@@ -193,7 +202,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_stable_decode_table_cache=False,
                  enable_prefill_packed_qkv_rope_cache=False,
                  enable_prefill_residual_rmsnorm=False,
-                 enable_prefill_swiglu_fusion=False):
+                 enable_prefill_swiglu_fusion=False,
+                 prefill_attention_policy=None):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -206,6 +216,16 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache,
                          enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache,
                          enable_stable_decode_table_cache=enable_stable_decode_table_cache)
+        # Pure-prefill attention. The default keeps each decode policy's
+        # historical pairing (independent kernel with "flash", Triton packed
+        # prefill otherwise); pass "fa3_varlen" to run FA3 end to end.
+        if prefill_attention_policy is None:
+            prefill_attention_policy = ("flash_varlen" if decode_attention_policy == "flash"
+                                        else "packed_paged")
+        if prefill_attention_policy not in ("packed_paged", "fa3_varlen", "flash_varlen"):
+            raise ValueError("prefill attention policy must be 'packed_paged', "
+                             "'fa3_varlen' or 'flash_varlen'")
+        self.prefill_attention_policy = prefill_attention_policy
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
         if str(graph_dir) not in sys.path:
             sys.path.insert(0, str(graph_dir))
@@ -229,9 +249,9 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                                     max_query, decode)
         logits = self.piecewise_prefill.forward(
             ids, positions, slots, cu, context, table, max_query,
-            mixed_attention_policy=("flash_varlen"
-                                    if getattr(self, "decode_attention_policy", None) == "flash"
-                                    else "packed_paged"))
+            mixed_attention_policy=getattr(self, "prefill_attention_policy", None) or (
+                "flash_varlen" if getattr(self, "decode_attention_policy", None) == "flash"
+                else "packed_paged"))
         if logits is None:
             return ModelAdapter.__call__(self, ids, positions, slots, cu, context,
                                          table, max_query, False)

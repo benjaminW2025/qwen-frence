@@ -26,7 +26,8 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
                   ROOT / "engine/cpp/build"):
     sys.path.insert(0, str(directory))
 
-from benchmark_current_8_vs_vllm import (ENGINE_FLAGS, SHAPES, adapter_options as
+from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, engine_flags,
+                                         adapter_options as
                                          burst_adapter_options, atomic_json,
                                          commit_matches, dispatch_plan, input_contract,
                                          repository_commit, resume_options)
@@ -53,6 +54,7 @@ def parser():
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
     result.add_argument("--vllm-python")
+    result.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project")
     result.add_argument("--resume-commit", action="append")
     return result
 
@@ -109,7 +111,7 @@ def validate_saved(path, args, shape_id, fingerprint, model):
         raise ValueError(f"incomplete phase result: {path}")
     if path.name == "vllm.json":
         require_vllm_version(row.get("vllm_version"))
-    elif row.get("engine_flags") != ENGINE_FLAGS:
+    elif row.get("engine_flags") != engine_flags(args.attention):
         raise ValueError(f"stale local implementation in phase result: {path}")
     return row
 
@@ -139,7 +141,7 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
-        **burst_adapter_options(burst_case, burst_dispatch["prefill_buckets"]))
+        **burst_adapter_options(burst_case, burst_dispatch["prefill_buckets"], args.attention))
     if (adapter.graph_decoder.buckets != [burst_case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -158,7 +160,8 @@ def run_local(args, shape_id, model_source):
             burst_digest = digest
         elif digest != burst_digest:
             raise AssertionError(f"{shape_id}: phase burst outputs changed across runs")
-        if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get("flash-local"):
+        if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get(
+                ATTENTION_MODES[args.attention]["decode_decision"]):
             raise AssertionError(f"{shape_id}: phase burst missed graph dispatch")
         if index >= args.warmups:
             burst_rows.append(phase_summary(row["steps"], ("prefill", "decode")))
@@ -169,7 +172,7 @@ def run_local(args, shape_id, model_source):
     config = make_config(cpp, case)
     config.packed_mixed_step = True
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets))
+        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
     measured = []
     mixed_digest = None
     for index in range(args.warmups + args.repetitions):
@@ -179,7 +182,8 @@ def run_local(args, shape_id, model_source):
                       adapter, requests, synchronize_steps=True)
         check_local_result(row, requests, arrival)
         if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get(
-                "packed_mixed_cpp_varlen") or not adapter.decisions.get("flash-local"):
+                "packed_mixed_cpp_varlen") or not adapter.decisions.get(
+                    ATTENTION_MODES[args.attention]["decode_decision"]):
             raise AssertionError(f"{shape_id}: phase mixed missed graph dispatch")
         digest = output_digest(row["outputs"])
         if mixed_digest is None:
@@ -200,7 +204,7 @@ def run_local(args, shape_id, model_source):
                        "repetitions": args.repetitions, "num_blocks": blocks,
                        "arrival_step": arrival, "prefill_buckets": buckets,
                        "burst_prefill_buckets": burst_dispatch["prefill_buckets"],
-                       "engine_flags": ENGINE_FLAGS, "runs": measured,
+                       "engine_flags": engine_flags(args.attention), "runs": measured,
                        "burst_outputs_sha256": burst_digest,
                        "mixed_outputs_sha256": mixed_digest,
                        "phases": median_phases(measured)})
@@ -279,7 +283,7 @@ def analyze(args, shape_id, model_source):
             or local["arrival_step"] != arrival or vllm["arrival_step"] != arrival
             or local["prefill_buckets"] != buckets
             or local["burst_prefill_buckets"] != expected_burst_buckets
-            or local["engine_flags"] != ENGINE_FLAGS
+            or local["engine_flags"] != engine_flags(args.attention)
             or not vllm["vllm_step_mode"]):
         raise ValueError(f"{shape_id}: phase comparator configurations differ")
     rows = {}
@@ -317,7 +321,8 @@ def forwarded(args, action, shape_id):
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions), *resume_options(args.resume_commit)]
+            "--repetitions", str(args.repetitions), "--attention", args.attention,
+            *resume_options(args.resume_commit)]
 
 
 def main():

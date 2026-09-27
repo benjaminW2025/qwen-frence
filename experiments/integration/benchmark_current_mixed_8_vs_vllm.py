@@ -25,7 +25,8 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
                   ROOT / "engine/cpp/build"):
     sys.path.insert(0, str(directory))
 
-from benchmark_current_8_vs_vllm import (ENGINE_FLAGS, SHAPES, atomic_json,
+from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, atomic_json,
+                                         attention_options, engine_flags,
                                          commit_matches, input_contract,
                                          repository_commit, resume_options,
                                          validate_capture_options)
@@ -74,13 +75,13 @@ def paths(args, shape_id):
     return root / "local.json", root / "vllm.json", root / "comparison.json"
 
 
-def adapter_options(case, buckets):
+def adapter_options(case, buckets, attention="project"):
     if not buckets or min(buckets) < 1:
         raise ValueError("mixed graph buckets must be positive")
     return dict(max_running=case["max_running"],
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
-                decode_attention_policy="flash",
+                **attention_options(attention),
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
@@ -105,7 +106,7 @@ def validate_saved(path, *, shape_id, fingerprint, model, args):
                          "if this prior result is known valid")
     if path.name == "vllm.json":
         require_vllm_version(row.get("vllm_version"))
-    elif row.get("engine_flags") != ENGINE_FLAGS:
+    elif row.get("engine_flags") != engine_flags(args.attention):
         raise ValueError(f"{path}: local implementation differs; use a new output directory")
     return row
 
@@ -145,7 +146,7 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets))
+        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
     if (adapter.graph_decoder.buckets != [case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -163,7 +164,7 @@ def run_local(args, shape_id, model_source):
             raise AssertionError(f"{shape_id}: piecewise graph missed mixed token bucket")
         if not adapter.decisions.get("packed_mixed_cpp_varlen"):
             raise AssertionError(f"{shape_id}: C++ packed mixed dispatch was not used")
-        if not adapter.decisions.get("flash-local"):
+        if not adapter.decisions.get(ATTENTION_MODES[args.attention]["decode_decision"]):
             raise AssertionError(f"{shape_id}: independent decode graph was not used")
         actual_signature = [(step["kind"], step["calls"]) for step in row["steps"]]
         if signature is None:
@@ -189,7 +190,7 @@ def run_local(args, shape_id, model_source):
                              "arrival_step": arrival, "prefill_buckets": buckets,
                              "swiglu_fused_buckets": [bucket for bucket in buckets
                                  if bucket > SWIGLU_FUSION_ROW_THRESHOLD],
-                             "engine_flags": ENGINE_FLAGS, "num_blocks": blocks,
+                             "engine_flags": engine_flags(args.attention), "num_blocks": blocks,
                              "runs": measured,
                              "median_output_tokens_per_s": statistics.median(
                                  item["output_tokens_per_s"] for item in measured),
@@ -335,7 +336,7 @@ def analyze(args, shape_id, model_source):
     if (local["num_blocks"] != blocks or vllm["num_blocks"] != blocks
             or local["prefill_buckets"] != buckets or local["arrival_step"] != arrival
             or vllm["arrival_step"] != arrival or local["first_wave"] != first
-            or vllm["first_wave"] != first or local.get("engine_flags") != ENGINE_FLAGS):
+            or vllm["first_wave"] != first or local.get("engine_flags") != engine_flags(args.attention)):
         raise ValueError(f"{shape_id}: mixed comparator configurations differ")
     local_outputs, vllm_outputs = (local["runs"][0]["outputs"],
                                    vllm["runs"][0]["outputs"])
@@ -367,7 +368,7 @@ def forward(args, action, shape_id):
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions)]
+            "--repetitions", str(args.repetitions), "--attention", args.attention]
     command += resume_options(args.resume_commit)
     return command
 
@@ -385,6 +386,7 @@ def main():
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--vllm-python")
+    parser.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project")
     parser.add_argument("--resume-commit", action="append")
     args = parser.parse_args()
     if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
@@ -395,7 +397,7 @@ def main():
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")
     if args.action != "run-vllm":
         case, _, first, arrival, buckets, _, _ = mixed_plan(args, args.shape_id)
-        options = adapter_options(case, buckets)
+        options = adapter_options(case, buckets, args.attention)
         validate_capture_options(options)
     if args.action == "plan":
         print(json.dumps({"shape_id": args.shape_id, "batch": case["max_running"],

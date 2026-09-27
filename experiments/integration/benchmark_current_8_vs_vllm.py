@@ -31,13 +31,36 @@ from fixed_regime import (FACTORIAL_SHAPES, PREFILL_TOKENS_PER_STEP,
                           get_fixed_case, shape_summary, verify_fixed_result)
 
 SHAPES = tuple(row["id"] for row in FACTORIAL_SHAPES)
-ENGINE_FLAGS = {
+# Local-engine attention. "project" runs the independent SM90a kernel.
+# "fa3" calls vLLM's FlashAttention-3 for decode, prefill and mixed steps, so
+# both engines run the identical attention kernel and the comparison isolates
+# everything else; it must run from the vLLM environment, which owns that
+# kernel. decode_decision is the action the graph decoder records per mode.
+ATTENTION_MODES = {
+    "project": {"decode": "flash", "prefill": "flash_varlen", "mixed": "flash_varlen",
+                "decode_decision": "flash-local",
+                "implementation": "project_owned_sm90a_tma_wgmma_candidate_unqualified"},
+    "fa3": {"decode": "fa3", "prefill": "fa3_varlen", "mixed": "fa3_varlen",
+            "decode_decision": "FA3-auto",
+            "implementation": "external_vllm_flash_attn_fa3"},
+}
+
+
+def attention_options(attention):
+    mode = ATTENTION_MODES[attention]
+    return dict(decode_attention_policy=mode["decode"],
+                prefill_attention_policy=mode["prefill"])
+
+
+def engine_flags(attention):
+    mode = ATTENTION_MODES[attention]
+    return {
     "cpp_scheduler": True,
     "packed_mixed_step": True,
-    "decode_attention_policy": "flash",
-    "mixed_attention_policy": "flash_varlen",
-    "prefill_attention_policy": "flash_varlen",
-    "attention_implementation": "project_owned_sm90a_tma_wgmma_candidate_unqualified",
+    "decode_attention_policy": mode["decode"],
+    "mixed_attention_policy": mode["mixed"],
+    "prefill_attention_policy": mode["prefill"],
+    "attention_implementation": mode["implementation"],
     "decode_graph_bucket": "exact_batch",
     "prefill_graph_buckets": "CPU-scheduled pure/mixed exact upper bounds",
     "residual_rmsnorm": True,
@@ -45,6 +68,9 @@ ENGINE_FLAGS = {
     "prefill_swiglu_fusion": True,
     "prefill_packed_qkv_rope_cache": False,
 }
+
+
+ENGINE_FLAGS = engine_flags("project")  # the default mode, for existing callers
 
 
 def parser():
@@ -62,6 +88,9 @@ def parser():
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
     result.add_argument("--vllm-python", help="interpreter in the separate current-vLLM environment")
+    result.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project",
+                        help="local-engine attention: the independent kernel, or vLLM's FA3 "
+                             "(identical to the reference; run from the vLLM environment)")
     result.add_argument("--reuse-vllm-from", type=Path,
                         help="explicitly reuse validated burst vLLM results from a prior "
                              "output directory on the same GPU pod")
@@ -141,13 +170,13 @@ def dispatch_plan(case, requests, seed):
                                      if bucket > SWIGLU_FUSION_ROW_THRESHOLD]}
 
 
-def adapter_options(case, buckets):
+def adapter_options(case, buckets, attention="project"):
     if not buckets or min(buckets) < 1:
         raise ValueError("burst graph buckets must be positive")
     return dict(max_running=case["max_running"],
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
-                decode_attention_policy="flash",
+                **attention_options(attention),
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
@@ -174,14 +203,15 @@ def validate_capture_options(options):
         raise AssertionError("captured graph buckets differ from plan")
 
 
-def local_is_complete(path, digest, *, model=None, blocks=None,
+def local_is_complete(path, digest, *, flags=None, model=None, blocks=None,
                       warmups=None, repetitions=None, commit=None,
                       resume_commit=None):
     if not path.is_file():
         return False
+    flags = ENGINE_FLAGS if flags is None else flags
     row = json.loads(path.read_text())
     if (row.get("status") != "complete" or row.get("workload_sha256") != digest
-            or row.get("engine_flags") != ENGINE_FLAGS
+            or row.get("engine_flags") != flags
             or (model is not None and row.get("model") != model)
             or (blocks is not None and row.get("num_blocks") != blocks)
             or (warmups is not None and row.get("warmups") != warmups)
@@ -272,7 +302,8 @@ def run_local(args, shape_id, model_source):
     dispatch = dispatch_plan(case, requests, args.seed)
     buckets = dispatch["prefill_buckets"]
     local_path, _, _ = stage_paths(args, shape_id)
-    if local_is_complete(local_path, digest, model=model_source, blocks=blocks,
+    if local_is_complete(local_path, digest, flags=engine_flags(args.attention),
+                         model=model_source, blocks=blocks,
                          warmups=args.warmups, repetitions=args.repetitions,
                          commit=repository_commit(), resume_commit=args.resume_commit):
         print(f"{shape_id}: local complete; reusing", flush=True)
@@ -292,8 +323,9 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets))
+        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
     if (adapter.graph_decoder.buckets != [case["max_running"]]
+            or adapter.prefill_attention_policy != ATTENTION_MODES[args.attention]["prefill"]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
             or not adapter.piecewise_prefill.enable_swiglu_fusion):
@@ -329,7 +361,7 @@ def run_local(args, shape_id, model_source):
               f"{result['output_tokens_per_s']:.1f} tok/s", flush=True)
     if any(row["outputs"] != runs[0]["outputs"] for row in runs):
         raise AssertionError(f"{shape_id}: local generated tokens differ between repetitions")
-    if (not adapter.decisions.get("flash-local")
+    if (not adapter.decisions.get(ATTENTION_MODES[args.attention]["decode_decision"])
             or not adapter.piecewise_prefill.graph_replays):
         raise AssertionError(f"{shape_id}: requested CUDA graph path did not replay")
     if sorted(adapter.piecewise_prefill.shapes) != buckets:
@@ -337,7 +369,7 @@ def run_local(args, shape_id, model_source):
     atomic_json(local_path, {"status": "complete", "shape_id": shape_id,
                              "model": model_source, "workload_sha256": digest,
                              "repository_commit": repository_commit(),
-                             "engine_flags": ENGINE_FLAGS, "warmups": args.warmups,
+                             "engine_flags": engine_flags(args.attention), "warmups": args.warmups,
                              "repetitions": args.repetitions, "num_blocks": blocks,
                              "dispatch_plan": dispatch,
                              "runs": runs,
@@ -378,7 +410,8 @@ def analyze_cell(args, shape_id, model_source):
     case, requests, workload, digest, blocks = input_contract(args, shape_id)
     dispatch = dispatch_plan(case, requests, args.seed)
     local_path, directory, report_path = stage_paths(args, shape_id)
-    if not local_is_complete(local_path, digest, model=model_source,
+    if not local_is_complete(local_path, digest, flags=engine_flags(args.attention),
+                             model=model_source,
                              blocks=blocks, warmups=args.warmups,
                              repetitions=args.repetitions,
                              commit=repository_commit(),
@@ -431,7 +464,7 @@ def forwarded(args, action, shape_id):
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions)]
+            "--repetitions", str(args.repetitions), "--attention", args.attention]
     if args.reuse_vllm_from is not None:
         command += ["--reuse-vllm-from", str(args.reuse_vllm_from)]
     command += resume_options(args.resume_commit)
@@ -444,7 +477,7 @@ def mixed_forwarded(args, shape_id):
             "--output-dir", str(args.output_dir), "--shape-id", shape_id,
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions)]
+            "--repetitions", str(args.repetitions), "--attention", args.attention]
     command += resume_options(args.resume_commit)
     if getattr(args, "vllm_python", None):
         command += ["--vllm-python", args.vllm_python]
@@ -457,7 +490,7 @@ def phase_forwarded(args, shape_id):
             "--output-dir", str(args.output_dir), "--shape-id", shape_id,
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions),
+            "--repetitions", str(args.repetitions), "--attention", args.attention,
             *resume_options(args.resume_commit)]
     if getattr(args, "vllm_python", None):
         command += ["--vllm-python", args.vllm_python]
@@ -487,18 +520,18 @@ def main():
             case, requests, _, _, _ = input_contract(args, shape_id)
             mixed_case, _, first, arrival, buckets, _, _ = mixed_plan(args, shape_id)
             burst = dispatch_plan(case, requests, args.seed)
-            validate_capture_options(adapter_options(case, burst["prefill_buckets"]))
-            validate_capture_options(mixed_adapter_options(mixed_case, buckets))
+            validate_capture_options(adapter_options(case, burst["prefill_buckets"], args.attention))
+            validate_capture_options(mixed_adapter_options(mixed_case, buckets, args.attention))
             shapes[shape_id] = {"burst": {**burst, "max_capture_tokens":
-                                          adapter_options(case, burst["prefill_buckets"])
-                                          ["max_capture_tokens"]},
+                                          adapter_options(case, burst["prefill_buckets"],
+                                                          args.attention)["max_capture_tokens"]},
                                 "staggered_mixed": {
                                     "first_wave": first, "arrival_step": arrival,
                                     "prefill_buckets": buckets,
                                     "max_capture_tokens": mixed_adapter_options(
-                                        mixed_case, buckets)["max_capture_tokens"],
+                                        mixed_case, buckets, args.attention)["max_capture_tokens"],
                                     "batch": mixed_case["max_running"]}}
-        print(json.dumps({"shapes": shapes, "engine": ENGINE_FLAGS,
+        print(json.dumps({"shapes": shapes, "engine": engine_flags(args.attention),
                           "warmups": args.warmups, "repetitions": args.repetitions},
                          indent=2))
         return
@@ -507,9 +540,10 @@ def main():
         for shape_id in selected:
             case, requests, _, _, _ = input_contract(args, shape_id)
             burst = dispatch_plan(case, requests, args.seed)
-            validate_capture_options(adapter_options(case, burst["prefill_buckets"]))
+            validate_capture_options(adapter_options(case, burst["prefill_buckets"], args.attention))
             mixed_case, _, _, _, mixed_buckets, _, _ = mixed_plan(args, shape_id)
-            validate_capture_options(mixed_adapter_options(mixed_case, mixed_buckets))
+            validate_capture_options(mixed_adapter_options(mixed_case, mixed_buckets,
+                                                           args.attention))
             case, _, workload, digest, blocks = input_contract(args, shape_id)
             selected_vllm_result(args, shape_id, workload, digest, case,
                                  blocks, model_source)
@@ -520,17 +554,21 @@ def main():
         from kernel_dispatch import _load
         if not hasattr(cpp.SchedulerConfig(), "packed_mixed_step"):
             raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
-        local_attention = _load("paged_flash_decode")
         query = torch.zeros((1, 12, 128), device=args.device, dtype=torch.float16)
         kv = torch.zeros((1, 16, 2, 128), device=args.device, dtype=torch.float16)
         table = torch.zeros((1, 1), device=args.device, dtype=torch.int32)
         lengths = torch.ones(1, device=args.device, dtype=torch.int32)
-        smoke = local_attention.flash_decode(
-            query, kv, kv, table, lengths)
+        # Smoke the attention this run will actually use, in this interpreter.
+        if args.attention == "fa3":
+            smoke = _load("paged_decode_fa3").fa3_paged_decode_attention(
+                query, kv, kv, table, lengths, scale=128 ** -.5, num_splits=0)
+        else:
+            smoke = _load("paged_flash_decode").flash_decode(
+                query, kv, kv, table, lengths)
         torch.cuda.synchronize()
         if smoke.shape != query.shape or not torch.isfinite(smoke).all():
             raise AssertionError("local attention did not return finite query-shaped output")
-        print(json.dumps({"status": "pass", "model": model_source,
+        print(json.dumps({"status": "pass", "model": model_source, "attention": args.attention,
                           "startup": setup, "reference_version": VLLM_VERSION,
                           "model_loaded": False}, indent=2))
         return

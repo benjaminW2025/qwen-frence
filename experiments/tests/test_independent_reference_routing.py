@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class IndependentRoutingTests(TestCase):
     def args(self):
-        return SimpleNamespace(suite_dir=ROOT / 'experiments/results/full-checkpoint-20260916T033540Z',
+        return SimpleNamespace(attention='project', suite_dir=ROOT / 'experiments/results/full-checkpoint-20260916T033540Z',
             output_dir=Path('fresh'), model='model', device='cuda:0', seed=20260914,
             warmups=1, repetitions=3, reuse_vllm_from=None, resume_commit=None,
             vllm_python='/separate/reference/python')
@@ -48,3 +48,25 @@ class IndependentRoutingTests(TestCase):
         self.assertEqual(burst.ENGINE_FLAGS['decode_attention_policy'], 'flash')
         self.assertEqual(burst.ENGINE_FLAGS['mixed_attention_policy'], 'flash_varlen')
         self.assertIn('unqualified', burst.ENGINE_FLAGS['attention_implementation'])
+
+    def test_fa3_mode_runs_fa3_in_every_phase_and_reaches_every_child(self):
+        flags = burst.engine_flags('fa3')
+        self.assertEqual(flags['decode_attention_policy'], 'fa3')
+        self.assertEqual(flags['prefill_attention_policy'], 'fa3_varlen')
+        self.assertEqual(flags['mixed_attention_policy'], 'fa3_varlen')
+        self.assertIn('vllm', flags['attention_implementation'])
+        self.assertNotEqual(flags, burst.engine_flags('project'))
+        case = dict(max_running=8, lengths=[256], outputs=[128])
+        for options in (burst.adapter_options(case, [2048], 'fa3'),
+                        mixed.adapter_options(case, [2048], 'fa3')):
+            # Pure prefill must not fall back to the Triton packed kernel.
+            self.assertEqual(options['decode_attention_policy'], 'fa3')
+            self.assertEqual(options['prefill_attention_policy'], 'fa3_varlen')
+        args = SimpleNamespace(**{**vars(self.args()), 'attention': 'fa3'})
+        commands = [burst.forwarded(args, 'run-local', burst.SHAPES[0]),
+                    burst.mixed_forwarded(args, burst.SHAPES[0]),
+                    burst.phase_forwarded(args, burst.SHAPES[0]),
+                    mixed.forward(args, 'run-local', burst.SHAPES[0]),
+                    phases.forwarded(args, 'run-local', burst.SHAPES[0])]
+        for command in commands:
+            self.assertEqual(command[command.index('--attention') + 1], 'fa3')

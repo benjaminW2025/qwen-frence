@@ -57,7 +57,7 @@ class PhaseTests(unittest.TestCase):
                          phases.output_digest({"0": [1, 2], "1": [3]}))
 
     def test_saved_result_rejects_wrong_timing_scheme_and_commit(self):
-        args = SimpleNamespace(warmups=1, repetitions=3, resume_commit=None)
+        args = SimpleNamespace(warmups=1, repetitions=3, resume_commit=None, attention='project')
         shape = phases.SHAPES[0]
         payload = {"status": "complete", "timing_scheme": phases.TIMING_SCHEME,
                    "shape_id": shape, "workload_sha256": "frozen", "model": "model",

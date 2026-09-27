@@ -100,7 +100,7 @@ class CurrentEightTests(unittest.TestCase):
                           "--resume-commit", "2627dcc"])
 
     def test_mixed_child_does_not_receive_burst_only_reuse_option(self):
-        args = SimpleNamespace(suite_dir=SUITE, output_dir=Path("out"),
+        args = SimpleNamespace(attention='project', suite_dir=SUITE, output_dir=Path("out"),
                                shape_id=benchmark.SHAPES[0],
                                model="Qwen/Qwen2.5-1.5B", device="cuda:0",
                                seed=20260914, warmups=1, repetitions=3,
@@ -129,7 +129,7 @@ class CurrentEightTests(unittest.TestCase):
         outputs = {row["request_id"]: row["output_ids"]
                    for row in payload["backends"]["vllm"]["runs"][-1]["requests"]}
         with tempfile.TemporaryDirectory() as temporary:
-            args = SimpleNamespace(suite_dir=SUITE, output_dir=Path(temporary),
+            args = SimpleNamespace(attention='project', suite_dir=SUITE, output_dir=Path(temporary),
                                    seed=20260914, warmups=1, repetitions=3,
                                    reuse_vllm_from=None, resume_commit=None)
             local_path, reference_dir, comparison = benchmark.stage_paths(args, shape)
