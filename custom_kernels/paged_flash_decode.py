@@ -1,7 +1,8 @@
 """Independent SM90a WGMMA attention candidate; no external attention imports.
 
 The CUDA implementation is in hopper_attention/attention.cu: a producer
-warpgroup gathers paged KV into a multi-stage shared-memory ring, and one or two
+warpgroup gathers paged KV with cp.async into a multi-stage shared-memory ring
+(FA3's own loader for 16-token pages), and one or two
 consumer warpgroups (64 query rows each) overlap softmax with the PV GEMM,
 ping-ponging GEMM issue when there are two. It is not yet GPU-validated or
 performance-qualified. There is no fallback.

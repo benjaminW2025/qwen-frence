@@ -101,10 +101,11 @@ def make_plan(args):
                         coverage[tag].append(key)
     return dict(schema=2, shapes=sorted(SHAPES), cases=list(selected.values()), coverage=coverage,
                 scope='representative actual attention shapes, not every iteration or full-engine timing',
-                implemented_controls=['split-K', 'intra-warpgroup softmax/PV overlap', 'register-fed PV',
+                implemented_controls=['split-K', 'cp.async paged KV gather', 'intra-warpgroup softmax/PV overlap',
+                                      'register-fed PV',
                                       'KV tiles 64/128', 'one or two ping-pong consumer warpgroups',
                                       'compact mixed worklist including construction'],
-                pending_features=['TMA or asynchronous KV loading', 'full-model qualification'])
+                pending_features=['full-model qualification'])
 
 
 ARCHITECTURE_KEYS = ('tile_n', 'register_pv', 'consumers', 'compact')

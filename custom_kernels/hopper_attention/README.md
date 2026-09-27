@@ -11,15 +11,29 @@ there is no external-attention fallback.
 The attention implementation is project-owned. NVIDIA CUTLASS v3.9.2 supplies
 CuTe layouts and WGMMA instruction wrappers, not an attention implementation.
 Algorithm reference: [FlashAttention-3](https://tridao.me/publications/flash3/flash3.pdf).
-A producer warpgroup gathers paged K/V in 16-byte chunks into a two- or
-three-stage ring laid out in CuTe's exact shared-memory layouts. One or two
+A producer warpgroup gathers paged K/V with 16-byte `cp.async` copies
+(global to shared, no register round trip, zero-fill past the context) into a
+two- to five-stage ring laid out in CuTe's exact shared-memory layouts. Each
+producer thread's arrival on a stage's mbarrier completes only once its copies
+land, so the producer runs ahead, throttled only by free stages. One or two
 consumer warpgroups (64 packed query rows each) run FA3's intra-warpgroup
 pipeline: softmax of tile i executes while the PV GEMM of tile i-1 is still in
 flight, and the running output is rescaled only after that GEMM retires. With
 two consumers a named-barrier ping-pong alternates their GEMM issue, so one
 warpgroup's softmax runs under the other's tensor-core work, and each KV tile
 serves 128 query rows. Tiles every row of a warpgroup sees in full skip the
-causal/length mask. The loader is still a cooperative gather, not TMA.
+causal/length mask.
+
+**Why `cp.async` and not TMA.** TMA copies one rectangular box from one
+regularly strided tensor per instruction. The KV cache here is paged in
+16-token pages scattered through the pool, so a 64-token KV tile spans four
+unrelated pages and no single box describes it. FA3 in vLLM 0.30.0's pinned
+fork uses TMA for paged KV only when `page_size % kBlockN == 0` and the query
+tile is large (`hopper/flash_api.cpp:464-474`); otherwise it gathers with
+`cp.async` (`hopper/paged_kv.h:29`, "We use CpAsync for K and V if PagedKV,
+since TMA doesn't work there"). With 16-token pages the reference therefore
+runs the same class of loader as this kernel. Per-page TMA (four 16-row
+boxes per 64-token tile) is possible but is not what the reference does.
 
 Why this structure (measured on H100, `experiments/results/hopper-tuning-h100*`):
 the original per-element gather put the kernel 7-23x behind FA3, with the gap
@@ -80,7 +94,8 @@ whole-forward mixed-graph prototype is rejected for this backend until migrated.
 | Intervention | Current candidate | Next controlled comparison |
 |---|---|---|
 | FP16 / D128 / 12:2 heads / page16 specialization | Compiled constants | Keep identical math and precision |
-| 16-byte cooperative paged gather, 3-stage ring (2 for N128 shared-P, two consumers) | Measured: decode 0.14x -> 0.52x FA3 | TMA or asynchronous loads remain the loader's next step |
+| 16-byte paged gather | Measured: decode 0.14x -> 0.52x FA3 (register round trip) | Superseded by `cp.async` below |
+| `cp.async` paged gather, 2-5 stage ring sized to shared memory | Written, unvalidated; FA3's own loader for 16-token pages | `hopper-tuning-h100-cpasync` vs `-pipelined` |
 | FA3 intra-warpgroup softmax/PV overlap | Written, unvalidated; `overlap_qk=False` is the serialized control | `serialized_only` tuner arm |
 | Two consumer warpgroups (M128) with ping-pong GEMM issue | Written, unvalidated; one consumer retained | `single_consumer_only` tuner arm; prefill/mixed only |
 | Mask-free softmax on fully visible tiles | Written, unvalidated | Long-prompt prefill, where most tiles are fully visible |

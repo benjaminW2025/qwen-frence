@@ -6,8 +6,11 @@
 // indexed by Layout{}(coord) do NOT implement that address transformation.
 //
 // One CTA covers one query tile of one sequence, one KV head and one split:
-//   warpgroup 0       producer. Gathers paged K/V tiles in 16-byte chunks into a
-//                     Stages-deep shared-memory ring signalled by mbarriers.
+//   warpgroup 0       producer. Gathers paged K/V tiles with 16-byte cp.async
+//                     copies (global -> shared, no register round trip) into a
+//                     Stages-deep ring. Each thread's arrival on a stage's
+//                     mbarrier completes only once its copies have landed, so
+//                     the producer never waits on its own loads.
 //   warpgroups 1..C   consumers, 64 packed (query, GQA head) rows each. Softmax
 //                     of tile i runs while the PV GEMM of tile i-1 is in flight
 //                     (FA3 intra-warpgroup pipelining). With two consumers a
@@ -57,14 +60,18 @@ template<int Consumers> struct Registers;
 template<> struct Registers<1> { static constexpr int producer = 32, consumer = 232; };
 template<> struct Registers<2> { static constexpr int producer = 40, consumer = 232; };
 
-// Three KV stages whenever they fit in the 227 KiB opt-in limit, otherwise two.
-// Only N=128 with shared P and two consumers falls back to two.
+// As many KV stages as fit in the 227 KiB opt-in limit, from two up to five.
+// Consumers hold two stages (K of tile i, V of tile i-1), so the rest are
+// copies in flight. Registers already limit every variant to one CTA per SM,
+// so the shared memory is otherwise unused.
 template<int N, bool RegisterPV, int Consumers>
 constexpr int stages_for() {
     constexpr int q = Consumers * M * D * 2;
     constexpr int kv = 2 * N * D * 2;
     constexpr int p = RegisterPV ? 0 : Consumers * M * N * 2;
-    return q + 3 * kv + p + 1024 <= MaxDynamicShared ? 3 : 2;
+    for (int stages = 5; stages > 2; --stages)
+        if (q + stages * kv + p + 1024 <= MaxDynamicShared) return stages;
+    return 2;
 }
 
 template<int N, bool RegisterPV, int Consumers>
@@ -79,9 +86,8 @@ struct alignas(128) Shared {
     alignas(8) uint64_t ready[Stages], empty[Stages];
 };
 
-// Named barriers; 0 is __syncthreads. Consumer and schedule IDs add the
-// consumer warpgroup index.
-constexpr int ProducerBarrier = 1, ConsumerBarrier = 2, ScheduleBarrier = 4;
+// Named barriers; 0 is __syncthreads. Both IDs add the consumer warpgroup index.
+constexpr int ConsumerBarrier = 2, ScheduleBarrier = 4;
 
 __device__ uint32_t shared_address(void const* pointer) {
     return static_cast<uint32_t>(__cvta_generic_to_shared(pointer));
@@ -107,6 +113,21 @@ __device__ void wait_phase(uint64_t* barrier, int phase) {
 __device__ void arrive(uint64_t* barrier) {
     asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0];" :: "r"(shared_address(barrier)) : "memory");
 }
+// 16-byte global -> shared copy that bypasses registers. src_bytes = 0 fills
+// the destination with zeros without reading the source. Same instruction as
+// FA3's paged-KV loader (SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<uint128_t>).
+__device__ void cp_async_16(void* shared, void const* global, bool valid) {
+    asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16, %2;"
+                 :: "r"(shared_address(shared)), "l"(global), "r"(valid ? 16 : 0) : "memory");
+}
+// Holds the barrier's current phase open until every cp.async this thread has
+// issued so far completes. Without .noinc this adds no arrival of its own, so
+// it pairs with a regular arrive(): CUTLASS PipelineAsync::producer_commit
+// with cpasync_barrier_arrive, as FA3's paged-KV producer uses it.
+__device__ void cp_async_arrive(uint64_t* barrier) {
+    asm volatile("cp.async.mbarrier.arrive.shared::cta.b64 [%0];" :: "r"(shared_address(barrier)) : "memory");
+}
+__device__ void cp_async_wait_all() { asm volatile("cp.async.wait_all;" ::: "memory"); }
 // Row distribution of SM90 m64 WGMMA accumulators: four adjacent lanes share
 // each row, and each thread holds two rows separated by eight.
 __device__ float row_max(float value) {
@@ -205,7 +226,7 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
     }
     if (threadIdx.x == 0) {
         for (int stage = 0; stage < Stages; ++stage) {
-            barrier_init(&sm.ready[stage], 1);
+            barrier_init(&sm.ready[stage], 128);  // one arrival per producer thread
             barrier_init(&sm.empty[stage], Consumers);
         }
         asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
@@ -214,39 +235,39 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
     __syncthreads();
     if (threadIdx.x < 128) {
         cutlass::arch::warpgroup_reg_dealloc<Registers<Consumers>::producer>();
+        // Each thread owns one 16-byte feature chunk (f8) of every eighth
+        // token. The 128B swizzle permutes 16B chunks without splitting one,
+        // and both the paged pool and the K/V layouts are feature-contiguous
+        // within a 64-element block, so an eight-aligned feature run is 16
+        // contiguous bytes on both sides. Index the TENSORS, not raw arrays
+        // with LK/LV offsets: CuTe's smem_ptr_flag carries the swizzle.
+        constexpr int VEC = 8, OCTETS = D / VEC, TOKENS_PER_ROUND = 128 / OCTETS;
+        constexpr int ROUNDS = N / TOKENS_PER_ROUND;
+        int const f8 = int(threadIdx.x % OCTETS) * VEC;
+        int const token0 = int(threadIdx.x) / OCTETS;
         for (int tile = first; tile < last; ++tile) {
             int i = tile - first, stage = i % Stages;
             if (i >= Stages) wait_phase(&sm.empty[stage], (i / Stages - 1) & 1);
             auto sk = make_tensor(make_smem_ptr(sm.k[stage]), LK{});
             auto sv = make_tensor(make_smem_ptr(sm.v[stage]), LV{});
-            // Each producer owns distinct logical (token, feature) elements.
-            // Index the TENSORS, not raw arrays with LK/LV offsets: CuTe's
-            // smem_ptr_flag transfers the swizzle into the pointer engine.
-            // One uint4 moves eight halves: the 128B swizzle permutes 16B
-            // chunks without splitting one, and both the paged pool and the
-            // K/V layouts are feature-contiguous within a 64-element block,
-            // so an eight-aligned feature run is 16 contiguous bytes in both.
-            // Threads sharing a token also share its one block-table load.
-            // Tokens at or past the context length are written as zeros, so
-            // poisoned cache padding never reaches either GEMM.
-            constexpr int VEC = 8, OCTETS = D / VEC;
-            for (int token = threadIdx.x / OCTETS; token < N; token += 128 / OCTETS) {
-                int f8 = int(threadIdx.x % OCTETS) * VEC;
-                int absolute = tile * N + token;
-                uint4 key = make_uint4(0, 0, 0, 0), value = key;
-                if (absolute < length) {
-                    int physical = table[sequence * width + absolute / 16];
-                    int pool_offset = ((physical * 16 + absolute % 16) * HKV + kv_head) * D + f8;
-                    key = *reinterpret_cast<uint4 const*>(k_pool + pool_offset);
-                    value = *reinterpret_cast<uint4 const*>(v_pool + pool_offset);
-                }
-                *reinterpret_cast<uint4*>(&sk(token, f8)) = key;
-                *reinterpret_cast<uint4*>(&sv(f8, token)) = value;
+            CUTE_UNROLL
+            for (int round = 0; round < ROUNDS; ++round) {
+                int const token = token0 + round * TOKENS_PER_ROUND;
+                int const absolute = tile * N + token;
+                // Tokens at or past the context length are zero-filled, so
+                // poisoned cache padding never reaches either GEMM.
+                bool const valid = absolute < length;
+                int const physical = valid ? table[sequence * width + absolute / 16] : 0;
+                int const offset = ((physical * 16 + absolute % 16) * HKV + kv_head) * D + f8;
+                cp_async_16(&sk(token, f8), valid ? k_pool + offset : k_pool, valid);
+                cp_async_16(&sv(f8, token), valid ? v_pool + offset : v_pool, valid);
             }
-            async_fence();
-            named_sync(ProducerBarrier, 128);
-            if (threadIdx.x == 0) arrive(&sm.ready[stage]);
+            cp_async_arrive(&sm.ready[stage]);
+            arrive(&sm.ready[stage]);
         }
+        // Retire this thread's copies before it exits; consumers already
+        // track them through the ready barriers.
+        cp_async_wait_all();
         return;
     }
     cutlass::arch::warpgroup_reg_alloc<Registers<Consumers>::consumer>();
@@ -361,6 +382,13 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
         CUTE_UNROLL
         for (int j = 0; j < size(acc); ++j) acc(j) *= alpha[row_half(j)];
     };
+    // cp.async writes land through the generic proxy and WGMMA reads through
+    // the async proxy. FA3 issues WGMMA directly after the barrier wait; the
+    // proxy fence after acquiring the stage makes the ordering explicit.
+    auto acquire = [&](int stage, int parity) {
+        wait_phase(&sm.ready[stage], parity);
+        async_fence();
+    };
     auto release = [&](int stage) {
         named_sync(ConsumerBarrier + wg, 128);
         if (lane == 0) arrive(&sm.empty[stage]);
@@ -384,7 +412,7 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
     // running maximum of tile i-1, and P(i-1) is published. Issue QK(i) and
     // PV(i-1) together; softmax(i) runs while PV(i-1) is in flight; once PV
     // retires, publish P(i) and move acc to tile i's maximum.
-    wait_phase(&sm.ready[0], 0);
+    acquire(0, 0);
     schedule_begin(0);
     if (active) issue_qk(0);
     schedule_end(0);
@@ -396,7 +424,7 @@ void attention(H const* q, H const* k_pool, H const* v_pool,
     }
     for (int tile = first + 1; tile < last; ++tile) {
         int const i = tile - first, stage = i % Stages, previous = (i - 1) % Stages;
-        wait_phase(&sm.ready[stage], (i / Stages) & 1);
+        acquire(stage, (i / Stages) & 1);
         schedule_begin(i);
         if (active) {
             issue_qk(stage);
