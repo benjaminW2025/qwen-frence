@@ -107,9 +107,16 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
-def repository_commit():
-    return subprocess.check_output(["git", "rev-parse", "HEAD"],
-                                   cwd=ROOT, text=True).strip()
+def repository_commit(root=ROOT):
+    """Last commit that changed anything outside experiments/results.
+
+    Saved cells are reusable only under the code that produced them, but a
+    commit that only adds results must not make them look stale: pushing each
+    cell as it completes is how a run survives losing the pod.
+    """
+    return subprocess.check_output(
+        ["git", "log", "-1", "--format=%H", "--", ".", ":(exclude)experiments/results"],
+        cwd=root, text=True).strip()
 
 
 def commit_matches(recorded, current, resume_commit=None):

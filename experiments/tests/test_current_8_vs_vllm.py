@@ -168,3 +168,30 @@ class CurrentEightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepositoryCommitTests(unittest.TestCase):
+    def test_results_only_commits_keep_the_code_commit(self):
+        import subprocess
+        import tempfile
+        def git(*command):
+            return subprocess.check_output(["git", *command], cwd=root, text=True).strip()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git("init", "-q")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "test")
+            (root / "engine.py").write_text("code\n")
+            git("add", "engine.py")
+            git("commit", "-q", "-m", "code")
+            code = git("rev-parse", "HEAD")
+            results = root / "experiments/results/run/cell"
+            results.mkdir(parents=True)
+            (results / "local.json").write_text("{}\n")
+            git("add", "-f", "experiments")
+            git("commit", "-q", "-m", "results")
+            self.assertNotEqual(git("rev-parse", "HEAD"), code)
+            self.assertEqual(benchmark.repository_commit(root), code)
+            (root / "engine.py").write_text("changed\n")
+            git("commit", "-q", "-am", "code change")
+            self.assertEqual(benchmark.repository_commit(root), git("rev-parse", "HEAD"))
