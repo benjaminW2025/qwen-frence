@@ -46,6 +46,8 @@ SUITE = ROOT / "experiments/results/full-checkpoint-20260916T033540Z"
 ACCEPTED = ROOT / "experiments/results/attention-rerun-4XR8Oi/eight-fa3"
 BENCHMARK = HERE / "benchmark_current_8_vs_vllm.py"
 PRIVATE_POOL_BUDGET_LIMIT = 8192
+PUSHABLE_RESULT_SUFFIXES = frozenset({".csv", ".json", ".log", ".md", ".txt"})
+MAX_PUSHABLE_RESULT_BYTES = 10 * 1024 * 1024
 
 
 def choose_budget(tokens_per_s, tolerance):
@@ -62,6 +64,16 @@ def mixed_supported(python, shape, budget, graph_pool, suite_dir, output_dir):
                              "--prefill-graph-pool", graph_pool],
                             cwd=ROOT, check=True, capture_output=True, text=True)
     return "unsupported" not in json.loads(result.stdout)["shapes"][shape]["staggered_mixed"]
+
+
+def pushable_result_artifacts(root, max_bytes=MAX_PUSHABLE_RESULT_BYTES):
+    """Return compact, reviewable evidence and exclude binary/raw profiling state."""
+    if not root.is_dir():
+        return []
+    return [path for path in sorted(root.rglob("*"))
+            if path.is_file()
+            and path.suffix.lower() in PUSHABLE_RESULT_SUFFIXES
+            and path.stat().st_size <= max_bytes]
 
 
 def decide(root, args):
@@ -127,7 +139,25 @@ class Session:
     def push(self, message):
         if not self.args.push:
             return
-        for command in (["git", "add", "-f", str(self.root)], ["git", "commit", "-qm", message],
+        artifacts = pushable_result_artifacts(self.root)
+        if not artifacts:
+            print(f"warning: no compact artifacts to push under {self.root}", flush=True)
+            return
+        commands = []
+        for offset in range(0, len(artifacts), 100):
+            commands.append(["git", "add", "-f", "--",
+                             *map(str, artifacts[offset:offset + 100])])
+        commands.extend((["git", "diff", "--cached", "--quiet", "--", str(self.root)],))
+        for command in commands:
+            result = subprocess.run(command, cwd=ROOT)
+            if command[1:4] == ["diff", "--cached", "--quiet"]:
+                if result.returncode == 0:
+                    return
+                break
+            if result.returncode != 0:
+                print(f"warning: {' '.join(command[:4])} failed", flush=True)
+                return
+        for command in (["git", "commit", "-qm", message, "--", str(self.root)],
                         ["git", "push", "-q"]):
             if subprocess.run(command, cwd=ROOT).returncode != 0:
                 # Results stay on disk; a failed push must not stop the session.

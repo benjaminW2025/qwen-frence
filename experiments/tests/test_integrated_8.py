@@ -28,6 +28,21 @@ class BudgetChoice(unittest.TestCase):
         self.assertEqual(session.choose_budget({"2048": 1.0}, .01), 2048)
 
 
+class ResultRetention(unittest.TestCase):
+    def test_only_compact_reviewable_artifacts_are_pushable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "report.json").write_text("{}")
+            (root / "summary.csv").write_text("a,b\n1,2\n")
+            (root / "fixture.pt").write_bytes(b"tensor")
+            (root / "extension.so").write_bytes(b"binary")
+            (root / "trace.sqlite").write_bytes(b"profile")
+            (root / "oversized.json").write_bytes(b"x" * 33)
+            kept = {path.name for path in session.pushable_result_artifacts(
+                root, max_bytes=32)}
+            self.assertEqual(kept, {"report.json", "summary.csv"})
+
+
 class Decisions(unittest.TestCase):
     def write(self, root, path, value):
         target = root / path

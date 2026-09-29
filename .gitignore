@@ -6,6 +6,11 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 *.nsys-rep
+*.ncu-rep
+*.sqlite
+*.pt
+*.pth
+*.so
 .venv/
 venv/
 *.egg-info/
@@ -15,11 +20,10 @@ custom_kernels/native_grouped_decode/*.so
 .env
 .env.*
 artifacts/
+work/
 
-# Benchmark and correctness artifacts are intentionally versioned.
-!benchmarks/results/
-!benchmarks/results/**
-!experiments/results/
-!experiments/results/**
-!correctness/results/
-!correctness/results/**
+# Generated results stay local by default. Curated, compact evidence can still be
+# added explicitly; run_integrated_8.py applies the same policy when --push is used.
+benchmarks/results/
+experiments/results/
+correctness/results/
