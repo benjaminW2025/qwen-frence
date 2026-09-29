@@ -21,10 +21,10 @@ heterogeneous 16-request burst with concurrency capped at eight:
 
 The paged-only stage intentionally regressed: paging adds indirection without yet
 amortizing model execution across requests. Continuous batching supplied that missing
-benefit. Canonical artifact: [`h100-burst-20260824T224748374089Z.json`](benchmarks/results/h100-burst-20260824T224748374089Z.json).
+ benefit. Canonical artifact: [`h100-burst-20260824T224748374089Z.csv`](benchmarks/results/h100-burst-20260824T224748374089Z.csv).
 
 A separate Poisson-arrival workload preserves the continuous-serving result:
-[`h100-poisson-20260824T195643307034Z.json`](benchmarks/results/h100-poisson-20260824T195643307034Z.json).
+[`h100-poisson-20260824T195643307034Z.csv`](benchmarks/results/h100-poisson-20260824T195643307034Z.csv).
 
 ## 2. Pack and resume prefill
 
