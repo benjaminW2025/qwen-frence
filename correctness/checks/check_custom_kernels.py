@@ -196,12 +196,43 @@ def check_full_model():
     return ok
 
 
+def check_fused_lm_head_norm_prologue():
+    """Final RMSNorm applied in the head's input load, from producer partial sums."""
+    print("fused output head with RMSNorm prologue...")
+    ok = True
+    hidden_size, tile = 512, 128
+    for batch in (8, 64):
+        generator = torch.Generator(device=DEVICE).manual_seed(900 + batch)
+        residual = (torch.randn(batch, hidden_size, device=DEVICE, generator=generator) * 3).to(DTYPE)
+        gamma = (torch.rand(hidden_size, device=DEVICE, generator=generator) + .5).to(DTYPE)
+        weight = torch.randn(2048, hidden_size, device=DEVICE, dtype=DTYPE, generator=generator)
+        # What residual_gemm writes: FP32 sums of squares of the FP16 rows, per tile.
+        partials = residual.float().square().view(batch, hidden_size // tile, tile).sum(-1).contiguous()
+        scale = 1 / torch.sqrt(partials.sum(-1, keepdim=True) / hidden_size + 1e-6)
+        normalized = (residual.float() * gamma.float() * scale).to(DTYPE)
+        logits = torch.nn.functional.linear(normalized, weight)
+        reference = logits.argmax(-1)
+        actual = fused_lm_head_argmax(residual, weight, norm_weight=gamma, row_partials=partials)
+        mismatched = (actual != reference).nonzero().flatten().tolist()
+        # Summation order of the partials differs (tree vs sequential), so only a
+        # genuine near-tie (<= 2 FP16 ulps at the logits' magnitude) may flip.
+        passed = all(
+            float(logits[row, reference[row]] - logits[row, actual[row]])
+            <= 2 * torch.finfo(DTYPE).eps * max(1.0, abs(float(logits[row, reference[row]])))
+            for row in mismatched)
+        ok &= passed
+        print(f"  B={batch:<2}: matching tokens={batch - len(mismatched)}/{batch}, "
+              f"near-tie flips={len(mismatched)}  {'PASS' if passed else 'FAIL'}")
+    return ok
+
+
 def main():
     ok = check_rms_norm()
     ok = check_rope() and ok
     ok = check_swiglu() and ok
     ok = check_rope_kv_write() and ok
     ok = check_fused_lm_head() and ok
+    ok = check_fused_lm_head_norm_prologue() and ok
     ok = check_full_model() and ok
     print("OVERALL:", "PASS" if ok else "FAIL")
     return ok

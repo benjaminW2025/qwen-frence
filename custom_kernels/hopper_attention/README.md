@@ -1,7 +1,9 @@
 # Independent Hopper attention candidate
 
-**Uncompiled / unvalidated on Hopper; no performance claim.** Do not treat CPU
-unit tests, the FA3-style design, or successful import as CUDA qualification.
+**Experimental Hopper candidate; not qualified for production.** The independent
+numerical/graph checks have passed on H100. Performance parity and full-model
+correctness remain unestablished. An older `synccheck` log was removed with its
+failed run artifacts; synchronization must be checked on the current build.
 
 Scope: SM90a, FP16 Qwen2.5-1.5B, 12 query / 2 KV heads, head dimension 128,
 page size 16. Supports paged decode and packed variable-length bottom-right
@@ -35,7 +37,8 @@ since TMA doesn't work there"). With 16-token pages the reference therefore
 runs the same class of loader as this kernel. Per-page TMA (four 16-row
 boxes per 64-token tile) is possible but is not what the reference does.
 
-Why this structure (measured on H100, `experiments/results/hopper-tuning-h100*`):
+Why this structure (historical H100 tuning artifacts are recoverable from Git
+history; the failed run directories were removed from the working tree):
 the original per-element gather put the kernel 7-23x behind FA3, with the gap
 tracking KV volume. Moving 16-byte chunks lifted decode to 0.52x FA3 but left
 prefill/mixed at 0.19-0.23x, the signature of a consumer that alternates tensor
@@ -79,7 +82,7 @@ performance parity with FA3. The initial split schedule is not tuned.
    microbenchmark explicitly reports `full_model_qualified=false`; it does
    not perform or substitute for these checks.
 
-None of these GPU gates has passed yet. The current eight-cell scripts have
+The numerical/graph gate has passed. The current eight-cell scripts have
 candidate routing and separate reference interpreters wired; older experimental
 FA3 arms remain explicitly external references. A complete historical experiment
 rerun/migration is still pending. Do not reuse old scorecards for this candidate.
@@ -95,7 +98,7 @@ whole-forward mixed-graph prototype is rejected for this backend until migrated.
 |---|---|---|
 | FP16 / D128 / 12:2 heads / page16 specialization | Compiled constants | Keep identical math and precision |
 | 16-byte paged gather | Measured: decode 0.14x -> 0.52x FA3 (register round trip) | Superseded by `cp.async` below |
-| `cp.async` paged gather, 2-5 stage ring sized to shared memory | Written, unvalidated; FA3's own loader for 16-token pages | `hopper-tuning-h100-cpasync` vs `-pipelined` |
+| `cp.async` paged gather, 2-5 stage ring sized to shared memory | Numerical checks passed; current-build sanitizer status pending | Compare against FA3 and historical pipelined control |
 | FA3 intra-warpgroup softmax/PV overlap | Written, unvalidated; `overlap_qk=False` is the serialized control | `serialized_only` tuner arm |
 | Two consumer warpgroups (M128) with ping-pong GEMM issue | Written, unvalidated; one consumer retained | `single_consumer_only` tuner arm; prefill/mixed only |
 | Mask-free softmax on fully visible tiles | Written, unvalidated | Long-prompt prefill, where most tiles are fully visible |

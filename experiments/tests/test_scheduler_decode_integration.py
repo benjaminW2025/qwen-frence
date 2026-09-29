@@ -26,6 +26,61 @@ except ImportError:
 
 
 class GraphAdapterTests(unittest.TestCase):
+    def test_long_b64_mixed_worklist_is_built_once_for_all_layers(self):
+        # This CPU contract does not need the Triton-backed ragged attention
+        # module that piecewise_prefill imports for its unrelated RoPE helper.
+        import importlib.util
+        path = ROOT / 'engine/graph/piecewise_prefill.py'
+        spec = importlib.util.spec_from_file_location('piecewise_prefill_worklist_contract', path)
+        piecewise_prefill = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {'ragged_prefill': SimpleNamespace(_rope_factors=None)}):
+            spec.loader.exec_module(piecewise_prefill)
+
+        tokens, batch = 2111, 64
+        cfg = SimpleNamespace(n_heads=2, d_head=2)
+        model = SimpleNamespace(cfg=cfg, layers=[object(), object()], lm_head=lambda x: x)
+        pool = SimpleNamespace(k_pool=[torch.zeros(1), torch.zeros(1)],
+                               v_pool=[torch.zeros(1), torch.zeros(1)])
+        prefill = piecewise_prefill.PiecewisePrefill.__new__(
+            piecewise_prefill.PiecewisePrefill)
+        prefill.model, prefill.pool = model, pool
+        prefill.enable_residual_rmsnorm = True
+        prefill.graph_replays = 0
+        q = torch.zeros((1, cfg.n_heads, tokens, cfg.d_head))
+        residual = torch.zeros((tokens, cfg.n_heads * cfg.d_head))
+        first = SimpleNamespace(
+            positions=torch.zeros(tokens, dtype=torch.long),
+            slots=torch.zeros(tokens, dtype=torch.long),
+            valid_tokens=torch.zeros((), dtype=torch.int32),
+            run_initial=lambda ids, count: (q, residual))
+        prefill.pieces = lambda count: [first,
+            SimpleNamespace(run_from_attention=lambda r, a, n: (q, residual)),
+            SimpleNamespace(run_from_attention=lambda r, a, n: residual)]
+        cu = torch.tensor([0, *range(1, batch), tokens], dtype=torch.int32)
+        worklist = torch.tensor([[128, 1], [0, 0]], dtype=torch.int32)
+        with mock.patch('kernel_dispatch.prepare_flash_worklist', return_value=worklist) as prepare, \
+             mock.patch('kernel_dispatch.flash_varlen', side_effect=lambda query, *a, **kw: torch.zeros_like(query)) as attention:
+            prefill.forward(torch.zeros(tokens, dtype=torch.long), torch.arange(tokens),
+                            torch.arange(tokens), cu, torch.ones(batch, dtype=torch.int32),
+                            torch.zeros((batch, 1), dtype=torch.int32), 2048,
+                            mixed_decode_count=batch - 1, mixed_attention_policy='flash_varlen')
+        prepare.assert_called_once_with(cu, tokens, consumers=2)
+        self.assertEqual(attention.call_count, len(model.layers))
+        for call in attention.call_args_list:
+            self.assertIs(call.kwargs['worklist'], worklist)
+            self.assertIs(call.kwargs['compact'], True)
+            self.assertEqual(call.kwargs['consumers'], 2)
+        with mock.patch('kernel_dispatch.prepare_flash_worklist') as prepare, \
+             mock.patch('kernel_dispatch.flash_varlen', side_effect=lambda query, *a, **kw: torch.zeros_like(query)) as attention:
+            prefill.forward(torch.zeros(tokens, dtype=torch.long), torch.arange(tokens),
+                            torch.arange(tokens), cu, torch.ones(batch, dtype=torch.int32),
+                            torch.zeros((batch, 1), dtype=torch.int32), 2048,
+                            mixed_decode_count=0, mixed_attention_policy='flash_varlen')
+        prepare.assert_not_called()
+        self.assertEqual(attention.call_count, len(model.layers))
+        self.assertTrue(all(not call.kwargs['compact'] and call.kwargs['worklist'] is None
+                            for call in attention.call_args_list))
+
     def test_varlen_attention_uses_only_live_rows_from_padded_graph(self):
         import piecewise_prefill
 

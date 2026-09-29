@@ -80,3 +80,33 @@ class IndependentRoutingTests(TestCase):
                 literal = f'"{mode["decode_decision"]}"'
                 self.assertEqual(source.count(literal), int(module is burst),
                                  f'{module.__name__} hard-codes {literal}')
+
+    def test_vllm_default_budget_reaches_every_child_and_leaves_vllm_unpinned(self):
+        self.assertEqual(burst.vllm_budget_kwargs("matched"), {"max_num_batched_tokens": 2048})
+        self.assertEqual(burst.vllm_budget_kwargs("default"), {})
+        with self.assertRaises(ValueError):
+            burst.vllm_budget_kwargs("tuned")
+        args = SimpleNamespace(**{**vars(self.args()), 'vllm_budget': 'default'})
+        commands = [burst.forwarded(args, 'run-vllm', burst.SHAPES[0]),
+                    burst.mixed_forwarded(args, burst.SHAPES[0]),
+                    burst.phase_forwarded(args, burst.SHAPES[0]),
+                    mixed.forward(args, 'run-vllm', burst.SHAPES[0]),
+                    phases.forwarded(args, 'run-vllm', burst.SHAPES[0])]
+        for command in commands:
+            self.assertEqual(command[command.index('--vllm-budget') + 1], 'default')
+
+    def test_a_vllm_result_from_one_budget_mode_is_never_used_as_the_other(self):
+        import json
+        import tempfile
+        from run_benchmarks import workload_fingerprint
+        args = self.args()
+        case, _, workload, digest, blocks = burst.input_contract(args, burst.SHAPES[0])
+        for recorded, requested in (('default', 'matched'), ('matched', 'default'), (None, 'default')):
+            configuration = {} if recorded is None else {'vllm_budget': recorded}
+            with tempfile.TemporaryDirectory() as directory:
+                (Path(directory) / 'result.json').write_text(json.dumps(
+                    {'workload': workload.to_dict(), 'configuration': configuration}))
+                self.assertEqual(workload_fingerprint(workload), digest)
+                with self.assertRaisesRegex(ValueError, 'budget mode'):
+                    burst.vllm_result(Path(directory), workload, digest, case, blocks, 'model', 1, 3,
+                                      vllm_budget=requested)

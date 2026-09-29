@@ -120,19 +120,19 @@ def wrapper_consumers(case):
 def configs(case):
     # Cap scratch/reduction cost for large query cohorts; no combinatorial sweep.
     splits = (1, 2, 4, 8, 16) if case['kind'] == 'decode' else (1, 2, 4)
-    return [dict(split_k=k, overlap_qk=overlap, tile_n=64, register_pv=False,
+    return [dict(split_k=k, overlap_qk=overlap, tile_n=64, register_pv=True,
                  consumers=wrapper_consumers(case), compact=False)
             for k in splits for overlap in (True, False)]
 
 
 def baseline_config(case):
     if case['kind'] != 'decode':
-        return dict(split_k=1, overlap_qk=True, tile_n=64, register_pv=False,
+        return dict(split_k=1, overlap_qk=True, tile_n=64, register_pv=True,
                     consumers=wrapper_consumers(case), compact=False)
     batch = len(case['queries'])
     capacity = math.ceil(max(case['lengths']) / 16) * 16
     return dict(split_k=min(32, (capacity + 63) // 64, max(1, (256 + batch * 2 - 1) // (batch * 2))),
-                overlap_qk=True, tile_n=64, register_pv=False, consumers=1, compact=False)
+                overlap_qk=True, tile_n=64, register_pv=True, consumers=1, compact=False)
 
 
 def architecture_configs(case, control):
@@ -147,7 +147,7 @@ def architecture_configs(case, control):
 
 def evaluation_configs(case, control, chosen):
     rows = [('baseline', baseline_config(case)), ('tuned_control', control),
-            ('register_pv_only', {**control, 'register_pv': True}),
+            ('shared_p_only', {**control, 'register_pv': False}),
             ('tile_128_only', {**control, 'tile_n': 128}),
             ('serialized_only', {**control, 'overlap_qk': False})]
     if case['kind'] != 'decode':

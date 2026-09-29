@@ -35,14 +35,19 @@ def main():
     parser.add_argument("--suite-dir", type=Path)
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--intervention", choices=("packed-callback", "boundary-buffers",
+                        "resident-metadata", "buffers-and-metadata"), default="packed-callback",
+                        help="new arms compare against the current single-callback FA3 path")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/cpp-packed-mixed-v1")
     args = parser.parse_args()
     if args.action == "plan":
         print(json.dumps({"shape": "B8, eight 256-token prompts, 18 output tokens",
                           "arrivals": [0, 0, 3, 4, 5, 6, 7, 8],
-                          "control": "two C++ callbacks + Python metadata packing",
-                          "candidate": "one C++ packed callback + one pinned H2D phase",
+                          "intervention": args.intervention,
+                          "control": ("two callbacks" if args.intervention == "packed-callback"
+                                      else "current single packed callback"),
+                          "candidate": args.intervention,
                           "same_attention": "packed-varlen FA3, piecewise model graphs",
                           "checks": ["all callback logits", "scheduler work",
                                      "output tokens", "full KV cache"],
@@ -71,8 +76,12 @@ def main():
     import inference_engine_cpp as cpp
     if not hasattr(cpp.SchedulerConfig(), "packed_mixed_step"):
         raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
+    reuse_metadata = args.intervention in ("resident-metadata", "buffers-and-metadata")
+    reuse_buffers = args.intervention in ("boundary-buffers", "buffers-and-metadata")
+    if reuse_metadata and not hasattr(cpp.SchedulerConfig(), "reuse_stable_decode_metadata"):
+        raise RuntimeError("C++ extension lacks reuse_stable_decode_metadata; rebuild it")
     from kernel_dispatch import _load
-    _load("paged_varlen_fa3").smoke_varlen_fa3(args.device)
+    _load("paged_varlen_fa3").smoke_varlen_fa3(args.device, boundary_buffers=reuse_buffers)
     if args.action == "check":
         print(json.dumps({"startup": setup, "packed_mixed_extension": "pass",
                           "varlen_fa3_smoke": "pass", "model_loaded": False}, indent=2))
@@ -90,6 +99,10 @@ def main():
     config = make_config(cpp, case)
     packed_config = make_config(cpp, case)
     packed_config.packed_mixed_step = True
+    if args.intervention != "packed-callback":
+        config.packed_mixed_step = True
+    if reuse_metadata:
+        packed_config.reuse_stable_decode_metadata = True
     blocks = config.max_batch_size * ((config.max_context_length + 15) // 16 + 1)
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     options = dict(max_running=8, max_context_length=config.max_context_length,
@@ -98,18 +111,34 @@ def main():
                    enable_residual_rmsnorm=True,
                    enable_native_decode_qkv_postprocess=True,
                    enable_prefill_swiglu_fusion=True)
-    control = PackedMixedPiecewiseGraphModelAdapter(
-        engine.model, pool, None, mixed_attention_policy="fa3_varlen",
-        full_mixed_graph=False, **options)
-    candidate = CppPackedMixedModelAdapter(engine.model, pool, None, **options)
+    if args.intervention != "packed-callback":
+        # Match the accepted eight-cell --attention fa3 baseline: FA3 for pure
+        # prefill too, not the Triton packed kernel that fa3 decode otherwise
+        # pairs with. packed-callback keeps its original configuration.
+        options["prefill_attention_policy"] = "fa3_varlen"
+    if args.intervention == "packed-callback":
+        control = PackedMixedPiecewiseGraphModelAdapter(
+            engine.model, pool, None, mixed_attention_policy="fa3_varlen",
+            full_mixed_graph=False, **options)
+    else:
+        control = CppPackedMixedModelAdapter(engine.model, pool, None, **options)
+    candidate = CppPackedMixedModelAdapter(
+        engine.model, pool, None, **options,
+        enable_prefill_boundary_buffer_reuse=reuse_buffers,
+        enable_stable_decode_table_cache=reuse_metadata)
 
     def run_one(adapter, scheduler_config, observer=None):
         for tensor in pool.k_pool + pool.v_pool:
             tensor.fill_(float("nan"))
         adapter.observer = observer
         try:
-            return execute(torch, cpp.IterationLoop(scheduler_config,
-                           torch.device(args.device)), adapter, requests)
+            loop = cpp.IterationLoop(scheduler_config, torch.device(args.device))
+            before = adapter.piecewise_prefill.boundary_copies()
+            result = execute(torch, loop, adapter, requests)
+            after = adapter.piecewise_prefill.boundary_copies()
+            result["device_decode_state_replays"] = loop.num_device_decode_state_replays()
+            result["boundary_copies"] = {key: after[key] - before[key] for key in after}
+            return result
         finally:
             adapter.observer = None
 
@@ -169,9 +198,26 @@ def main():
                                          for row in samples["candidate"])
     valid = (not candidate_logits.mismatched_callbacks and kv_equal and
              schedule_equal and tokens_equal and warm_outputs_equal and
-             traces["control"]["target_callback_count"] == 2 and
+             traces["control"]["target_callback_count"] == (
+                 2 if args.intervention == "packed-callback" else 1) and
              traces["candidate"]["target_callback_count"] == 1)
+    metadata_executed = (not reuse_metadata or all(
+        row["device_decode_state_replays"] > 0 for row in samples["candidate"]))
+    # Buffer reuse must remove every boundary copy the control performs; a
+    # silently disabled path would otherwise report ~1.0x as a valid result.
+    boundary_executed = (not reuse_buffers or (
+        all(row["boundary_copies"] == {"residual": 0, "attention": 0}
+            for row in samples["candidate"])
+        and all(row["boundary_copies"]["residual"] > 0
+                and row["boundary_copies"]["attention"] > 0
+                for row in samples["control"])))
+    valid = valid and metadata_executed and boundary_executed
     report = {"status": "complete" if valid else "invalid_comparison",
+              "intervention": args.intervention,
+              "metadata_reuse_executed": metadata_executed if reuse_metadata else None,
+              "boundary_reuse_executed": boundary_executed if reuse_buffers else None,
+              "boundary_copies": {arm: [row["boundary_copies"] for row in rows]
+                                  for arm, rows in samples.items()},
               "model": source, "model_load_seconds": load_seconds,
               "workload": {"arrivals": case["arrivals"], "lengths": case["lengths"],
                            "outputs": case["outputs"], "prefill_budget": 2048},
@@ -200,8 +246,8 @@ def main():
                       "unprofiled alternating runs. Incorrect results retain timings."}
     report_path = args.output_dir / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"mixed wall median: two-callback {control_mixed:.3f} ms; "
-          f"single-callback {candidate_mixed:.3f} ms; "
+    print(f"{args.intervention}: mixed wall median: control {control_mixed:.3f} ms; "
+          f"candidate {candidate_mixed:.3f} ms; "
           f"speedup {report['speedup_mixed']:.3f}x")
     print(f"target callbacks: {traces['control']['target_callback_count']} -> "
           f"{traces['candidate']['target_callback_count']}; "

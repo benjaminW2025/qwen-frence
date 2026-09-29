@@ -65,7 +65,7 @@ def _decode_offsets(batch, device):
 
 def flash_varlen(q, k_pool, v_pool, cu_seqlens_q, block_table, seq_lens, *,
                  max_query_len, split_k=1, scale=None, causal=True, overlap_qk=True,
-                 tile_n=64, register_pv=False, consumers=None, compact=False, worklist=None):
+                 tile_n=64, register_pv=True, consumers=None, compact=False, worklist=None):
     """Qwen FP16 packed attention with bottom-right causal alignment.
 
     Q: [tokens,12,128]; KV: [pages,16,2,128]. Metadata: CUDA int32.
@@ -74,7 +74,9 @@ def flash_varlen(q, k_pool, v_pool, cu_seqlens_q, block_table, seq_lens, *,
     compact=True builds a worklist on GPU unless one is explicitly supplied.
     A supplied worklist must be rebuilt when query offsets change; KV lengths
     and page mappings can change without changing the query-tile worklist.
-    overlap_qk=False serializes each warpgroup's GEMMs with its softmax (a
+    Register-fed PV is the measured default for the fixed H100 workloads;
+    register_pv=False retains the shared-memory-P control. overlap_qk=False
+    serializes each warpgroup's GEMMs with its softmax (a
     control for measuring the pipelining). consumers=None picks
     default_consumers(max_query_len); a prepared worklist fixes the query-tile
     height, so it requires consumers to be passed explicitly and to match.
@@ -120,7 +122,7 @@ def prepare_flash_worklist(cu_seqlens_q, total_queries, *, consumers):
 
 def flash_decode(q, k_pool, v_pool, block_table, seq_lens, *, split_k=None,
                  scale=None, max_context_length=None, tile_n=64,
-                 register_pv=False, overlap_qk=True, consumers=1, compact=False, worklist=None):
+                 register_pv=True, overlap_qk=True, consumers=1, compact=False, worklist=None):
     """One query per sequence through the same paged-KV/WGMMA pipeline as varlen.
 
     A decode sequence packs six (query, GQA head) rows, so one consumer

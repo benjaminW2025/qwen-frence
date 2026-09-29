@@ -51,7 +51,7 @@ class WorkloadTuningTests(TestCase):
             for role, candidate in tune.evaluation_configs(case, control, grid[-1]):
                 if role.endswith('_only'):
                     changed = {k for k in control if candidate[k] != control[k]}
-                    self.assertEqual(changed, {dict(register_pv_only='register_pv',
+                    self.assertEqual(changed, {dict(shared_p_only='register_pv',
                         tile_128_only='tile_n', compact_only='compact', serialized_only='overlap_qk',
                         single_consumer_only='consumers')[role]})
 
@@ -90,7 +90,7 @@ class WorkloadTuningTests(TestCase):
             selected = dict(cold=measure(2.), warm=measure(2.))
             evaluation = [dict(baseline, role='baseline'),
                           dict(cold=measure(2.5), warm=measure(2.5), role='tuned_control'),
-                          dict(selected, role='register_pv_only', correctness_error=None),
+                          dict(selected, role='shared_p_only', correctness_error=None),
                           dict(selected, role='selected')]
             tune.write_json(root / 'local' / f'{case["id"]}.json', dict(row, evaluation=evaluation))
             tune.write_json(root / 'reference' / f'{case["id"]}.json', dict(row, evaluation=[dict(cold=measure(1.), warm=measure(1.))]))
@@ -101,5 +101,5 @@ class WorkloadTuningTests(TestCase):
             self.assertEqual(result['rows'][0]['cold_tuning_speedup'], 1.5)
             self.assertEqual(result['rows'][0]['vs_fa3']['warm'], .5)
             self.assertEqual(result['rows'][0]['interventions_vs_tuned_control']
-                             ['register_pv_only']['speedup']['cold'], 1.25)
+                             ['shared_p_only']['speedup']['cold'], 1.25)
             self.assertFalse(json.loads((root / 'candidate-dispatch.json').read_text())['production_enabled'])

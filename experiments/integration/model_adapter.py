@@ -116,7 +116,8 @@ class GraphModelAdapter(ModelAdapter):
                  enable_native_decode_qkv_postprocess=False,
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
-                 enable_stable_decode_table_cache=False):
+                 enable_stable_decode_table_cache=False,
+                 enable_decode_fused_gemm_epilogues=False):
         super().__init__(model, pool, loop)
         if decode_attention_policy not in ("production", "splitk", "fa3", "flash"):
             raise ValueError("graph decode policy must be 'production', 'splitk', 'fa3', or 'flash'")
@@ -133,6 +134,11 @@ class GraphModelAdapter(ModelAdapter):
         )
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.enable_decode_fused_gemm_epilogues = bool(enable_decode_fused_gemm_epilogues)
+        if self.enable_decode_fused_gemm_epilogues:
+            # Prepare fused weights before any capture warms up on a side stream.
+            from kernel_dispatch import _load
+            _load("fused_gemm").prepare_model(model)
         self.max_context_length = max_context_length
         self.max_blocks = (max_context_length + pool.block_size - 1) // pool.block_size
         if self.max_blocks < 1:
@@ -164,6 +170,7 @@ class GraphModelAdapter(ModelAdapter):
             enable_fused_qkv_rope_cache=self.enable_fused_qkv_rope_cache,
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
             enable_stable_decode_table_cache=enable_stable_decode_table_cache,
+            enable_fused_gemm_epilogues=self.enable_decode_fused_gemm_epilogues,
         )
 
     @torch.no_grad()
@@ -203,7 +210,11 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_prefill_packed_qkv_rope_cache=False,
                  enable_prefill_residual_rmsnorm=False,
                  enable_prefill_swiglu_fusion=False,
-                 prefill_attention_policy=None):
+                 enable_prefill_boundary_buffer_reuse=False,
+                 enable_prefill_shared_graph_pool=False,
+                 prefill_attention_policy=None,
+                 enable_decode_fused_gemm_epilogues=False,
+                 enable_prefill_fused_gemm_epilogues=False):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -215,7 +226,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          ),
                          enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache,
                          enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache,
-                         enable_stable_decode_table_cache=enable_stable_decode_table_cache)
+                         enable_stable_decode_table_cache=enable_stable_decode_table_cache,
+                         enable_decode_fused_gemm_epilogues=enable_decode_fused_gemm_epilogues)
         # Pure-prefill attention. The default keeps each decode policy's
         # historical pairing (independent kernel with "flash", Triton packed
         # prefill otherwise); pass "fa3_varlen" to run FA3 end to end.
@@ -235,12 +247,19 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
         )
         self.enable_prefill_residual_rmsnorm = bool(enable_prefill_residual_rmsnorm)
         self.enable_prefill_swiglu_fusion = bool(enable_prefill_swiglu_fusion)
+        self.enable_prefill_fused_gemm_epilogues = bool(enable_prefill_fused_gemm_epilogues)
+        if self.enable_prefill_fused_gemm_epilogues:
+            from kernel_dispatch import _load
+            _load("fused_gemm").prepare_model(model)
         self.piecewise_prefill = PiecewisePrefill(
             model, pool, max_capture_tokens=max_capture_tokens,
             max_shapes=max_prefill_shapes, token_buckets=prefill_buckets,
             enable_packed_qkv_rope_cache=self.enable_prefill_packed_qkv_rope_cache,
             enable_residual_rmsnorm=self.enable_prefill_residual_rmsnorm,
-            enable_swiglu_fusion=self.enable_prefill_swiglu_fusion)
+            enable_swiglu_fusion=self.enable_prefill_swiglu_fusion,
+            enable_boundary_buffer_reuse=enable_prefill_boundary_buffer_reuse,
+            share_graph_pool=enable_prefill_shared_graph_pool,
+            enable_fused_gemm_epilogues=self.enable_prefill_fused_gemm_epilogues)
 
     @torch.no_grad()
     def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):

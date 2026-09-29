@@ -4,6 +4,13 @@ The first kernel projects vocabulary tiles and writes one maximum/value index
 per tile.  The second kernel reduces those partial winners to one token ID per
 row.  Accumulators are rounded to the input dtype before comparison so the
 decision boundary matches the FP16/BF16 logits consumed by ``torch.argmax``.
+
+Optionally the final RMSNorm runs in the projection's input load: given the
+norm weight and the producer GEMM's per-row partial sums of squares (see
+``fused_gemm.residual_gemm``), each hidden tile is scaled by gamma * rsqrt(mean
++ eps) and rounded, exactly the normalized row the separate norm would store.
+The weight is tied to the embedding table, so gamma is applied to the input
+rather than folded into the weight.
 """
 
 from __future__ import annotations
@@ -19,6 +26,11 @@ def _project_partial_argmax(
     weight_ptr,
     partial_values_ptr,
     partial_indices_ptr,
+    gamma_ptr,
+    row_partials_ptr,
+    partial_row_stride,
+    partial_count,
+    epsilon,
     rows,
     vocab,
     hidden_size: tl.constexpr,
@@ -26,12 +38,22 @@ def _project_partial_argmax(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
+    HAS_NORM: tl.constexpr,
+    PARTIAL_BLOCK: tl.constexpr,
 ):
     row_block = tl.program_id(0)
     vocab_block = tl.program_id(1)
     row_offsets = row_block * BLOCK_M + tl.arange(0, BLOCK_M)
     vocab_offsets = vocab_block * BLOCK_N + tl.arange(0, BLOCK_N)
     accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    if HAS_NORM:
+        partial_offsets = tl.arange(0, PARTIAL_BLOCK)
+        partials = tl.load(
+            row_partials_ptr + row_offsets[:, None] * partial_row_stride + partial_offsets[None, :],
+            mask=(row_offsets[:, None] < rows) & (partial_offsets[None, :] < partial_count),
+            other=0.0,
+        )
+        row_scale = 1.0 / tl.sqrt(tl.sum(partials, axis=1) / hidden_size + epsilon)
 
     for start in range(0, hidden_size, BLOCK_K):
         k_offsets = start + tl.arange(0, BLOCK_K)
@@ -40,6 +62,11 @@ def _project_partial_argmax(
             mask=(row_offsets[:, None] < rows) & (k_offsets[None, :] < hidden_size),
             other=0.0,
         )
+        if HAS_NORM:
+            # RMSNorm in the load: the rounded row the separate norm kernel would store.
+            gamma = tl.load(gamma_ptr + k_offsets, mask=k_offsets < hidden_size, other=0.0).to(tl.float32)
+            hidden = (hidden.to(tl.float32) * gamma[None, :] * row_scale[:, None]).to(
+                hidden_ptr.dtype.element_ty)
         # The output-head weight is row-major (vocab, hidden), so present its
         # tile directly as KxN for the MxK @ KxN tensor-core operation.
         weight = tl.load(
@@ -127,6 +154,9 @@ def fused_lm_head_argmax(
     num_stages=3,
     workspace=None,
     output=None,
+    norm_weight=None,
+    row_partials=None,
+    epsilon=1e-6,
 ):
     """Return greedy token IDs while retaining only one winner per vocab tile.
 
@@ -134,9 +164,24 @@ def fused_lm_head_argmax(
     leading shape of ``hidden`` and use int64, matching ``torch.argmax``.
     Optional workspaces make repeated eager calls allocation-free; CUDA graph
     capture may omit them because capture owns stable allocations.
+    With ``norm_weight`` and ``row_partials`` ([rows, tiles] FP32 sums of squares),
+    ``hidden`` is the un-normalized residual stream and RMSNorm runs in the load.
     """
     _validate(hidden, weight, block_n, block_k)
     rows = hidden.numel() // hidden.shape[-1]
+    has_norm = norm_weight is not None
+    if has_norm != (row_partials is not None):
+        raise ValueError("norm_weight and row_partials must be given together")
+    if has_norm:
+        if (norm_weight.shape != (hidden.shape[-1],) or norm_weight.dtype != hidden.dtype
+                or norm_weight.device != hidden.device or not norm_weight.is_contiguous()):
+            raise ValueError("norm_weight must be a contiguous [hidden] tensor in hidden's dtype and device")
+        if (row_partials.dim() != 2 or row_partials.shape[0] != rows or row_partials.dtype != torch.float32
+                or row_partials.device != hidden.device or row_partials.stride(1) != 1
+                or not 1 <= row_partials.shape[1] <= 64):
+            raise ValueError("row_partials must be CUDA float32 [rows, tiles] with unit column stride")
+        if not epsilon > 0:
+            raise ValueError("epsilon must be positive")
     if block_m is None:
         block_m = 16 if rows <= 16 else 32 if rows <= 32 else 64
     if block_m not in (16, 32, 64):
@@ -172,8 +217,12 @@ def fused_lm_head_argmax(
         tokens = output
     _project_partial_argmax[(triton.cdiv(rows, block_m), vocab_blocks)](
         hidden, weight, partial_values, partial_indices,
-        rows, weight.shape[0], hidden.shape[-1], vocab_blocks,
+        norm_weight if has_norm else hidden, row_partials if has_norm else partial_values,
+        row_partials.stride(0) if has_norm else 0, row_partials.shape[1] if has_norm else 0,
+        float(epsilon), rows, weight.shape[0], hidden.shape[-1], vocab_blocks,
         BLOCK_M=block_m, BLOCK_N=block_n, BLOCK_K=block_k,
+        HAS_NORM=has_norm,
+        PARTIAL_BLOCK=triton.next_power_of_2(row_partials.shape[1]) if has_norm else 1,
         num_warps=num_warps, num_stages=num_stages,
     )
     _reduce_partial_argmax[(rows,)](

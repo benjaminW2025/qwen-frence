@@ -55,6 +55,10 @@ class HopperCandidateContract(unittest.TestCase):
             self.assertIs(forwarded[0], q)
             self.assertIs(forwarded[1], k)
             self.assertIs(forwarded[2], k)
+            self.assertIs(forwarded[12], True)
+            module.flash_varlen(q, k, k, cu, table, lengths,
+                                max_query_len=1, register_pv=False)
+            self.assertIs(extension.forward.call_args.args[12], False)
             load.reset_mock()
             strided_k = torch.zeros(2, 16, 2, 256, dtype=torch.float16)[..., ::2]
             with self.assertRaisesRegex(ValueError, 'must be contiguous'):

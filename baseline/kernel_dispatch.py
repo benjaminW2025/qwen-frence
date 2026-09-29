@@ -103,6 +103,11 @@ def flash_varlen(*args, **kwargs):
     return _load("paged_flash_decode").flash_varlen(*args, **kwargs)
 
 
+def prepare_flash_worklist(*args, **kwargs):
+    """Build the project kernel's device query-tile schedule once per iteration."""
+    return _load("paged_flash_decode").prepare_flash_worklist(*args, **kwargs)
+
+
 def fa3_paged_varlen_attention(*args, **kwargs):
     """Run packed mixed attention through vLLM's paged FA3 varlen API."""
     return _load("paged_varlen_fa3").fa3_paged_varlen_attention(*args, **kwargs)

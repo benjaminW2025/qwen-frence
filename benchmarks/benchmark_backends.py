@@ -542,7 +542,7 @@ class VLLMOfflineBackend(BenchmarkBackend):
         seed: int,
         gpu_memory_utilization: float,
         max_num_seqs: int,
-        max_num_batched_tokens: int,
+        max_num_batched_tokens: int | None,
         max_model_len: int,
         block_size: int,
         kv_cache_memory_bytes: int | None,
@@ -585,6 +585,9 @@ class VLLMOfflineBackend(BenchmarkBackend):
             **memory_config,
         )
         self.model_load_time_s = time.perf_counter() - started
+        # Record the budget vLLM actually scheduled with, not only what was requested.
+        self.requested_max_num_batched_tokens = max_num_batched_tokens
+        self.max_num_batched_tokens = effective_vllm_budget(self.llm) or max_num_batched_tokens
 
     @staticmethod
     def _metric(metrics, name):
@@ -656,6 +659,7 @@ class VLLMOfflineBackend(BenchmarkBackend):
                 "max_running": self.max_num_seqs,
                 "max_num_seqs": self.max_num_seqs,
                 "max_num_batched_tokens": self.max_num_batched_tokens,
+                "max_num_batched_tokens_requested": self.requested_max_num_batched_tokens,
                 "max_model_len": self.max_model_len,
                 "block_size": self.block_size,
                 "gpu_memory_utilization": self.gpu_memory_utilization,
@@ -678,6 +682,13 @@ class VLLMOfflineBackend(BenchmarkBackend):
         )
 
 
+def effective_vllm_budget(llm):
+    """max_num_batched_tokens from a constructed vLLM engine's scheduler config, or None."""
+    engine = getattr(llm, "llm_engine", None)
+    config = getattr(getattr(engine, "vllm_config", None), "scheduler_config", None)
+    return getattr(config, "max_num_batched_tokens", None)
+
+
 def create_backend(
     name: str,
     *,
@@ -692,6 +703,7 @@ def create_backend(
     vllm_gpu_memory_utilization: float,
     vllm_kv_cache_mode: str,
     max_num_batched_tokens: int = 4096,
+    vllm_default_budget: bool = False,
     max_prefill_chunk_size: int | None = None,
     max_prefill_attention_pairs: int | None = None,
     prefill_tile_policy: str = "static",
@@ -755,7 +767,8 @@ def create_backend(
             seed=seed,
             gpu_memory_utilization=vllm_gpu_memory_utilization,
             max_num_seqs=max_running,
-            max_num_batched_tokens=max_num_batched_tokens,
+            # None leaves vLLM's own default in place (16384 for the offline LLM class on H100).
+            max_num_batched_tokens=None if vllm_default_budget else max_num_batched_tokens,
             max_model_len=max_model_len,
             block_size=block_size,
             kv_cache_memory_bytes=kv_cache_memory_bytes,

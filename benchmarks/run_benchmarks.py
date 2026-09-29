@@ -245,6 +245,7 @@ def run_backend(name: str, workload: Workload, args) -> tuple[list[BackendRun], 
             seed=args.seed,
             vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
             vllm_kv_cache_mode=args.vllm_kv_cache_mode,
+            vllm_default_budget=args.vllm_default_budget,
         )
         for warmup in range(args.warmups):
             print(f"  warmup {warmup + 1}/{args.warmups}")
@@ -469,6 +470,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="hard per-iteration token budget shared by decode and prefill",
     )
     parser.add_argument(
+        "--vllm-default-budget",
+        action="store_true",
+        help="leave vLLM's max_num_batched_tokens at its own default instead of "
+             "--max-num-batched-tokens; the budget vLLM used is recorded per run",
+    )
+    parser.add_argument(
         "--max-prefill-chunk-size",
         type=int,
         help="maximum prompt tokens computed per request per prefill iteration",
@@ -562,6 +569,7 @@ def main() -> None:
         "block_size": args.block_size,
         "max_running": args.max_running,
         "max_num_batched_tokens": args.max_num_batched_tokens,
+        "vllm_budget": "default" if args.vllm_default_budget else "matched",
         "num_blocks": args.num_blocks,
         "max_prefill_chunk_size": args.max_prefill_chunk_size,
         "max_prefill_attention_pairs": args.max_prefill_attention_pairs,
@@ -612,7 +620,7 @@ def main() -> None:
         max_running=args.max_running,
         max_model_len=max_model_len,
         vllm_kv_cache_mode=args.vllm_kv_cache_mode,
-        max_num_batched_tokens=args.max_num_batched_tokens,
+        max_num_batched_tokens=None if args.vllm_default_budget else args.max_num_batched_tokens,
     )
     attach_performance_comparisons(results)
     print_summary(results)

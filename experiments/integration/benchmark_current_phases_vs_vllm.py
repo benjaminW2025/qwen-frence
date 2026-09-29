@@ -26,7 +26,11 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
                   ROOT / "engine/cpp/build"):
     sys.path.insert(0, str(directory))
 
-from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, engine_flags,
+from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, VLLM_BUDGETS,
+                                         engine_flags, vllm_budget_kwargs,
+                                         add_variant_arguments, check_variant_reached,
+                                         variant_adapter_options, variant_cli, variant_flags,
+                                         verify_planned_work,
                                          adapter_options as
                                          burst_adapter_options, atomic_json,
                                          commit_matches, dispatch_plan, input_contract,
@@ -55,7 +59,9 @@ def parser():
     result.add_argument("--repetitions", type=int, default=3)
     result.add_argument("--vllm-python")
     result.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project")
+    result.add_argument("--vllm-budget", choices=VLLM_BUDGETS, default="matched")
     result.add_argument("--resume-commit", action="append")
+    add_variant_arguments(result)
     return result
 
 
@@ -111,7 +117,9 @@ def validate_saved(path, args, shape_id, fingerprint, model):
         raise ValueError(f"incomplete phase result: {path}")
     if path.name == "vllm.json":
         require_vllm_version(row.get("vllm_version"))
-    elif row.get("engine_flags") != engine_flags(args.attention):
+        if row.get("vllm_budget", "matched") != args.vllm_budget:
+            raise ValueError(f"vLLM budget mode differs in phase result: {path}")
+    elif row.get("engine_flags") != variant_flags(args):
         raise ValueError(f"stale local implementation in phase result: {path}")
     return row
 
@@ -121,7 +129,7 @@ def run_local(args, shape_id, model_source):
     burst_case, burst_requests, _, _, burst_blocks = input_contract(args, shape_id)
     if blocks != burst_blocks:
         raise AssertionError(f"{shape_id}: burst/mixed KV capacities differ")
-    burst_dispatch = dispatch_plan(burst_case, burst_requests, args.seed)
+    burst_dispatch = dispatch_plan(burst_case, burst_requests, args.seed, with_schedule=True)
     path, _, _ = paths(args, shape_id)
     if validate_saved(path, args, shape_id, fingerprint, model_source):
         print(f"{shape_id}: phase local complete; reusing", flush=True)
@@ -141,7 +149,9 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
-        **burst_adapter_options(burst_case, burst_dispatch["prefill_buckets"], args.attention))
+        **burst_adapter_options(burst_case, burst_dispatch["prefill_buckets"], args.attention,
+                                variant_adapter_options(args)))
+    check_variant_reached(adapter, args, f"phase burst {shape_id}")
     if (adapter.graph_decoder.buckets != [burst_case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -154,7 +164,10 @@ def run_local(args, shape_id, model_source):
             tensor.fill_(float("nan"))
         row = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                       adapter, burst_requests, synchronize_steps=True)
-        verify_fixed_result(row, shape_id)
+        if args.prefill_budget == PREFILL_TOKENS_PER_STEP:
+            verify_fixed_result(row, shape_id)
+        else:
+            verify_planned_work(row, burst_dispatch, burst_case)
         digest = output_digest(row["outputs"])
         if burst_digest is None:
             burst_digest = digest
@@ -172,7 +185,9 @@ def run_local(args, shape_id, model_source):
     config = make_config(cpp, case)
     config.packed_mixed_step = True
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
+        engine.model, pool, None,
+        **adapter_options(case, buckets, args.attention, variant_adapter_options(args)))
+    check_variant_reached(adapter, args, f"phase mixed {shape_id}")
     measured = []
     mixed_digest = None
     for index in range(args.warmups + args.repetitions):
@@ -204,7 +219,7 @@ def run_local(args, shape_id, model_source):
                        "repetitions": args.repetitions, "num_blocks": blocks,
                        "arrival_step": arrival, "prefill_buckets": buckets,
                        "burst_prefill_buckets": burst_dispatch["prefill_buckets"],
-                       "engine_flags": engine_flags(args.attention), "runs": measured,
+                       "engine_flags": variant_flags(args), "runs": measured,
                        "burst_outputs_sha256": burst_digest,
                        "mixed_outputs_sha256": mixed_digest,
                        "phases": median_phases(measured)})
@@ -223,7 +238,7 @@ def run_vllm(args, shape_id, model_source):
         return
     from profile_prefill_mixed_vs_vllm import configure_vllm_step_mode
     configure_vllm_step_mode()
-    from benchmark_backends import _matched_kv_cache_bytes
+    from benchmark_backends import _matched_kv_cache_bytes, effective_vllm_budget
     from vllm import LLM
 
     version = importlib.metadata.version("vllm")
@@ -232,7 +247,7 @@ def run_vllm(args, shape_id, model_source):
                                        block_size=16, num_blocks=blocks)
     llm = LLM(model=model_source, dtype="float16", seed=args.seed,
               max_num_seqs=case["max_running"],
-              max_num_batched_tokens=PREFILL_TOKENS_PER_STEP,
+              **vllm_budget_kwargs(args.vllm_budget),
               max_model_len=max(case["lengths"]) + max(case["outputs"]),
               block_size=16, enable_prefix_caching=False,
               enable_chunked_prefill=True, generation_config="vllm",
@@ -262,7 +277,8 @@ def run_vllm(args, shape_id, model_source):
                        "workload_sha256": fingerprint, "warmups": args.warmups,
                        "repetitions": args.repetitions, "num_blocks": blocks,
                        "arrival_step": arrival, "vllm_version": version,
-                       "vllm_step_mode": True, "runs": measured,
+                       "vllm_step_mode": True, "vllm_budget": args.vllm_budget,
+                       "vllm_max_num_batched_tokens": effective_vllm_budget(llm), "runs": measured,
                        "burst_outputs_sha256": burst_digest,
                        "mixed_outputs_sha256": mixed_digest,
                        "phases": median_phases(measured)})
@@ -283,7 +299,7 @@ def analyze(args, shape_id, model_source):
             or local["arrival_step"] != arrival or vllm["arrival_step"] != arrival
             or local["prefill_buckets"] != buckets
             or local["burst_prefill_buckets"] != expected_burst_buckets
-            or local["engine_flags"] != engine_flags(args.attention)
+            or local["engine_flags"] != variant_flags(args)
             or not vllm["vllm_step_mode"]):
         raise ValueError(f"{shape_id}: phase comparator configurations differ")
     rows = {}
@@ -322,6 +338,7 @@ def forwarded(args, action, shape_id):
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions), "--attention", args.attention,
+            "--vllm-budget", getattr(args, "vllm_budget", "matched"), *variant_cli(args),
             *resume_options(args.resume_commit)]
 
 

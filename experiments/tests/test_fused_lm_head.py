@@ -27,6 +27,14 @@ class FusedOutputHeadSourceTests(unittest.TestCase):
         self.assertIn("_reduce_partial_argmax", SOURCE)
         self.assertNotIn("torch.empty((rows, weight.shape[0])", SOURCE)
 
+    def test_norm_prologue_is_opt_in_and_rounds_like_the_norm_kernel(self):
+        # Compiled out unless both inputs are given; the normalized tile is
+        # rounded to the input dtype before the dot, as the norm kernel stores it.
+        self.assertIn("HAS_NORM: tl.constexpr", SOURCE)
+        self.assertIn("norm_weight and row_partials must be given together", SOURCE)
+        self.assertIn("gamma[None, :] * row_scale[:, None]).to(", SOURCE)
+        self.assertIn("hidden_ptr.dtype.element_ty)\n        # The output-head weight", SOURCE)
+
     def test_kernel_rounds_logits_and_prefers_lowest_tied_token(self):
         self.assertIn("accumulator.to(hidden_ptr.dtype.element_ty)", SOURCE)
         self.assertIn("tl.min(winning_indices", SOURCE)

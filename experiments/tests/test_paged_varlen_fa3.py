@@ -34,6 +34,17 @@ class FakeTensor:
     def contiguous(self):
         return self
 
+    def stride(self, dimension=None):
+        strides = tuple(self.numel() // self.shape[0] if i == 0 else
+                        self.shape[-1] if i == 1 else 1 for i in range(self.ndim))
+        return strides if dimension is None else strides[dimension]
+
+    def is_contiguous(self):
+        return True
+
+    def data_ptr(self):
+        return id(self)
+
 
 class PackedVarlenFa3Tests(unittest.TestCase):
     def inputs(self):
@@ -62,6 +73,31 @@ class PackedVarlenFa3Tests(unittest.TestCase):
         inputs[3] = FakeTensor((9,), torch.int64)
         with self.assertRaisesRegex(ValueError, "int32"):
             MODULE.fa3_paged_varlen_attention(*inputs, max_query_len=256)
+
+    def test_direct_output_and_strided_query_are_forwarded(self):
+        inputs = self.inputs()
+        out = FakeTensor(inputs[0].shape)
+        with patch.object(inputs[0], "contiguous", side_effect=AssertionError("unexpected copy")), \
+             patch.object(MODULE, "_load_fa3_varlen") as loader:
+            loader.return_value.return_value = (out, None)
+            result = MODULE.fa3_paged_varlen_attention(
+                *inputs, max_query_len=256, out=out, allow_strided_q=True)
+        self.assertIs(result, out)
+        self.assertIs(loader.return_value.call_args.kwargs["q"], inputs[0])
+        self.assertIs(loader.return_value.call_args.kwargs["out"], out)
+
+    def test_rejects_backend_ignoring_output_buffer(self):
+        inputs = self.inputs()
+        with patch.object(MODULE, "_load_fa3_varlen") as loader:
+            loader.return_value.return_value = FakeTensor(inputs[0].shape)
+            with self.assertRaisesRegex(RuntimeError, "did not honor"):
+                MODULE.fa3_paged_varlen_attention(
+                    *inputs, max_query_len=256, out=FakeTensor(inputs[0].shape))
+
+    def test_rejects_invalid_output_shape(self):
+        with self.assertRaisesRegex(ValueError, "output must"):
+            MODULE.fa3_paged_varlen_attention(
+                *self.inputs(), max_query_len=256, out=FakeTensor((1, 12, 128)))
 
 
 if __name__ == "__main__":

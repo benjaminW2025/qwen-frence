@@ -37,7 +37,8 @@ class CUDAGraphDecoder:
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  output_head_policy="logits", output_head_config=None,
-                 enable_stable_decode_table_cache=False):
+                 enable_stable_decode_table_cache=False,
+                 enable_fused_gemm_epilogues=False):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -61,6 +62,7 @@ class CUDAGraphDecoder:
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.enable_stable_decode_table_cache = bool(enable_stable_decode_table_cache)
+        self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
         self.output_head_policy = output_head_policy
         self.output_head_config = output_head_config
         if output_head_policy not in ("logits", "fused_argmax"):
@@ -88,6 +90,16 @@ class CUDAGraphDecoder:
         self._block_table_source_signature = None
 
     def _step_forward(self):
+        if self.enable_fused_gemm_epilogues:
+            return fused_graph_decode_forward(
+                self.model, self.cache,
+                self.s_input_ids, self.s_positions, self.s_seq_lens,
+                self.s_block_table, self.s_slot_mapping,
+                decode_attention_policy=self.decode_attention_policy,
+                max_decode_context_length=self.max_decode_context_length,
+                output_head_policy=self.output_head_policy,
+                output_head_config=self.output_head_config,
+            )
         return graph_decode_forward(
             self.model, self.cache,
             self.s_input_ids, self.s_positions, self.s_seq_lens,
@@ -299,6 +311,48 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
     if output_head_policy != "logits":
         raise ValueError(f"unknown output-head policy: {output_head_policy}")
     return model.lm_head(x[:, -1:, :])
+
+
+def fused_graph_decode_forward(model, cache, input_ids, positions, seq_lens,
+                               block_table, slot_mapping, decode_attention_policy="production",
+                               max_decode_context_length=None, output_head_policy="logits",
+                               output_head_config=None):
+    """Decode with the fused GEMM epilogues: per layer, attention plus four GEMMs.
+
+    QKV+bias+RoPE+cache write, o_proj+residual, gate/up+SwiGLU, down+residual;
+    both RMSNorms are folded into the GEMMs (custom_kernels/fused_gemm.py). The
+    QKV/postprocess flags of graph_decode_forward do not apply here.
+    """
+    from kernel_dispatch import _load
+    fused = _load("fused_gemm")
+    weights = fused.prepare_model(model)
+    cfg = model.cfg
+    batch = input_ids.shape[0]
+    policy = resolve_decode_attention_policy(decode_attention_policy, max_decode_context_length)
+    x = model.embed(input_ids.view(batch))                           # (B, d_model)
+    partials = fused.row_square_partials(x)
+    rope_positions = positions.to(torch.long)  # the epilogue reads int64 positions
+    for i, layer in enumerate(weights):
+        q = fused.attention_inputs(layer, x, partials, cfg, positions=rope_positions,
+                                   slots=slot_mapping, k_pool=cache.k_pool[i],
+                                   v_pool=cache.v_pool[i])            # (B, n_heads, d)
+        out = paged_decode_attention_dispatch(
+            q, cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
+            policy=policy, max_context_length=max_decode_context_length,
+        )
+        x, partials = fused.layer_tail(
+            layer, out.reshape(batch, cfg.n_heads * cfg.d_head).contiguous(), x, cfg)
+    if output_head_policy == "fused_argmax":
+        from kernel_dispatch import fused_lm_head_argmax
+        # The final norm runs in the head's input load (ledger D16).
+        return fused_lm_head_argmax(
+            x, model.lm_head.weight, norm_weight=model.norm.weight,
+            row_partials=partials, epsilon=cfg.rms_norm_eps,
+            **(output_head_config or {}),
+        )
+    if output_head_policy != "logits":
+        raise ValueError(f"unknown output-head policy: {output_head_policy}")
+    return model.lm_head(apply_rms_norm(x, model.norm, cfg)[:, None, :])
 
 
 def build_decode_step_inputs(cache, tokens, max_blocks, device):

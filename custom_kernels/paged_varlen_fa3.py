@@ -18,7 +18,8 @@ def _load_fa3_varlen():
 
 def fa3_paged_varlen_attention(q, k_pool, v_pool, cu_seqlens_q,
                               block_table, seq_lens, *, max_query_len,
-                              max_context_len=None, scale=None):
+                              max_context_len=None, scale=None, out=None,
+                              allow_strided_q=False):
     """Return packed (total_q, query_heads, head_dim) causal attention.
 
     K/V for the new query tokens must already be in the paged cache. FA3's
@@ -45,18 +46,29 @@ def fa3_paged_varlen_attention(q, k_pool, v_pool, cu_seqlens_q,
         raise ValueError("FA3 query and context bounds must be positive")
     if scale is None:
         scale = q.shape[-1] ** -0.5
+    extra = {}
+    if out is not None:
+        if (out.shape != q.shape or out.dtype != q.dtype or out.device != q.device
+                or not out.is_contiguous()):
+            raise ValueError("FA3 output must be contiguous with Q's shape, dtype and device")
+        extra["out"] = out
+    query = q if allow_strided_q and q.stride(-1) == 1 else q.contiguous()
     result = _load_fa3_varlen()(
-        q=q.contiguous(), k=k_pool, v=v_pool,
+        q=query, k=k_pool, v=v_pool,
         cu_seqlens_q=cu_seqlens_q, seqused_k=seq_lens,
         max_seqlen_q=max_query_len,
         max_seqlen_k=max_context_len or block_table.shape[1] * k_pool.shape[1],
         block_table=block_table, softmax_scale=scale,
-        causal=True, fa_version=3,
+        causal=True, fa_version=3, **extra,
     )
-    return result[0] if isinstance(result, tuple) else result
+    result = result[0] if isinstance(result, tuple) else result
+    if out is not None and (result.data_ptr() != out.data_ptr()
+                            or result.stride() != out.stride()):
+        raise RuntimeError("FA3 did not honor the provided output buffer")
+    return result
 
 
-def smoke_varlen_fa3(device, *, capture_graph=False):
+def smoke_varlen_fa3(device, *, capture_graph=False, boundary_buffers=False):
     """Cheap GPU API/numerics/capture gate before the model is allocated."""
     generator = torch.Generator(device=device).manual_seed(23)
     q = torch.randn((3, 12, 128), device=device, dtype=torch.float16,
@@ -89,6 +101,19 @@ def smoke_varlen_fa3(device, *, capture_graph=False):
                         .transpose(0, 1))
     reference = torch.cat(expected).to(actual.dtype)
     torch.testing.assert_close(actual, reference, atol=.05, rtol=.02)
+    if boundary_buffers:
+        # Match the head-major graph output and a padded consumer input buffer.
+        strided_q = q.transpose(0, 1).contiguous().transpose(0, 1)
+        output_bucket = torch.full((8, 12, 128), 123, device=device, dtype=q.dtype)
+        for factor in (1.0, 0.5, -1.0):
+            strided_q.copy_(q * factor)
+            expected_output = fa3_paged_varlen_attention(
+                strided_q, k, v, cu, table, lengths, max_query_len=2)
+            direct = fa3_paged_varlen_attention(
+                strided_q, k, v, cu, table, lengths, max_query_len=2,
+                out=output_bucket[:3], allow_strided_q=True)
+            torch.testing.assert_close(direct, expected_output, atol=.002, rtol=.002)
+            torch.testing.assert_close(output_bucket[3:], torch.full_like(output_bucket[3:], 123))
     if capture_graph:
         current = torch.cuda.current_stream(device)
         side = torch.cuda.Stream(device=device)
@@ -101,4 +126,5 @@ def smoke_varlen_fa3(device, *, capture_graph=False):
         current.wait_stream(side)
         graph.replay()
         torch.testing.assert_close(captured, reference, atol=.05, rtol=.02)
-    return {"packed_queries": 3, "sequences": 2, "graph_capture": capture_graph}
+    return {"packed_queries": 3, "sequences": 2, "graph_capture": capture_graph,
+            "boundary_buffers": boundary_buffers}

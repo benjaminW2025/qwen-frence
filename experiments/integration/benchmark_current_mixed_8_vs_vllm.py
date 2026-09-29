@@ -25,8 +25,11 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
                   ROOT / "engine/cpp/build"):
     sys.path.insert(0, str(directory))
 
-from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, atomic_json,
-                                         attention_options, engine_flags,
+from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, VLLM_BUDGETS,
+                                         atomic_json, attention_options, engine_flags,
+                                         vllm_budget_kwargs, add_variant_arguments,
+                                         check_variant_reached, variant_adapter_options,
+                                         variant_cli, variant_flags,
                                          commit_matches, input_contract,
                                          repository_commit, resume_options,
                                          validate_capture_options)
@@ -34,11 +37,18 @@ from fixed_regime import PREFILL_TOKENS_PER_STEP
 from reference_version import require_vllm_version
 
 
+# The second wave's arrival step is part of the workload, not of either engine:
+# it is derived from the frozen budget so every local budget (and vLLM at any
+# budget) runs the identical request stream. The CPU schedule check below still
+# requires the arrival step to be mixed at the budget actually being run.
+ARRIVAL_REFERENCE_BUDGET = PREFILL_TOKENS_PER_STEP
+
+
 def mixed_plan(args, shape_id, *, validate_schedule=True):
     case, frozen, _, _, blocks = input_contract(args, shape_id)
     first = case["max_running"] // 2
     prompt = case["lengths"][0]
-    arrival = (first * prompt + PREFILL_TOKENS_PER_STEP - 1) // PREFILL_TOKENS_PER_STEP + 3
+    arrival = (first * prompt + ARRIVAL_REFERENCE_BUDGET - 1) // ARRIVAL_REFERENCE_BUDGET + 3
     if arrival >= case["outputs"][0]:
         raise ValueError(f"{shape_id}: first wave could finish before mixed arrival")
     requests = [dict(id=row["id"], prompt=row["prompt"], output=row["output"],
@@ -75,10 +85,11 @@ def paths(args, shape_id):
     return root / "local.json", root / "vllm.json", root / "comparison.json"
 
 
-def adapter_options(case, buckets, attention="project"):
+def adapter_options(case, buckets, attention="project", variant_options=None):
     if not buckets or min(buckets) < 1:
         raise ValueError("mixed graph buckets must be positive")
     return dict(max_running=case["max_running"],
+                **(variant_options or {}),
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
                 **attention_options(attention),
@@ -106,7 +117,9 @@ def validate_saved(path, *, shape_id, fingerprint, model, args):
                          "if this prior result is known valid")
     if path.name == "vllm.json":
         require_vllm_version(row.get("vllm_version"))
-    elif row.get("engine_flags") != engine_flags(args.attention):
+        if row.get("vllm_budget", "matched") != args.vllm_budget:
+            raise ValueError(f"{path}: vLLM budget mode differs; use a new output directory")
+    elif row.get("engine_flags") != variant_flags(args):
         raise ValueError(f"{path}: local implementation differs; use a new output directory")
     return row
 
@@ -146,7 +159,9 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
+        engine.model, pool, None,
+        **adapter_options(case, buckets, args.attention, variant_adapter_options(args)))
+    check_variant_reached(adapter, args, f"mixed {shape_id}")
     if (adapter.graph_decoder.buckets != [case["max_running"]]
             or not adapter.enable_residual_rmsnorm
             or not adapter.enable_native_decode_qkv_postprocess
@@ -190,7 +205,7 @@ def run_local(args, shape_id, model_source):
                              "arrival_step": arrival, "prefill_buckets": buckets,
                              "swiglu_fused_buckets": [bucket for bucket in buckets
                                  if bucket > SWIGLU_FUSION_ROW_THRESHOLD],
-                             "engine_flags": engine_flags(args.attention), "num_blocks": blocks,
+                             "engine_flags": variant_flags(args), "num_blocks": blocks,
                              "runs": measured,
                              "median_output_tokens_per_s": statistics.median(
                                  item["output_tokens_per_s"] for item in measured),
@@ -285,7 +300,7 @@ def run_vllm(args, shape_id, model_source):
     from profile_prefill_mixed_vs_vllm import configure_vllm_step_mode
     configure_vllm_step_mode()
     import torch
-    from benchmark_backends import _matched_kv_cache_bytes
+    from benchmark_backends import _matched_kv_cache_bytes, effective_vllm_budget
     from vllm import LLM
 
     version = importlib.metadata.version("vllm")
@@ -294,7 +309,7 @@ def run_vllm(args, shape_id, model_source):
                                        block_size=16, num_blocks=blocks)
     llm = LLM(model=model_source, dtype="float16", seed=args.seed,
               max_num_seqs=case["max_running"],
-              max_num_batched_tokens=PREFILL_TOKENS_PER_STEP,
+              **vllm_budget_kwargs(args.vllm_budget),
               max_model_len=max(case["lengths"]) + max(case["outputs"]),
               block_size=16, enable_prefix_caching=False,
               enable_chunked_prefill=True, generation_config="vllm",
@@ -318,6 +333,8 @@ def run_vllm(args, shape_id, model_source):
                               "repetitions": args.repetitions, "first_wave": first,
                               "arrival_step": arrival, "num_blocks": blocks,
                               "vllm_version": version, "vllm_step_mode": True,
+                              "vllm_budget": args.vllm_budget,
+                              "vllm_max_num_batched_tokens": effective_vllm_budget(llm),
                               "runs": measured,
                               "median_output_tokens_per_s": statistics.median(
                                   item["output_tokens_per_s"] for item in measured)})
@@ -336,7 +353,7 @@ def analyze(args, shape_id, model_source):
     if (local["num_blocks"] != blocks or vllm["num_blocks"] != blocks
             or local["prefill_buckets"] != buckets or local["arrival_step"] != arrival
             or vllm["arrival_step"] != arrival or local["first_wave"] != first
-            or vllm["first_wave"] != first or local.get("engine_flags") != engine_flags(args.attention)):
+            or vllm["first_wave"] != first or local.get("engine_flags") != variant_flags(args)):
         raise ValueError(f"{shape_id}: mixed comparator configurations differ")
     local_outputs, vllm_outputs = (local["runs"][0]["outputs"],
                                    vllm["runs"][0]["outputs"])
@@ -353,6 +370,9 @@ def analyze(args, shape_id, model_source):
               "local_over_vllm": local_rate / vllm_rate,
               "local_mixed_steps": local["runs"][0]["mixed_steps"],
               "local_packed_mixed_calls": local["runs"][0]["packed_mixed_calls"],
+              "local_engine_flags": local["engine_flags"],
+              "vllm_budget": vllm.get("vllm_budget", "matched"),
+              "vllm_max_num_batched_tokens": vllm.get("vllm_max_num_batched_tokens"),
               "exact_output_requests": exact, "total_requests": len(requests),
               "note": "step-index second-wave arrival; full drained-workload timing"}
     atomic_json(report_path, report)
@@ -368,7 +388,8 @@ def forward(args, action, shape_id):
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions), "--attention", args.attention]
+            "--repetitions", str(args.repetitions), "--attention", args.attention,
+            "--vllm-budget", getattr(args, "vllm_budget", "matched"), *variant_cli(args)]
     command += resume_options(args.resume_commit)
     return command
 
@@ -387,7 +408,9 @@ def main():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--vllm-python")
     parser.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project")
+    parser.add_argument("--vllm-budget", choices=VLLM_BUDGETS, default="matched")
     parser.add_argument("--resume-commit", action="append")
+    add_variant_arguments(parser)
     args = parser.parse_args()
     if any(len(prefix) < 7 or any(char not in "0123456789abcdef"
                                    for char in prefix.lower())
@@ -406,7 +429,9 @@ def main():
                           "second_wave": case["max_running"] - first,
                           "arrival_step": arrival, "prefill_buckets": buckets,
                           "max_capture_tokens": options["max_capture_tokens"],
-                          "token_budget": PREFILL_TOKENS_PER_STEP}, indent=2))
+                          "token_budget": args.prefill_budget,
+                          "arrival_reference_budget": ARRIVAL_REFERENCE_BUDGET,
+                          "engine": variant_flags(args)}, indent=2))
         return
     from benchmark_latest_vs_vllm import resolve_model_source
     model_source = resolve_model_source(args)

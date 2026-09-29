@@ -52,9 +52,25 @@ def attention_options(attention):
                 prefill_attention_policy=mode["prefill"])
 
 
-def engine_flags(attention):
+# Where the CUTLASS fused-epilogue GEMMs replace the cuBLAS + RMSNorm/SwiGLU/RoPE chain.
+GEMM_EPILOGUE_MODES = ("off", "prefill", "decode", "all")
+
+
+def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private",
+                 gemm_epilogues="off", boundary_buffers=False):
     mode = ATTENTION_MODES[attention]
-    return {
+    if gemm_epilogues not in GEMM_EPILOGUE_MODES:
+        raise ValueError(f"unknown GEMM epilogue mode {gemm_epilogues!r}")
+    # Keys appear only off the frozen defaults, so results recorded before
+    # budget, graph-pool and fusion variants keep matching their flags.
+    extra = {} if budget == PREFILL_TOKENS_PER_STEP else {"prefill_token_budget": budget}
+    if graph_pool != "private":
+        extra["prefill_graph_pool"] = graph_pool
+    if gemm_epilogues != "off":
+        extra["gemm_epilogues"] = gemm_epilogues
+    if boundary_buffers:
+        extra["prefill_boundary_buffer_reuse"] = True
+    return {**extra,
     "cpp_scheduler": True,
     "packed_mixed_step": True,
     "decode_attention_policy": mode["decode"],
@@ -73,6 +89,83 @@ def engine_flags(attention):
 ENGINE_FLAGS = engine_flags("project")  # the default mode, for existing callers
 
 
+def variant(args):
+    """The local engine's configuration beyond attention, read off parsed CLI arguments."""
+    return dict(budget=getattr(args, "prefill_budget", PREFILL_TOKENS_PER_STEP),
+                graph_pool=getattr(args, "prefill_graph_pool", "private"),
+                gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
+                boundary_buffers=bool(getattr(args, "boundary_buffers", False)))
+
+
+def variant_flags(args):
+    return engine_flags(args.attention, **variant(args))
+
+
+def variant_cli(args):
+    """Forward the variant to a child harness process."""
+    value = variant(args)
+    return ["--prefill-budget", str(value["budget"]),
+            "--prefill-graph-pool", value["graph_pool"],
+            "--gemm-epilogues", value["gemm_epilogues"],
+            *(["--boundary-buffers"] if value["boundary_buffers"] else [])]
+
+
+def add_variant_arguments(parser):
+    parser.add_argument("--prefill-budget", type=int, default=PREFILL_TOKENS_PER_STEP,
+                        help="packed prefill tokens per step for the local engine. The staggered "
+                             "workload's arrival step stays derived from the frozen "
+                             f"{PREFILL_TOKENS_PER_STEP}, so every budget runs the same workload")
+    parser.add_argument("--prefill-graph-pool", choices=("private", "shared"), default="private",
+                        help="shared captures every prefill segment into one CUDA graph memory "
+                             "pool, which budgets above 8192 need")
+    parser.add_argument("--gemm-epilogues", choices=GEMM_EPILOGUE_MODES, default="off",
+                        help="CUTLASS GEMMs with fused residual/RMSNorm/SwiGLU/RoPE/cache "
+                             "epilogues in prefill graphs, the decode graph, or both "
+                             "(custom_kernels/gemm_epilogue; build it in this interpreter)")
+    parser.add_argument("--boundary-buffers", action="store_true",
+                        help="bind each prefill segment's residual input to its producer's "
+                             "output and write FA3 attention in place (no boundary copies)")
+    return parser
+
+
+def variant_adapter_options(args):
+    """Adapter keyword arguments for the variant, on top of the accepted configuration."""
+    value = variant(args)
+    return dict(enable_prefill_shared_graph_pool=value["graph_pool"] == "shared",
+                enable_prefill_boundary_buffer_reuse=value["boundary_buffers"],
+                enable_prefill_fused_gemm_epilogues=value["gemm_epilogues"] in ("prefill", "all"),
+                enable_decode_fused_gemm_epilogues=value["gemm_epilogues"] in ("decode", "all"))
+
+
+def check_variant_reached(adapter, args, label):
+    """Every flag of the variant must be live in the constructed adapter."""
+    options = variant_adapter_options(args)
+    prefill = adapter.piecewise_prefill
+    actual = dict(enable_prefill_shared_graph_pool=prefill.graph_pool is not None,
+                  enable_prefill_boundary_buffer_reuse=prefill.enable_boundary_buffer_reuse,
+                  enable_prefill_fused_gemm_epilogues=prefill.enable_fused_gemm_epilogues,
+                  enable_decode_fused_gemm_epilogues=all(
+                      decoder.enable_fused_gemm_epilogues
+                      for decoder in adapter.graph_decoder.decoders.values()))
+    if actual != options:
+        raise AssertionError(f"{label}: engine variant did not reach the model: "
+                             f"requested {options}, constructed {actual}")
+
+# vLLM's scheduling budget. "matched" pins it to the frozen 2048 the local engine
+# uses (the accepted baseline); "default" leaves max_num_batched_tokens unset so
+# vLLM runs as shipped (16384 for the offline LLM class on H100 in 0.30.0). Every
+# vLLM result records the budget it actually used.
+VLLM_BUDGETS = ("matched", "default")
+
+
+def vllm_budget_kwargs(mode):
+    """max_num_batched_tokens for a directly constructed vllm.LLM."""
+    if mode not in VLLM_BUDGETS:
+        raise ValueError(f"unknown vLLM budget mode {mode!r}")
+    return {} if mode == "default" else {"max_num_batched_tokens": PREFILL_TOKENS_PER_STEP}
+
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("action", choices=("plan", "check", "run-table", "run-cell",
@@ -88,6 +181,10 @@ def parser():
     result.add_argument("--warmups", type=int, default=1)
     result.add_argument("--repetitions", type=int, default=3)
     result.add_argument("--vllm-python", help="interpreter in the separate current-vLLM environment")
+    add_variant_arguments(result)
+    result.add_argument("--vllm-budget", choices=VLLM_BUDGETS, default="matched",
+                        help="matched pins vLLM to the frozen 2048 budget; default runs vLLM as "
+                             "shipped. Results of one mode are never reused as the other")
     result.add_argument("--attention", choices=tuple(ATTENTION_MODES), default="project",
                         help="local-engine attention: the independent kernel, or vLLM's FA3 "
                              "(identical to the reference; run from the vLLM environment)")
@@ -134,7 +231,8 @@ def input_contract(args, shape_id):
     from benchmark_core import Workload
     from benchmark_latest_vs_vllm import planned_workload
 
-    case = get_fixed_case(shape_id)
+    case = {**get_fixed_case(shape_id),
+            "prefill_budget": getattr(args, "prefill_budget", PREFILL_TOKENS_PER_STEP)}
     source = args.suite_dir / shape_id / "workload.json"
     if not source.is_file():
         raise ValueError(f"missing frozen workload: {source}")
@@ -155,8 +253,12 @@ def stage_paths(args, shape_id):
     return cell / "local.json", cell / "vllm", cell / "comparison.json"
 
 
-def dispatch_plan(case, requests, seed):
-    """Resolve graph buckets and expected mixed dispatch before loading weights."""
+def dispatch_plan(case, requests, seed, *, with_schedule=False):
+    """Resolve graph buckets and expected mixed dispatch before loading weights.
+
+    with_schedule adds the CPU dry schedule's per-step (kind, calls) signature,
+    which verify_planned_work compares against the GPU run off the frozen budget.
+    """
     import torch
     import inference_engine_cpp as cpp
     from benchmark_integrated_graph import dry_schedule
@@ -167,20 +269,43 @@ def dispatch_plan(case, requests, seed):
               for step in schedule["steps"] if step["kind"] == "mixed"]
     prefill = [call[1] for step in schedule["steps"]
                for call in step["calls"] if not call[0]]
-    if not prefill or max(prefill) != PREFILL_TOKENS_PER_STEP:
-        raise AssertionError(f"{case['id']}: CPU prefill work differs from fixed budget")
-    buckets = sorted({PREFILL_TOKENS_PER_STEP, max(packed, default=0)})
+    # A full step packs the budget, or the whole cohort when it is smaller.
+    expected = min(case["prefill_budget"], sum(case["lengths"]))
+    if not prefill or max(prefill) != expected:
+        raise AssertionError(f"{case['id']}: CPU prefill work differs from the {case['prefill_budget']}-token budget")
+    buckets = sorted({max(prefill), max(packed, default=0)})
     buckets = [bucket for bucket in buckets if bucket > 0]
-    return {"prefill_buckets": buckets, "mixed_steps": len(packed),
+    plan = {"prefill_buckets": buckets, "mixed_steps": len(packed),
             "max_packed_mixed_tokens": max(packed, default=0),
             "swiglu_fused_buckets": [bucket for bucket in buckets
                                      if bucket > SWIGLU_FUSION_ROW_THRESHOLD]}
+    if with_schedule:
+        plan["schedule"] = [(step["kind"], [tuple(call) for call in step["calls"]])
+                            for step in schedule["steps"]]
+    return plan
 
 
-def adapter_options(case, buckets, attention="project"):
+def verify_planned_work(result, dispatch, case):
+    """Off the frozen budget, the GPU run must reproduce the CPU dry schedule exactly."""
+    actual = [(step["kind"], [tuple(call) for call in step["calls"]]) for step in result["steps"]]
+    if actual != dispatch["schedule"]:
+        first = next((index for index, (a, b) in enumerate(zip(actual, dispatch["schedule"])) if a != b),
+                     min(len(actual), len(dispatch["schedule"])))
+        raise AssertionError(f"{case['id']}: GPU schedule departs from the CPU dry schedule at step {first}")
+    batches = [call[1] for step in result["steps"] for call in step["calls"] if call[0]]
+    prefill = [call[1] for step in result["steps"] for call in step["calls"] if not call[0]]
+    return {"max_actual_decode_batch": max(batches),
+            "max_packed_prefill_tokens": max(prefill),
+            "pure_full_decode_steps": sum(step["kind"] == "decode" and any(
+                call[0] and call[1] == case["max_running"] for call in step["calls"])
+                for step in result["steps"])}
+
+
+def adapter_options(case, buckets, attention="project", variant_options=None):
     if not buckets or min(buckets) < 1:
         raise ValueError("burst graph buckets must be positive")
     return dict(max_running=case["max_running"],
+                **(variant_options or {}),
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
                 **attention_options(attention),
@@ -230,7 +355,7 @@ def local_is_complete(path, digest, *, flags=None, model=None, blocks=None,
 
 
 def vllm_result(directory, workload, digest, case, blocks, model,
-                warmups, repetitions, commit=None, resume_commit=None):
+                warmups, repetitions, commit=None, resume_commit=None, vllm_budget="matched"):
     files = sorted(directory.glob("*.json"))
     if not files:
         return None
@@ -243,6 +368,10 @@ def vllm_result(directory, workload, digest, case, blocks, model,
     if workload_fingerprint(workload) != digest:
         raise ValueError(f"{files[0]}: workload fingerprint differs")
     configuration = payload.get("configuration", {})
+    # Results predating budget modes were all pinned.
+    if configuration.get("vllm_budget", "matched") != vllm_budget:
+        raise ValueError(f"{files[0]}: vLLM budget mode {configuration.get('vllm_budget', 'matched')!r}, "
+                         f"expected {vllm_budget!r}; use a separate output directory per mode")
     expected_config = {"model": model, "dtype": "float16", "block_size": 16,
                        "max_running": case["max_running"],
                        "max_num_batched_tokens": PREFILL_TOKENS_PER_STEP,
@@ -266,10 +395,14 @@ def vllm_result(directory, workload, digest, case, blocks, model,
     for run in result["runs"]:
         metadata = run.get("metadata", {})
         expected_metadata = {"max_num_seqs": case["max_running"],
-                             "max_num_batched_tokens": PREFILL_TOKENS_PER_STEP,
                              "max_model_len": max(case["lengths"]) + max(case["outputs"]),
                              "kv_cache_mode": "matched-local-pool",
                              "matched_num_blocks": blocks}
+        if vllm_budget == "matched":
+            expected_metadata["max_num_batched_tokens"] = PREFILL_TOKENS_PER_STEP
+        elif (metadata.get("max_num_batched_tokens_requested") is not None
+              or not isinstance(metadata.get("max_num_batched_tokens"), int)):
+            raise ValueError(f"{files[0]}: default-budget run did not record vLLM's own budget")
         if any(metadata.get(field) != value for field, value in expected_metadata.items()):
             raise ValueError(f"{files[0]}: vLLM scheduling/KV settings differ")
         outputs = {row["request_id"]: row["output_ids"] for row in run["requests"]}
@@ -282,16 +415,17 @@ def vllm_result(directory, workload, digest, case, blocks, model,
 
 def selected_vllm_result(args, shape_id, workload, digest, case, blocks, model):
     own_directory = stage_paths(args, shape_id)[1]
+    mode = getattr(args, "vllm_budget", "matched")
     own = vllm_result(own_directory, workload, digest, case, blocks, model,
                       args.warmups, args.repetitions, repository_commit(),
-                      args.resume_commit)
+                      args.resume_commit, vllm_budget=mode)
     if own is not None:
         return own, own_directory
     if args.reuse_vllm_from is None:
         return None, own_directory
     source = args.reuse_vllm_from / shape_id / "vllm"
     reused = vllm_result(source, workload, digest, case, blocks, model,
-                         args.warmups, args.repetitions)
+                         args.warmups, args.repetitions, vllm_budget=mode)
     if reused is None:
         return None, own_directory
     import torch
@@ -306,10 +440,11 @@ def selected_vllm_result(args, shape_id, workload, digest, case, blocks, model):
 
 def run_local(args, shape_id, model_source):
     case, requests, _, digest, blocks = input_contract(args, shape_id)
-    dispatch = dispatch_plan(case, requests, args.seed)
+    dispatch = dispatch_plan(case, requests, args.seed, with_schedule=True)
     buckets = dispatch["prefill_buckets"]
     local_path, _, _ = stage_paths(args, shape_id)
-    if local_is_complete(local_path, digest, flags=engine_flags(args.attention),
+    flags = variant_flags(args)
+    if local_is_complete(local_path, digest, flags=flags,
                          model=model_source, blocks=blocks,
                          warmups=args.warmups, repetitions=args.repetitions,
                          commit=repository_commit(), resume_commit=args.resume_commit):
@@ -330,7 +465,9 @@ def run_local(args, shape_id, model_source):
     config.packed_mixed_step = True
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
-        engine.model, pool, None, **adapter_options(case, buckets, args.attention))
+        engine.model, pool, None,
+        **adapter_options(case, buckets, args.attention, variant_adapter_options(args)))
+    check_variant_reached(adapter, args, shape_id)
     if (adapter.graph_decoder.buckets != [case["max_running"]]
             or adapter.prefill_attention_policy != ATTENTION_MODES[args.attention]["prefill"]
             or not adapter.enable_residual_rmsnorm
@@ -344,7 +481,8 @@ def run_local(args, shape_id, model_source):
             tensor.fill_(float("nan"))
         result = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
                          adapter, requests)
-        work = verify_fixed_result(result, shape_id)
+        work = (verify_fixed_result(result, shape_id) if args.prefill_budget == PREFILL_TOKENS_PER_STEP
+                else verify_planned_work(result, dispatch, case))
         if len(result["outputs"]) != len(requests) or any(
                 len(result["outputs"][request["id"]]) != request["output"]
                 for request in requests):
@@ -376,9 +514,16 @@ def run_local(args, shape_id, model_source):
     atomic_json(local_path, {"status": "complete", "shape_id": shape_id,
                              "model": model_source, "workload_sha256": digest,
                              "repository_commit": repository_commit(),
-                             "engine_flags": engine_flags(args.attention), "warmups": args.warmups,
+                             "engine_flags": flags, "warmups": args.warmups,
                              "repetitions": args.repetitions, "num_blocks": blocks,
-                             "dispatch_plan": dispatch,
+                             "dispatch_plan": {key: value for key, value in dispatch.items()
+                                               if key != "schedule"},
+                             "prefill_graph_pool": args.prefill_graph_pool,
+                             "prefill_graph_reserved_bytes": {
+                                 str(bucket): value for bucket, value in
+                                 adapter.piecewise_prefill.capture_memory.items()},
+                             "peak_allocated_bytes": torch.cuda.max_memory_allocated(args.device),
+                             "peak_reserved_bytes": torch.cuda.max_memory_reserved(args.device),
                              "runs": runs,
                              "median_output_tokens_per_s": statistics.median(
                                  row["output_tokens_per_s"] for row in runs),
@@ -407,10 +552,12 @@ def run_vllm(args, shape_id, model_source):
                "--workload-in", str(args.suite_dir / shape_id / "workload.json"),
                "--warmups", str(args.warmups), "--repetitions", str(args.repetitions),
                "--seed", str(args.seed), "--output-dir", str(directory)]
+    if args.vllm_budget == "default":
+        command.append("--vllm-default-budget")
     subprocess.run(command, cwd=ROOT, check=True)
     if vllm_result(directory, workload, digest, case, blocks,
                    model_source, args.warmups, args.repetitions,
-                   repository_commit(), args.resume_commit) is None:
+                   repository_commit(), args.resume_commit, vllm_budget=args.vllm_budget) is None:
         raise AssertionError(f"{shape_id}: vLLM produced no validated result")
 
 
@@ -418,7 +565,7 @@ def analyze_cell(args, shape_id, model_source):
     case, requests, workload, digest, blocks = input_contract(args, shape_id)
     dispatch = dispatch_plan(case, requests, args.seed)
     local_path, directory, report_path = stage_paths(args, shape_id)
-    if not local_is_complete(local_path, digest, flags=engine_flags(args.attention),
+    if not local_is_complete(local_path, digest, flags=variant_flags(args),
                              model=model_source,
                              blocks=blocks, warmups=args.warmups,
                              repetitions=args.repetitions,
@@ -453,6 +600,10 @@ def analyze_cell(args, shape_id, model_source):
               "local_output_tokens_per_s": local_rate,
               "vllm_output_tokens_per_s": vllm_rate,
               "local_over_vllm": local_rate / vllm_rate,
+              "vllm_budget": getattr(args, "vllm_budget", "matched"),
+              "vllm_max_num_batched_tokens": vllm["runs"][0].get("metadata", {}).get("max_num_batched_tokens"),
+              "local_prefill_token_budget": variant(args)["budget"],
+              "local_engine_flags": local["engine_flags"],
               "exact_output_requests": exact, "total_requests": len(vllm_output),
               "vllm_result_dir": str(reference_dir),
               "mixed_steps": local["runs"][0]["mixed_steps"],
@@ -472,7 +623,8 @@ def forwarded(args, action, shape_id):
             "--suite-dir", str(args.suite_dir), "--output-dir", str(args.output_dir),
             "--shape-id", shape_id, "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions), "--attention", args.attention]
+            "--repetitions", str(args.repetitions), "--attention", args.attention,
+            "--vllm-budget", getattr(args, "vllm_budget", "matched"), *variant_cli(args)]
     if args.reuse_vllm_from is not None:
         command += ["--reuse-vllm-from", str(args.reuse_vllm_from)]
     command += resume_options(args.resume_commit)
@@ -485,7 +637,8 @@ def mixed_forwarded(args, shape_id):
             "--output-dir", str(args.output_dir), "--shape-id", shape_id,
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
-            "--repetitions", str(args.repetitions), "--attention", args.attention]
+            "--repetitions", str(args.repetitions), "--attention", args.attention,
+            "--vllm-budget", getattr(args, "vllm_budget", "matched"), *variant_cli(args)]
     command += resume_options(args.resume_commit)
     if getattr(args, "vllm_python", None):
         command += ["--vllm-python", args.vllm_python]
@@ -499,6 +652,7 @@ def phase_forwarded(args, shape_id):
             "--model", args.model, "--device", args.device,
             "--seed", str(args.seed), "--warmups", str(args.warmups),
             "--repetitions", str(args.repetitions), "--attention", args.attention,
+            "--vllm-budget", getattr(args, "vllm_budget", "matched"), *variant_cli(args),
             *resume_options(args.resume_commit)]
     if getattr(args, "vllm_python", None):
         command += ["--vllm-python", args.vllm_python]
@@ -515,6 +669,10 @@ def main():
         raise ValueError("requires cuda:0, >=1 warmup, and >=1 repetition")
     if args.action in ("run-cell", "run-local", "run-vllm") and args.shape_id is None:
         raise ValueError(f"{args.action} requires --shape-id")
+    if args.prefill_budget < 1:
+        raise ValueError("--prefill-budget must be positive")
+    if args.prefill_budget > 8192 and args.prefill_graph_pool != "shared":
+        raise ValueError("budgets above 8192 need --prefill-graph-pool shared")
     selected = (args.shape_id,) if args.shape_id else SHAPES
     for shape_id in selected:
         input_contract(args, shape_id)
@@ -526,20 +684,27 @@ def main():
         shapes = {}
         for shape_id in selected:
             case, requests, _, _, _ = input_contract(args, shape_id)
-            mixed_case, _, first, arrival, buckets, _, _ = mixed_plan(args, shape_id)
             burst = dispatch_plan(case, requests, args.seed)
             validate_capture_options(adapter_options(case, burst["prefill_buckets"], args.attention))
+            burst = {**burst, "prefill_budget": args.prefill_budget,
+                     "max_capture_tokens": adapter_options(
+                         case, burst["prefill_buckets"], args.attention)["max_capture_tokens"]}
+            try:
+                mixed_case, _, first, arrival, buckets, _, _ = mixed_plan(args, shape_id)
+            except AssertionError as error:
+                # A budget far below the frozen one can leave the first wave still
+                # prefilling at the fixed arrival step; the mixed stage cannot run there.
+                shapes[shape_id] = {"burst": burst, "staggered_mixed": {"unsupported": str(error)}}
+                continue
             validate_capture_options(mixed_adapter_options(mixed_case, buckets, args.attention))
-            shapes[shape_id] = {"burst": {**burst, "max_capture_tokens":
-                                          adapter_options(case, burst["prefill_buckets"],
-                                                          args.attention)["max_capture_tokens"]},
+            shapes[shape_id] = {"burst": burst,
                                 "staggered_mixed": {
                                     "first_wave": first, "arrival_step": arrival,
                                     "prefill_buckets": buckets,
                                     "max_capture_tokens": mixed_adapter_options(
                                         mixed_case, buckets, args.attention)["max_capture_tokens"],
                                     "batch": mixed_case["max_running"]}}
-        print(json.dumps({"shapes": shapes, "engine": engine_flags(args.attention),
+        print(json.dumps({"shapes": shapes, "engine": variant_flags(args),
                           "warmups": args.warmups, "repetitions": args.repetitions},
                          indent=2))
         return
@@ -576,7 +741,21 @@ def main():
         torch.cuda.synchronize()
         if smoke.shape != query.shape or not torch.isfinite(smoke).all():
             raise AssertionError("local attention did not return finite query-shaped output")
+        if args.boundary_buffers and args.attention == "fa3":
+            _load("paged_varlen_fa3").smoke_varlen_fa3(args.device, boundary_buffers=True)
+        if args.gemm_epilogues != "off":
+            # Loads the CUTLASS extension in this interpreter (ABI, source hash and
+            # fragment proof), then checks one fused GEMM against torch.
+            fused = _load("fused_gemm")
+            x = torch.randn((64, 1536), device=args.device, dtype=torch.float16)
+            weight = torch.randn((1536, 1536), device=args.device, dtype=torch.float16) * .02
+            residual = torch.randn_like(x)
+            out, _ = fused.residual_gemm(x, weight, residual)
+            expected = (residual.float() + x.float() @ weight.float().T)
+            if not torch.allclose(out.float(), expected, atol=.05, rtol=.01):
+                raise AssertionError("fused GEMM epilogue extension disagrees with torch")
         print(json.dumps({"status": "pass", "model": model_source, "attention": args.attention,
+                          "engine": variant_flags(args),
                           "startup": setup, "reference_version": VLLM_VERSION,
                           "model_loaded": False}, indent=2))
         return
