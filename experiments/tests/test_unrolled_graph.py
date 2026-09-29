@@ -144,6 +144,44 @@ class UnrolledGraphTests(unittest.TestCase):
         self.assertTrue(all(row["enable_residual_rmsnorm"] for row in seen))
         self.assertTrue(all(row["enable_native_decode_qkv_postprocess"] for row in seen))
 
+    def test_cutlass_unrolled_path_uses_fused_forward_for_every_step(self):
+        batch, steps, vocab = 2, 2, 7
+        metadata = tuple(
+            (torch.full((batch,), step, dtype=torch.int32),
+             torch.full((batch,), step + 1, dtype=torch.int32),
+             torch.zeros(batch, 1, dtype=torch.int32),
+             torch.full((batch,), step, dtype=torch.long))
+            for step in range(steps)
+        )
+        seen = []
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("unfused forward reached by CUTLASS K-step path")
+
+        def fake_fused(_model, _cache, token, *_metadata, **options):
+            seen.append(options)
+            logits = torch.zeros(batch, 1, vocab)
+            next_token = (token.reshape(batch) + 1) % vocab
+            logits.scatter_(2, next_token[:, None, None], 1)
+            return logits
+
+        fake_module = types.SimpleNamespace(
+            graph_decode_forward=forbidden,
+            fused_graph_decode_forward=fake_fused,
+        )
+        with mock.patch.dict(sys.modules, {"paged_graph_decoder": fake_module}):
+            decoder = UNROLLED.UnrolledCUDAGraphDecoder(
+                object(), object(), metadata, decode_attention_policy="fa3",
+                enable_fused_gemm_epilogues=True,
+            )
+            decoder.s_first_ids.copy_(torch.tensor([[1], [3]]))
+            tokens, logits = decoder._forward()
+
+        self.assertEqual(len(seen), steps)
+        self.assertTrue(all(row["decode_attention_policy"] == "fa3" for row in seen))
+        self.assertEqual(tokens.tolist(), [[2, 4], [3, 5]])
+        self.assertEqual(logits, ())
+
 
 if __name__ == "__main__":
     unittest.main()

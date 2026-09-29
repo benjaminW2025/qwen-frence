@@ -10,16 +10,19 @@ Stages, each resumable (a finished stage's report is reused) and pushed when
   micro/layer        one decoder layer: 8-kernel chain vs 4 fused GEMMs, vs an FP32 chain
   micro/model        whole model, fused vs accepted: all-step logits, K/V, timing
   micro/graph-pool   private vs shared graph pool: bitwise outputs, capture memory
-  micro/boundary     boundary-buffer reuse A/B (copies removed, logits, K/V, timing)
+  micro/boundary/*   boundary-buffer reuse at B8-short and B64-long
+  micro/metadata/*   resident decode metadata at B8-short and B64-long
   divergence/accepted  why the accepted baseline's tokens differ from vLLM's (FP32)
-  decisions          which features the evidence admits (epilogues per phase, pool, buffers)
+  decisions          which features the evidence admits (epilogues, pool, buffers, metadata)
+  micro/kstep/*      advisory K=2/4/8 graphs and fused head at B8/B64
   budget-sweep       engine-only prefill budgets on the admitted engine
   eight              all eight cells (burst, staggered mixed, phases) vs vLLM at its default budget
   divergence/final   the new run vs vLLM, and vs the accepted baseline's local tokens
 
-A failed gate disables that feature and is recorded; a stage that crashes
-without writing its report stops the session. Run from the vLLM environment
-(FA3 and vLLM live there) with the CUTLASS extension built in it.
+A failed gate disables that feature and is recorded; a required stage that
+crashes without writing its report stops the session. K-step capture is
+advisory and cannot stop the eight-cell comparison. Run from the vLLM
+environment (FA3 and vLLM live there) with the CUTLASS extension built in it.
 """
 from __future__ import annotations
 
@@ -88,19 +91,30 @@ def decide(root, args):
     auto = "shared" if pool and pool["status"] == "pass" else "private"
     decision["graph_pool"] = auto if args.graph_pool == "auto" else args.graph_pool
 
-    boundary = load(root / "micro/boundary/report.json")
-    evidence["boundary_buffers"] = boundary and {
-        "status": boundary["status"], "speedup_mixed": boundary.get("speedup_mixed"),
-        "boundary_reuse_executed": boundary.get("boundary_reuse_executed")}
-    auto = bool(boundary and boundary["status"] == "complete" and boundary["speedup_mixed"] > 1)
+    boundary = [load(root / f"micro/boundary/{name}/report.json")
+                for name in ("b8-short", "b64-long")]
+    evidence["boundary_buffers"] = boundary
+    auto = bool(all(row and row["status"] == "complete"
+                    and row["boundary_reuse_executed"]
+                    and row["speedup_prefill_mixed"] > 1 for row in boundary))
     decision["boundary_buffers"] = auto if args.boundary_buffers == "auto" else args.boundary_buffers == "on"
+    metadata = [load(root / f"micro/metadata/{name}/report.json")
+                for name in ("b8-short", "b64-long")]
+    evidence["stable_decode_metadata"] = metadata
+    auto = bool(all(row and row["status"] == "complete"
+                    and row["metadata_reuse_executed"]
+                    and row["speedup_decode"] > 1 for row in metadata))
+    decision["stable_decode_metadata"] = (
+        auto if args.stable_decode_metadata == "auto"
+        else args.stable_decode_metadata == "on")
     return decision, evidence
 
 
 def variant_cli(decision):
     return ["--prefill-graph-pool", decision["graph_pool"],
             "--gemm-epilogues", decision["gemm_epilogues"],
-            *(["--boundary-buffers"] if decision["boundary_buffers"] else [])]
+            *(["--boundary-buffers"] if decision["boundary_buffers"] else []),
+            *(["--stable-decode-metadata"] if decision["stable_decode_metadata"] else [])]
 
 
 class Session:
@@ -139,6 +153,37 @@ class Session:
         self.push(f"integrated eight-cell session: {name}")
         return code == 0
 
+    def advisory(self, name, report, command):
+        """Run an optional experiment without risking the required session.
+
+        A crashed subprocess is isolated from the subsequent budget/eight-cell
+        processes.  Its partial directory is retained and automatically moved
+        aside on the next invocation so the experiment remains resumable.
+        """
+        if report.exists():
+            print(f"[{name}] complete; reusing {report.relative_to(ROOT)}", flush=True)
+            return True
+        if report.parent.exists():
+            aside = report.parent.with_name(
+                f"{report.parent.name}.incomplete-{int(time.time())}")
+            report.parent.rename(aside)
+            print(f"[{name}] moved incomplete output to {aside.name}", flush=True)
+        print(f"[{name} advisory] {' '.join(map(str, command))}", flush=True)
+        if self.args.plan:
+            return True
+        code = subprocess.run([str(part) for part in command], cwd=ROOT).returncode
+        if code:
+            report.parent.mkdir(parents=True, exist_ok=True)
+            (report.parent / "failure.json").write_text(json.dumps({
+                "status": "crashed", "exit_code": code,
+                "command": [str(part) for part in command],
+                "note": "Advisory failure; required integrated run continued."
+            }, indent=2) + "\n")
+            print(f"warning: [{name}] advisory failed with exit code {code}; continuing",
+                  flush=True)
+        self.push(f"integrated eight-cell session: {name}")
+        return code == 0
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -149,6 +194,7 @@ def main():
     parser.add_argument("--gemm-epilogues", choices=("auto", "off", "prefill", "decode", "all"), default="auto")
     parser.add_argument("--graph-pool", choices=("auto", "shared", "private"), default="auto")
     parser.add_argument("--boundary-buffers", choices=("auto", "on", "off"), default="auto")
+    parser.add_argument("--stable-decode-metadata", choices=("auto", "on", "off"), default="auto")
     parser.add_argument("--budgets", type=int, nargs="+", default=[1024, 2048, 4096, 8192, 16384])
     parser.add_argument("--budget-choice", choices=("per-cell", "single"), default="per-cell",
                         help="per-cell: each cell's own best budget; single: the best geomean budget")
@@ -171,6 +217,7 @@ def main():
     session.stage("preflight", root / "preflight.json",
                   [python, BENCHMARK, "check", "--shape-id", args.shape_ids[0],
                    "--output-dir", root / "eight", *run, "--gemm-epilogues", "all",
+                   "--stable-decode-metadata",
                    *(["--boundary-buffers"] if args.attention == "fa3" else [])])
     if not args.plan and not (root / "preflight.json").exists():
         (root / "preflight.json").write_text(json.dumps({"status": "pass"}) + "\n")
@@ -190,17 +237,29 @@ def main():
                    "--output", micro / "graph-pool/report.json", *common,
                    "--cases", "8x256", "1x2048", "4x2048", "8x2048"], gate=True)
     if args.attention == "fa3":
-        session.stage("micro/boundary", micro / "boundary/report.json",
-                      [python, HERE / "benchmark_cpp_packed_mixed.py", "run",
-                       "--intervention", "boundary-buffers", "--suite-dir", args.suite_dir,
-                       "--model", args.model, "--output-dir", micro / "boundary"], gate=True)
+        probes = (("b8-short", "fixed-b8-l256-o128"),
+                  ("b64-long", "fixed-b64-l2048-o128"))
+        for label, shape in probes:
+            session.stage(f"micro/boundary/{label}", micro / f"boundary/{label}/report.json",
+                          [python, HERE / "benchmark_cpp_packed_mixed.py", "run",
+                           "--intervention", "boundary-buffers", "--shape-id", shape,
+                           "--suite-dir", args.suite_dir, "--model", args.model,
+                           "--repetitions", str(args.repetitions),
+                           "--output-dir", micro / f"boundary/{label}"], gate=True)
+            session.stage(f"micro/metadata/{label}", micro / f"metadata/{label}/report.json",
+                          [python, HERE / "benchmark_cpp_packed_mixed.py", "run",
+                           "--intervention", "resident-metadata", "--shape-id", shape,
+                           "--suite-dir", args.suite_dir, "--model", args.model,
+                           "--repetitions", str(args.repetitions),
+                           "--output-dir", micro / f"metadata/{label}"], gate=True)
     session.stage("divergence/accepted", root / "divergence/accepted-vs-vllm.json",
                   [python, HERE / "divergence_report.py", "--results-dir", ACCEPTED,
                    "--suite-dir", args.suite_dir, "--model", args.model,
                    "--output", root / "divergence/accepted-vs-vllm.json"])
     if args.plan:
         decision = {"gemm_epilogues": "<from micro/model>", "graph_pool": "<from micro/graph-pool>",
-                    "boundary_buffers": "<from micro/boundary>"}
+                    "boundary_buffers": "<from micro/boundary>",
+                    "stable_decode_metadata": "<from micro/metadata>"}
     else:
         decision, evidence = decide(root, args)
         if decision["graph_pool"] == "private":
@@ -209,6 +268,20 @@ def main():
             {"decision": decision, "evidence": evidence, "budgets": args.budgets}, indent=2) + "\n")
         print(f"[decisions] {decision}", flush=True)
         session.push("integrated eight-cell session: decisions")
+
+    # Advisory only until the C++ scheduler has chunk commit, first-EOS
+    # truncation and K1 fallback. Run against the decode GEMM path selected
+    # above so the measured K-step effect reflects the candidate engine.
+    for label, batch in (("b8", 8), ("b64", 64)):
+        command = [python, HERE / "benchmark_decode_control_plane.py", "run",
+                   "--batch", str(batch), "--context", "4096",
+                   "--warmups", str(max(1, args.warmups)),
+                   "--repetitions", str(max(10, args.repetitions)),
+                   "--output-dir", micro / f"kstep/{label}"]
+        if not args.plan and decision["gemm_epilogues"] in ("decode", "all"):
+            command.append("--fused-gemm-epilogues")
+        session.advisory(f"micro/kstep/{label}",
+                         micro / f"kstep/{label}/report.json", command)
 
     sweep_dir = root / "budget-sweep"
     session.stage("budget-sweep", sweep_dir / "summary.final.json",

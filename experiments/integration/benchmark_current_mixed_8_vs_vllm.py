@@ -28,6 +28,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
 from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, VLLM_BUDGETS,
                                          atomic_json, attention_options, engine_flags,
                                          vllm_budget_kwargs, add_variant_arguments,
+                                         apply_variant_config,
                                          check_variant_reached, variant_adapter_options,
                                          variant_cli, variant_flags,
                                          commit_matches, input_contract,
@@ -157,6 +158,7 @@ def run_local(args, shape_id, model_source):
                                    hub_transfer=setup["hub_transfer"])
     config = make_config(cpp, case)
     config.packed_mixed_step = True
+    apply_variant_config(config, args)
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
@@ -172,8 +174,10 @@ def run_local(args, shape_id, model_source):
     for index in range(args.warmups + args.repetitions):
         for tensor in pool.k_pool + pool.v_pool:
             tensor.fill_(float("nan"))
-        row = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
-                      adapter, requests)
+        loop = cpp.IterationLoop(config, torch.device(args.device))
+        row = execute(torch, loop, adapter, requests)
+        if args.stable_decode_metadata and loop.num_device_decode_state_replays() == 0:
+            raise AssertionError(f"{shape_id}: stable decode metadata never replayed")
         check_local_result(row, requests, arrival)
         if adapter.piecewise_prefill.eager_calls:
             raise AssertionError(f"{shape_id}: piecewise graph missed mixed token bucket")

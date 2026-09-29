@@ -48,6 +48,8 @@ def build_parser():
                         default="native")
     parser.add_argument("--residual-rmsnorm", action=argparse.BooleanOptionalAction,
                         default=True)
+    parser.add_argument("--fused-gemm-epilogues", action="store_true",
+                        help="run K-step graphs through the admitted CUTLASS decode path")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/decode-control-plane")
     return parser
@@ -193,6 +195,7 @@ def fusion_options(args):
         "enable_native_decode_rope_kv": args.qkv_mode == "native-k",
         "enable_native_decode_qkv_postprocess": args.qkv_mode == "native",
         "enable_packed_qkv_rope_cache": args.qkv_mode == "packed",
+        "enable_fused_gemm_epilogues": args.fused_gemm_epilogues,
     }
 
 
@@ -224,6 +227,9 @@ def check_experiment_setup(args):
     _load("paged_decode_fa3")._load_fa3()
     _load("fused_lm_head")
     components = ["vllm_bundled_fa3", "fused_lm_head"]
+    if args.fused_gemm_epilogues:
+        _load("fused_gemm")
+        components.append("fused_gemm")
     qkv_module = {
         "native-k": "rope_kv_write", "native": "rope_kv_write",
         "packed": "packed_qkv_rope_cache",
@@ -255,6 +261,9 @@ def run_model(args):
     torch.cuda.set_device(torch.device(args.device))
     engine, load_seconds, hub_transfer = load_model_only(
         args.model, args.device, "float16", hub_transfer=prepare_hub_transfer())
+    if args.fused_gemm_epilogues:
+        from kernel_dispatch import _load
+        _load("fused_gemm").prepare_model(engine.model)
     if args.eos_token_id >= engine.cfg.vocab:
         raise ValueError("EOS token ID exceeds model vocabulary")
     cache, metadata, first_ids, generator = stage_unrolled_case(
@@ -337,9 +346,16 @@ def run_model(args):
                     token.cpu()
             return torch.stack(emitted)
 
+        # The eager oracle deliberately remains the accepted unfused math.  The
+        # CUTLASS flag is a graph-decoder implementation choice and is not a
+        # valid graph_decode_forward keyword (nor an independent reference).
+        reference_options = {
+            key: value for key, value in options.items()
+            if key != "enable_fused_gemm_epilogues"
+        }
         reference, reference_logits = eager_trajectory(
             engine.model, cache, first_ids, selected, attention_policy="fa3",
-            forward_options=options)
+            forward_options=reference_options)
         torch.cuda.synchronize()
         reference_kv = snapshot_slots(cache, slots)
         restore_slots(cache, slots, initial)
@@ -460,6 +476,7 @@ def run_model(args):
                           "steps": list(GRAPH_STEPS), "attention": "fa3",
                           "qkv_mode": args.qkv_mode,
                           "residual_rmsnorm": args.residual_rmsnorm,
+                          "fused_gemm_epilogues": args.fused_gemm_epilogues,
                           "output_heads": ["materialized_logits_argmax",
                                            "fused_projection_argmax"],
                           "fused_output_head_config": head_config,
@@ -527,6 +544,7 @@ def main():
                           "steps": list(GRAPH_STEPS), "attention": "fa3",
                           "qkv_mode": args.qkv_mode,
                           "residual_rmsnorm": args.residual_rmsnorm,
+                          "fused_gemm_epilogues": args.fused_gemm_epilogues,
                           "output_heads": ["materialized_logits_argmax",
                                            "fused_projection_argmax"],
                           "fused_output_head_config": output_head_config(args.batch),

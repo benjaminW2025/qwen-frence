@@ -39,7 +39,8 @@ class BudgetSweepContract(unittest.TestCase):
             self.assertNotIn(key, benchmark.engine_flags("fa3"))
         case = dict(max_running=8, lengths=[2048] * 8, outputs=[128] * 8)
         args = SimpleNamespace(attention="fa3", prefill_budget=16384, prefill_graph_pool="shared",
-                               gemm_epilogues="prefill", boundary_buffers=True)
+                               gemm_epilogues="prefill", boundary_buffers=True,
+                               stable_decode_metadata=False)
         options = benchmark.adapter_options(case, [16384], "fa3", benchmark.variant_adapter_options(args))
         self.assertTrue(options["enable_prefill_shared_graph_pool"])
         self.assertTrue(options["enable_prefill_boundary_buffer_reuse"])
@@ -53,7 +54,8 @@ class BudgetSweepContract(unittest.TestCase):
                                model="m", device="cuda:0", seed=1, warmups=1, repetitions=3,
                                reuse_vllm_from=None, resume_commit=None, vllm_budget="default",
                                prefill_budget=8192, prefill_graph_pool="shared",
-                               gemm_epilogues="all", boundary_buffers=True)
+                               gemm_epilogues="all", boundary_buffers=True,
+                               stable_decode_metadata=True)
         shape = benchmark.SHAPES[0]
         for command in (benchmark.forwarded(args, "run-local", shape),
                         benchmark.mixed_forwarded(args, shape),
@@ -62,13 +64,16 @@ class BudgetSweepContract(unittest.TestCase):
             for fragment in ("--prefill-budget 8192", "--prefill-graph-pool shared",
                              "--gemm-epilogues all", "--boundary-buffers", "--vllm-budget default"):
                 self.assertIn(fragment, joined)
+            self.assertIn("--stable-decode-metadata", joined)
 
     def test_variant_reaching_the_adapter_is_checked(self):
         args = SimpleNamespace(attention="fa3", prefill_budget=2048, prefill_graph_pool="private",
-                               gemm_epilogues="decode", boundary_buffers=False)
+                               gemm_epilogues="decode", boundary_buffers=False,
+                               stable_decode_metadata=True)
         prefill = SimpleNamespace(graph_pool=None, enable_boundary_buffer_reuse=False,
                                   enable_fused_gemm_epilogues=False)
-        decoder = SimpleNamespace(enable_fused_gemm_epilogues=True)
+        decoder = SimpleNamespace(enable_fused_gemm_epilogues=True,
+                                  enable_stable_decode_table_cache=True)
         adapter = SimpleNamespace(piecewise_prefill=prefill,
                                   graph_decoder=SimpleNamespace(decoders={8: decoder}))
         benchmark.check_variant_reached(adapter, args, "cell")

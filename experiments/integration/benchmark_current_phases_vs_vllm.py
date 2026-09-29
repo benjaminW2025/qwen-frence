@@ -29,6 +29,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
 from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, VLLM_BUDGETS,
                                          engine_flags, vllm_budget_kwargs,
                                          add_variant_arguments, check_variant_reached,
+                                         apply_variant_config,
                                          variant_adapter_options, variant_cli, variant_flags,
                                          verify_planned_work,
                                          adapter_options as
@@ -147,6 +148,7 @@ def run_local(args, shape_id, model_source):
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     config = make_config(cpp, burst_case)
     config.packed_mixed_step = True
+    apply_variant_config(config, args)
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
         **burst_adapter_options(burst_case, burst_dispatch["prefill_buckets"], args.attention,
@@ -162,8 +164,10 @@ def run_local(args, shape_id, model_source):
     for index in range(args.warmups + args.repetitions):
         for tensor in pool.k_pool + pool.v_pool:
             tensor.fill_(float("nan"))
-        row = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
-                      adapter, burst_requests, synchronize_steps=True)
+        loop = cpp.IterationLoop(config, torch.device(args.device))
+        row = execute(torch, loop, adapter, burst_requests, synchronize_steps=True)
+        if args.stable_decode_metadata and loop.num_device_decode_state_replays() == 0:
+            raise AssertionError(f"{shape_id}: stable decode metadata never replayed in burst phase")
         if args.prefill_budget == PREFILL_TOKENS_PER_STEP:
             verify_fixed_result(row, shape_id)
         else:
@@ -184,6 +188,7 @@ def run_local(args, shape_id, model_source):
 
     config = make_config(cpp, case)
     config.packed_mixed_step = True
+    apply_variant_config(config, args)
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
         **adapter_options(case, buckets, args.attention, variant_adapter_options(args)))
@@ -193,8 +198,10 @@ def run_local(args, shape_id, model_source):
     for index in range(args.warmups + args.repetitions):
         for tensor in pool.k_pool + pool.v_pool:
             tensor.fill_(float("nan"))
-        row = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
-                      adapter, requests, synchronize_steps=True)
+        loop = cpp.IterationLoop(config, torch.device(args.device))
+        row = execute(torch, loop, adapter, requests, synchronize_steps=True)
+        if args.stable_decode_metadata and loop.num_device_decode_state_replays() == 0:
+            raise AssertionError(f"{shape_id}: stable decode metadata never replayed in mixed phase")
         check_local_result(row, requests, arrival)
         if adapter.piecewise_prefill.eager_calls or not adapter.decisions.get(
                 "packed_mixed_cpp_varlen") or not adapter.decisions.get(

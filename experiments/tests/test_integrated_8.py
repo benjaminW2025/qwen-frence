@@ -5,6 +5,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import torch
 
@@ -34,34 +35,60 @@ class Decisions(unittest.TestCase):
 
     def args(self, **overrides):
         return SimpleNamespace(**{"gemm_epilogues": "auto", "graph_pool": "auto",
-                                  "boundary_buffers": "auto", **overrides})
+                                  "boundary_buffers": "auto",
+                                  "stable_decode_metadata": "auto", **overrides})
 
     def test_each_feature_needs_its_own_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             decision, _ = session.decide(root, self.args())
             self.assertEqual(decision, {"gemm_epilogues": "off", "graph_pool": "private",
-                                        "boundary_buffers": False})
+                                        "boundary_buffers": False,
+                                        "stable_decode_metadata": False})
             self.write(root, "micro/layer/report.json", {"rows": [{"correct": True}]})
             self.write(root, "micro/model/report.json", {
                 "status": "pass", "prefill": [{"speedup": 1.2}, {"speedup": 1.1}],
                 "decode": [{"speedup": 1.05}, {"speedup": .97}]})
             self.write(root, "micro/graph-pool/report.json", {"status": "pass", "rows": []})
-            self.write(root, "micro/boundary/report.json", {"status": "complete", "speedup_mixed": 1.02})
+            for name in ("b8-short", "b64-long"):
+                self.write(root, f"micro/boundary/{name}/report.json",
+                           {"status": "complete", "boundary_reuse_executed": True,
+                            "speedup_prefill_mixed": 1.02})
+                self.write(root, f"micro/metadata/{name}/report.json",
+                           {"status": "complete", "metadata_reuse_executed": True,
+                            "speedup_decode": 1.01})
             decision, evidence = session.decide(root, self.args())
             # One decode case is slower, so only prefill is admitted.
             self.assertEqual(decision, {"gemm_epilogues": "prefill", "graph_pool": "shared",
-                                        "boundary_buffers": True})
+                                        "boundary_buffers": True,
+                                        "stable_decode_metadata": True})
             self.assertEqual(evidence["gemm_epilogues"]["decode_speedups"], [1.05, .97])
             self.write(root, "micro/model/report.json", {
                 "status": "fail", "prefill": [{"speedup": 1.2}], "decode": [{"speedup": 1.2}]})
             self.assertEqual(session.decide(root, self.args())[0]["gemm_epilogues"], "off")
-            forced = session.decide(root, self.args(gemm_epilogues="all", boundary_buffers="off"))[0]
-            self.assertEqual((forced["gemm_epilogues"], forced["boundary_buffers"]), ("all", False))
+            forced = session.decide(root, self.args(
+                gemm_epilogues="all", boundary_buffers="off",
+                stable_decode_metadata="off"))[0]
+            self.assertEqual((forced["gemm_epilogues"], forced["boundary_buffers"],
+                              forced["stable_decode_metadata"]), ("all", False, False))
 
     def test_variant_cli_matches_the_harness_flags(self):
-        cli = session.variant_cli({"graph_pool": "shared", "gemm_epilogues": "all", "boundary_buffers": True})
-        self.assertEqual(cli, ["--prefill-graph-pool", "shared", "--gemm-epilogues", "all", "--boundary-buffers"])
+        cli = session.variant_cli({"graph_pool": "shared", "gemm_epilogues": "all",
+                                   "boundary_buffers": True, "stable_decode_metadata": True})
+        self.assertEqual(cli, ["--prefill-graph-pool", "shared", "--gemm-epilogues", "all",
+                               "--boundary-buffers", "--stable-decode-metadata"])
+
+    def test_advisory_failure_is_recorded_without_stopping_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = session.Session(SimpleNamespace(
+                output_dir=root, push=False, plan=False))
+            report = root / "micro/kstep/b8/report.json"
+            with mock.patch.object(session.subprocess, "run",
+                                   return_value=SimpleNamespace(returncode=9)):
+                self.assertFalse(runner.advisory("kstep", report, ["false"]))
+            failure = json.loads((report.parent / "failure.json").read_text())
+            self.assertEqual((failure["status"], failure["exit_code"]), ("crashed", 9))
 
 
 class Divergence(unittest.TestCase):

@@ -46,6 +46,7 @@ class UnrolledCUDAGraphDecoder:
         enable_native_decode_rope_kv=False,
         enable_native_decode_qkv_postprocess=False,
         enable_packed_qkv_rope_cache=False,
+        enable_fused_gemm_epilogues=False,
     ):
         if not step_inputs:
             raise ValueError("unrolled decode requires at least one step")
@@ -74,6 +75,7 @@ class UnrolledCUDAGraphDecoder:
             enable_native_decode_qkv_postprocess
         )
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
+        self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
         if sum((self.enable_native_decode_rope_kv,
                 self.enable_native_decode_qkv_postprocess,
                 self.enable_packed_qkv_rope_cache)) > 1:
@@ -94,19 +96,27 @@ class UnrolledCUDAGraphDecoder:
         logits_kept = []
         token_rows = []
         for positions, lengths, table, slots in self.s_step_inputs:
-            output = graph_decode_forward(
-                self.model, self.cache, token, positions, lengths, table, slots,
-                decode_attention_policy=self.decode_attention_policy,
-                max_decode_context_length=self.max_decode_context_length,
-                output_head_policy=self.output_head_policy,
-                output_head_config=self.output_head_config,
-                enable_residual_rmsnorm=self.enable_residual_rmsnorm,
-                enable_native_decode_rope_kv=self.enable_native_decode_rope_kv,
-                enable_native_decode_qkv_postprocess=(
-                    self.enable_native_decode_qkv_postprocess
-                ),
-                enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
-            )
+            common = dict(decode_attention_policy=self.decode_attention_policy,
+                          max_decode_context_length=self.max_decode_context_length,
+                          output_head_policy=self.output_head_policy,
+                          output_head_config=self.output_head_config)
+            if self.enable_fused_gemm_epilogues:
+                # Import lazily: the accepted path and its CPU contract tests do
+                # not depend on the optional CUTLASS implementation.
+                from paged_graph_decoder import fused_graph_decode_forward
+                output = fused_graph_decode_forward(
+                    self.model, self.cache, token, positions, lengths, table, slots,
+                    **common)
+            else:
+                output = graph_decode_forward(
+                    self.model, self.cache, token, positions, lengths, table, slots,
+                    enable_residual_rmsnorm=self.enable_residual_rmsnorm,
+                    enable_native_decode_rope_kv=self.enable_native_decode_rope_kv,
+                    enable_native_decode_qkv_postprocess=(
+                        self.enable_native_decode_qkv_postprocess
+                    ),
+                    enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
+                    **common)
             if self.output_head_policy == "logits":
                 if self.retain_logits:
                     logits_kept.append(output)

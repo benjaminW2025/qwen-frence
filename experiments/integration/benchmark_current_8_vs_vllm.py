@@ -57,7 +57,8 @@ GEMM_EPILOGUE_MODES = ("off", "prefill", "decode", "all")
 
 
 def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private",
-                 gemm_epilogues="off", boundary_buffers=False):
+                 gemm_epilogues="off", boundary_buffers=False,
+                 stable_decode_metadata=False):
     mode = ATTENTION_MODES[attention]
     if gemm_epilogues not in GEMM_EPILOGUE_MODES:
         raise ValueError(f"unknown GEMM epilogue mode {gemm_epilogues!r}")
@@ -70,6 +71,8 @@ def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private"
         extra["gemm_epilogues"] = gemm_epilogues
     if boundary_buffers:
         extra["prefill_boundary_buffer_reuse"] = True
+    if stable_decode_metadata:
+        extra["stable_decode_metadata"] = True
     return {**extra,
     "cpp_scheduler": True,
     "packed_mixed_step": True,
@@ -94,7 +97,8 @@ def variant(args):
     return dict(budget=getattr(args, "prefill_budget", PREFILL_TOKENS_PER_STEP),
                 graph_pool=getattr(args, "prefill_graph_pool", "private"),
                 gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
-                boundary_buffers=bool(getattr(args, "boundary_buffers", False)))
+                boundary_buffers=bool(getattr(args, "boundary_buffers", False)),
+                stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)))
 
 
 def variant_flags(args):
@@ -107,7 +111,8 @@ def variant_cli(args):
     return ["--prefill-budget", str(value["budget"]),
             "--prefill-graph-pool", value["graph_pool"],
             "--gemm-epilogues", value["gemm_epilogues"],
-            *(["--boundary-buffers"] if value["boundary_buffers"] else [])]
+            *(["--boundary-buffers"] if value["boundary_buffers"] else []),
+            *(["--stable-decode-metadata"] if value["stable_decode_metadata"] else [])]
 
 
 def add_variant_arguments(parser):
@@ -125,6 +130,9 @@ def add_variant_arguments(parser):
     parser.add_argument("--boundary-buffers", action="store_true",
                         help="bind each prefill segment's residual input to its producer's "
                              "output and write FA3 attention in place (no boundary copies)")
+    parser.add_argument("--stable-decode-metadata", action="store_true",
+                        help="advance stable pure-decode IDs/positions/lengths/slots on GPU and "
+                             "reuse its immutable page table")
     return parser
 
 
@@ -133,6 +141,7 @@ def variant_adapter_options(args):
     value = variant(args)
     return dict(enable_prefill_shared_graph_pool=value["graph_pool"] == "shared",
                 enable_prefill_boundary_buffer_reuse=value["boundary_buffers"],
+                enable_stable_decode_table_cache=value["stable_decode_metadata"],
                 enable_prefill_fused_gemm_epilogues=value["gemm_epilogues"] in ("prefill", "all"),
                 enable_decode_fused_gemm_epilogues=value["gemm_epilogues"] in ("decode", "all"))
 
@@ -143,6 +152,9 @@ def check_variant_reached(adapter, args, label):
     prefill = adapter.piecewise_prefill
     actual = dict(enable_prefill_shared_graph_pool=prefill.graph_pool is not None,
                   enable_prefill_boundary_buffer_reuse=prefill.enable_boundary_buffer_reuse,
+                  enable_stable_decode_table_cache=all(
+                      decoder.enable_stable_decode_table_cache
+                      for decoder in adapter.graph_decoder.decoders.values()),
                   enable_prefill_fused_gemm_epilogues=prefill.enable_fused_gemm_epilogues,
                   enable_decode_fused_gemm_epilogues=all(
                       decoder.enable_fused_gemm_epilogues
@@ -150,6 +162,13 @@ def check_variant_reached(adapter, args, label):
     if actual != options:
         raise AssertionError(f"{label}: engine variant did not reach the model: "
                              f"requested {options}, constructed {actual}")
+
+
+def apply_variant_config(config, args):
+    """Apply scheduler-side variant flags paired with the adapter-side flags."""
+    config.reuse_stable_decode_metadata = bool(
+        getattr(args, "stable_decode_metadata", False))
+    return config
 
 # vLLM's scheduling budget. "matched" pins it to the frozen 2048 the local engine
 # uses (the accepted baseline); "default" leaves max_num_batched_tokens unset so
@@ -463,6 +482,7 @@ def run_local(args, shape_id, model_source):
     engine, _, _ = load_model_only(model_source, args.device, "float16")
     config = make_config(cpp, case)
     config.packed_mixed_step = True
+    apply_variant_config(config, args)
     pool = allocate_pool(engine.cfg, blocks, engine.device)
     adapter = CppPackedMixedModelAdapter(
         engine.model, pool, None,
@@ -479,8 +499,10 @@ def run_local(args, shape_id, model_source):
         # Excluded from timing; makes uninitialized/stale KV reads obvious.
         for tensor in pool.k_pool + pool.v_pool:
             tensor.fill_(float("nan"))
-        result = execute(torch, cpp.IterationLoop(config, torch.device(args.device)),
-                         adapter, requests)
+        loop = cpp.IterationLoop(config, torch.device(args.device))
+        result = execute(torch, loop, adapter, requests)
+        if args.stable_decode_metadata and loop.num_device_decode_state_replays() == 0:
+            raise AssertionError(f"{shape_id}: stable decode metadata never replayed")
         work = (verify_fixed_result(result, shape_id) if args.prefill_budget == PREFILL_TOKENS_PER_STEP
                 else verify_planned_work(result, dispatch, case))
         if len(result["outputs"]) != len(requests) or any(
@@ -727,6 +749,10 @@ def main():
         from kernel_dispatch import _load
         if not hasattr(cpp.SchedulerConfig(), "packed_mixed_step"):
             raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
+        if (args.stable_decode_metadata
+                and not hasattr(cpp.SchedulerConfig(), "reuse_stable_decode_metadata")):
+            raise RuntimeError(
+                "C++ extension lacks reuse_stable_decode_metadata; rebuild it")
         query = torch.zeros((1, 12, 128), device=args.device, dtype=torch.float16)
         kv = torch.zeros((1, 16, 2, 128), device=args.device, dtype=torch.float16)
         table = torch.zeros((1, 1), device=args.device, dtype=torch.int32)
