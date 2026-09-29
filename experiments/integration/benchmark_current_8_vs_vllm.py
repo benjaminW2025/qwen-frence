@@ -56,9 +56,18 @@ def attention_options(attention):
 GEMM_EPILOGUE_MODES = ("off", "prefill", "decode", "all")
 
 
+def greedy_output_head_config(rows):
+    """Checked-in graph-warm winners for the fixed B8/B64 regimes."""
+    if rows <= 16:
+        return {"block_m": 16, "block_n": 256, "block_k": 64,
+                "num_warps": 8, "num_stages": 3}
+    return {"block_m": 64 if rows > 32 else 32, "block_n": 64, "block_k": 64,
+            "num_warps": 4, "num_stages": 3}
+
+
 def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private",
                  gemm_epilogues="off", boundary_buffers=False,
-                 stable_decode_metadata=False):
+                 stable_decode_metadata=False, fused_greedy_output=False):
     mode = ATTENTION_MODES[attention]
     if gemm_epilogues not in GEMM_EPILOGUE_MODES:
         raise ValueError(f"unknown GEMM epilogue mode {gemm_epilogues!r}")
@@ -73,6 +82,8 @@ def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private"
         extra["prefill_boundary_buffer_reuse"] = True
     if stable_decode_metadata:
         extra["stable_decode_metadata"] = True
+    if fused_greedy_output:
+        extra["fused_greedy_output"] = True
     return {**extra,
     "cpp_scheduler": True,
     "packed_mixed_step": True,
@@ -98,7 +109,8 @@ def variant(args):
                 graph_pool=getattr(args, "prefill_graph_pool", "private"),
                 gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
                 boundary_buffers=bool(getattr(args, "boundary_buffers", False)),
-                stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)))
+                stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)),
+                fused_greedy_output=bool(getattr(args, "fused_greedy_output", False)))
 
 
 def variant_flags(args):
@@ -112,7 +124,8 @@ def variant_cli(args):
             "--prefill-graph-pool", value["graph_pool"],
             "--gemm-epilogues", value["gemm_epilogues"],
             *(["--boundary-buffers"] if value["boundary_buffers"] else []),
-            *(["--stable-decode-metadata"] if value["stable_decode_metadata"] else [])]
+            *(["--stable-decode-metadata"] if value["stable_decode_metadata"] else []),
+            *(["--fused-greedy-output"] if value["fused_greedy_output"] else [])]
 
 
 def add_variant_arguments(parser):
@@ -133,6 +146,9 @@ def add_variant_arguments(parser):
     parser.add_argument("--stable-decode-metadata", action="store_true",
                         help="advance stable pure-decode IDs/positions/lengths/slots on GPU and "
                              "reuse its immutable page table")
+    parser.add_argument("--fused-greedy-output", action="store_true",
+                        help="return exact greedy token IDs directly from one fused final-norm/"
+                             "LM-head/argmax path in decode, prefill and mixed callbacks")
     return parser
 
 
@@ -143,13 +159,22 @@ def variant_adapter_options(args):
                 enable_prefill_boundary_buffer_reuse=value["boundary_buffers"],
                 enable_stable_decode_table_cache=value["stable_decode_metadata"],
                 enable_prefill_fused_gemm_epilogues=value["gemm_epilogues"] in ("prefill", "all"),
-                enable_decode_fused_gemm_epilogues=value["gemm_epilogues"] in ("decode", "all"))
+                enable_decode_fused_gemm_epilogues=value["gemm_epilogues"] in ("decode", "all"),
+                output_head_policy=("fused_argmax" if value["fused_greedy_output"]
+                                    else "logits"))
 
 
 def check_variant_reached(adapter, args, label):
     """Every flag of the variant must be live in the constructed adapter."""
     options = variant_adapter_options(args)
     prefill = adapter.piecewise_prefill
+    decoder_heads = {
+        decoder.output_head_policy
+        for decoder in adapter.graph_decoder.decoders.values()
+    }
+    output_head = (prefill.output_head_policy
+                   if decoder_heads == {prefill.output_head_policy}
+                   else "inconsistent")
     actual = dict(enable_prefill_shared_graph_pool=prefill.graph_pool is not None,
                   enable_prefill_boundary_buffer_reuse=prefill.enable_boundary_buffer_reuse,
                   enable_stable_decode_table_cache=all(
@@ -158,7 +183,8 @@ def check_variant_reached(adapter, args, label):
                   enable_prefill_fused_gemm_epilogues=prefill.enable_fused_gemm_epilogues,
                   enable_decode_fused_gemm_epilogues=all(
                       decoder.enable_fused_gemm_epilogues
-                      for decoder in adapter.graph_decoder.decoders.values()))
+                      for decoder in adapter.graph_decoder.decoders.values()),
+                  output_head_policy=output_head)
     if actual != options:
         raise AssertionError(f"{label}: engine variant did not reach the model: "
                              f"requested {options}, constructed {actual}")
@@ -168,6 +194,8 @@ def apply_variant_config(config, args):
     """Apply scheduler-side variant flags paired with the adapter-side flags."""
     config.reuse_stable_decode_metadata = bool(
         getattr(args, "stable_decode_metadata", False))
+    config.forward_returns_token_ids = bool(
+        getattr(args, "fused_greedy_output", False))
     return config
 
 # vLLM's scheduling budget. "matched" pins it to the frozen 2048 the local engine
@@ -323,8 +351,11 @@ def verify_planned_work(result, dispatch, case):
 def adapter_options(case, buckets, attention="project", variant_options=None):
     if not buckets or min(buckets) < 1:
         raise ValueError("burst graph buckets must be positive")
+    variant_options = dict(variant_options or {})
+    if variant_options.get("output_head_policy") == "fused_argmax":
+        variant_options["output_head_config"] = greedy_output_head_config
     return dict(max_running=case["max_running"],
-                **(variant_options or {}),
+                **variant_options,
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
                 **attention_options(attention),
@@ -753,6 +784,10 @@ def main():
                 and not hasattr(cpp.SchedulerConfig(), "reuse_stable_decode_metadata")):
             raise RuntimeError(
                 "C++ extension lacks reuse_stable_decode_metadata; rebuild it")
+        if (args.fused_greedy_output
+                and not hasattr(cpp.SchedulerConfig(), "forward_returns_token_ids")):
+            raise RuntimeError(
+                "C++ extension lacks forward_returns_token_ids; rebuild it")
         query = torch.zeros((1, 12, 128), device=args.device, dtype=torch.float16)
         kv = torch.zeros((1, 16, 2, 128), device=args.device, dtype=torch.float16)
         table = torch.zeros((1, 1), device=args.device, dtype=torch.int32)
@@ -780,6 +815,12 @@ def main():
             expected = (residual.float() + x.float() @ weight.float().T)
             if not torch.allclose(out.float(), expected, atol=.05, rtol=.01):
                 raise AssertionError("fused GEMM epilogue extension disagrees with torch")
+        if args.fused_greedy_output:
+            hidden = torch.randn((8, 128), device=args.device, dtype=torch.float16)
+            weight = torch.randn((256, 128), device=args.device, dtype=torch.float16)
+            tokens = _load("fused_lm_head").fused_lm_head_argmax(hidden, weight)
+            if tokens.shape != (8,) or tokens.dtype != torch.int64:
+                raise AssertionError("fused greedy output head returned an invalid token tensor")
         print(json.dumps({"status": "pass", "model": model_source, "attention": args.attention,
                           "engine": variant_flags(args),
                           "startup": setup, "reference_version": VLLM_VERSION,

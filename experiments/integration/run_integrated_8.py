@@ -12,8 +12,9 @@ Stages, each resumable (a finished stage's report is reused) and pushed when
   micro/graph-pool   private vs shared graph pool: bitwise outputs, capture memory
   micro/boundary/*   boundary-buffer reuse at B8-short and B64-long
   micro/metadata/*   resident decode metadata at B8-short and B64-long
+  micro/output/*     universal final-norm/LM-head/argmax at B8-short and B64-long
   divergence/accepted  why the accepted baseline's tokens differ from vLLM's (FP32)
-  decisions          which features the evidence admits (epilogues, pool, buffers, metadata)
+  decisions          admitted epilogues, pool, buffers, metadata and greedy output
   micro/kstep/*      advisory K=2/4/8 graphs and fused head at B8/B64
   budget-sweep       engine-only prefill budgets on the admitted engine
   eight              all eight cells (burst, staggered mixed, phases) vs vLLM at its default budget
@@ -114,7 +115,8 @@ def variant_cli(decision):
     return ["--prefill-graph-pool", decision["graph_pool"],
             "--gemm-epilogues", decision["gemm_epilogues"],
             *(["--boundary-buffers"] if decision["boundary_buffers"] else []),
-            *(["--stable-decode-metadata"] if decision["stable_decode_metadata"] else [])]
+            *(["--stable-decode-metadata"] if decision["stable_decode_metadata"] else []),
+            *(["--fused-greedy-output"] if decision["fused_greedy_output"] else [])]
 
 
 class Session:
@@ -195,6 +197,7 @@ def main():
     parser.add_argument("--graph-pool", choices=("auto", "shared", "private"), default="auto")
     parser.add_argument("--boundary-buffers", choices=("auto", "on", "off"), default="auto")
     parser.add_argument("--stable-decode-metadata", choices=("auto", "on", "off"), default="auto")
+    parser.add_argument("--fused-greedy-output", choices=("auto", "on", "off"), default="auto")
     parser.add_argument("--budgets", type=int, nargs="+", default=[1024, 2048, 4096, 8192, 16384])
     parser.add_argument("--budget-choice", choices=("per-cell", "single"), default="per-cell",
                         help="per-cell: each cell's own best budget; single: the best geomean budget")
@@ -217,7 +220,7 @@ def main():
     session.stage("preflight", root / "preflight.json",
                   [python, BENCHMARK, "check", "--shape-id", args.shape_ids[0],
                    "--output-dir", root / "eight", *run, "--gemm-epilogues", "all",
-                   "--stable-decode-metadata",
+                   "--stable-decode-metadata", "--fused-greedy-output",
                    *(["--boundary-buffers"] if args.attention == "fa3" else [])])
     if not args.plan and not (root / "preflight.json").exists():
         (root / "preflight.json").write_text(json.dumps({"status": "pass"}) + "\n")
@@ -259,13 +262,49 @@ def main():
     if args.plan:
         decision = {"gemm_epilogues": "<from micro/model>", "graph_pool": "<from micro/graph-pool>",
                     "boundary_buffers": "<from micro/boundary>",
-                    "stable_decode_metadata": "<from micro/metadata>"}
+                    "stable_decode_metadata": "<from micro/metadata>",
+                    "fused_greedy_output": "<from micro/output>"}
     else:
         decision, evidence = decide(root, args)
         if decision["graph_pool"] == "private":
             args.budgets = [b for b in args.budgets if b <= PRIVATE_POOL_BUDGET_LIMIT]
+
+    # The head kernel is row-generic. Qualify one universal scheduler contract
+    # after the other feature choices are known, holding those choices constant
+    # in control and candidate.
+    output_reports = []
+    for label, shape in (("b8-short", "fixed-b8-l256-o128"),
+                         ("b64-long", "fixed-b64-l2048-o128")):
+        command = [python, HERE / "benchmark_cpp_packed_mixed.py", "run",
+                   "--intervention", "fused-greedy-output", "--shape-id", shape,
+                   "--suite-dir", args.suite_dir, "--model", args.model,
+                   "--repetitions", str(args.repetitions),
+                   "--output-dir", micro / f"output/{label}"]
+        if not args.plan:
+            command.extend(["--gemm-epilogues", decision["gemm_epilogues"]])
+            if decision["boundary_buffers"]:
+                command.append("--baseline-boundary-buffers")
+            if decision["stable_decode_metadata"]:
+                command.append("--baseline-stable-decode-metadata")
+        report = micro / f"output/{label}/report.json"
+        session.stage(f"micro/output/{label}", report, command, gate=True)
+        output_reports.append(report)
+
+    if not args.plan:
+        rows = [json.loads(path.read_text()) if path.is_file() else None
+                for path in output_reports]
+        evidence["fused_greedy_output"] = rows
+        auto = bool(all(row and row["status"] == "complete"
+                        and row["fused_greedy_output_executed"]
+                        and row["speedup_decode"] > 1
+                        and row["speedup_prefill_mixed"] > 1
+                        for row in rows))
+        decision["fused_greedy_output"] = (
+            auto if args.fused_greedy_output == "auto"
+            else args.fused_greedy_output == "on")
         (root / "decisions.json").write_text(json.dumps(
-            {"decision": decision, "evidence": evidence, "budgets": args.budgets}, indent=2) + "\n")
+            {"decision": decision, "evidence": evidence, "budgets": args.budgets},
+            indent=2) + "\n")
         print(f"[decisions] {decision}", flush=True)
         session.push("integrated eight-cell session: decisions")
 

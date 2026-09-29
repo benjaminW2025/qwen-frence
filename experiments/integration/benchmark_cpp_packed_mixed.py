@@ -27,6 +27,44 @@ from fixed_regime import FACTORIAL_SHAPES, get_fixed_case
 SHAPES = tuple(row["id"] for row in FACTORIAL_SHAPES)
 
 
+class TokenObserver:
+    """Compare a token-returning callback with each control logit's argmax."""
+
+    def __init__(self, torch, reference):
+        self.torch, self.reference, self.rows = torch, reference, []
+        self.mismatched_callbacks = []
+        self.max_abs_error = 0.0  # report-compatible with LogitObserver
+
+    def __call__(self, args, tokens):
+        index = len(self.rows)
+        row = (bool(args[-1]), tuple(tokens.shape), tokens.detach().cpu().clone())
+        if index >= len(self.reference):
+            self.mismatched_callbacks.append(
+                {"callback": index, "reason": "extra_callback"})
+        else:
+            decode, _, logits = self.reference[index]
+            expected = logits.argmax(-1).to(self.torch.int64)
+            if row[0] != decode or row[1] != tuple(expected.shape):
+                self.mismatched_callbacks.append(
+                    {"callback": index, "reason": "type_or_shape"})
+            elif not self.torch.equal(row[2], expected):
+                mismatches = row[2] != expected
+                margins = []
+                for request in mismatches.nonzero().flatten().tolist():
+                    actual, wanted = int(row[2][request]), int(expected[request])
+                    margins.append(float(logits[request, wanted] - logits[request, actual]))
+                self.mismatched_callbacks.append(
+                    {"callback": index, "reason": "tokens",
+                     "count": int(mismatches.sum()), "control_margins": margins})
+        self.rows.append(row)
+
+    def finish(self):
+        if len(self.rows) != len(self.reference):
+            self.mismatched_callbacks.append(
+                {"reason": "callback_count", "reference": len(self.reference),
+                 "candidate": len(self.rows)})
+
+
 def probe_workload(frozen, case, tail_steps=8):
     """Create a short deterministic mixed probe while retaining the frozen prompts."""
     first = case["max_running"] // 2
@@ -55,8 +93,15 @@ def main():
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--intervention", choices=("packed-callback", "boundary-buffers",
-                        "resident-metadata", "buffers-and-metadata"), default="packed-callback",
+                        "resident-metadata", "buffers-and-metadata",
+                        "fused-greedy-output"), default="packed-callback",
                         help="new arms compare against the current single-callback FA3 path")
+    parser.add_argument("--gemm-epilogues", choices=("off", "prefill", "decode", "all"),
+                        default="off", help="hold the admitted GEMM path constant in both arms")
+    parser.add_argument("--baseline-boundary-buffers", action="store_true",
+                        help="hold admitted boundary reuse constant in both arms")
+    parser.add_argument("--baseline-stable-decode-metadata", action="store_true",
+                        help="hold admitted resident metadata constant in both arms")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "experiments/results/cpp-packed-mixed-v1")
     args = parser.parse_args()
@@ -70,7 +115,10 @@ def main():
                                       else "current single packed callback"),
                           "candidate": args.intervention,
                           "same_attention": "packed-varlen FA3, piecewise model graphs",
-                          "checks": ["all callback logits", "scheduler work",
+                          "checks": [("candidate tokens vs every control-logit argmax"
+                                      if args.intervention == "fused-greedy-output"
+                                      else "all callback logits"),
+                                     "scheduler work",
                                      "output tokens", "full KV cache"],
                           "timing": f"{args.repetitions} interleaved unprofiled runs per arm; "
                                     "one diagnostic trace of the first mixed step"}, indent=2))
@@ -81,7 +129,6 @@ def main():
         if args.output_dir.exists():
             parser.error(f"refusing to overwrite existing results: {args.output_dir}")
         from benchmark_latest_vs_vllm import load_frozen, resolve_model_source
-        from fixed_regime import get_fixed_case
         frozen_case = get_fixed_case(args.shape_id)
         frozen_args = SimpleNamespace(output_dir=args.suite_dir / frozen_case["id"],
                                       shape_id=frozen_case["id"], seed=args.seed,
@@ -97,10 +144,17 @@ def main():
     import inference_engine_cpp as cpp
     if not hasattr(cpp.SchedulerConfig(), "packed_mixed_step"):
         raise RuntimeError("C++ extension lacks packed_mixed_step; rebuild it")
-    reuse_metadata = args.intervention in ("resident-metadata", "buffers-and-metadata")
-    reuse_buffers = args.intervention in ("boundary-buffers", "buffers-and-metadata")
+    target_metadata = args.intervention in ("resident-metadata", "buffers-and-metadata")
+    target_buffers = args.intervention in ("boundary-buffers", "buffers-and-metadata")
+    control_metadata = args.baseline_stable_decode_metadata
+    control_buffers = args.baseline_boundary_buffers
+    reuse_metadata = target_metadata or control_metadata
+    reuse_buffers = target_buffers or control_buffers
+    fused_output = args.intervention == "fused-greedy-output"
     if reuse_metadata and not hasattr(cpp.SchedulerConfig(), "reuse_stable_decode_metadata"):
         raise RuntimeError("C++ extension lacks reuse_stable_decode_metadata; rebuild it")
+    if fused_output and not hasattr(cpp.SchedulerConfig(), "forward_returns_token_ids"):
+        raise RuntimeError("C++ extension lacks forward_returns_token_ids; rebuild it")
     from kernel_dispatch import _load
     _load("paged_varlen_fa3").smoke_varlen_fa3(args.device, boundary_buffers=reuse_buffers)
     if args.action == "check":
@@ -112,17 +166,23 @@ def main():
     import torch
     from benchmark_scheduler_decode import execute, make_config
     from benchmark_integrated_graph import dry_schedule
+    from benchmark_current_8_vs_vllm import greedy_output_head_config
     from model_adapter import (CppPackedMixedModelAdapter,
                                PackedMixedPiecewiseGraphModelAdapter, allocate_pool)
     from profile_cpp_control import drive, stage_summary, cuda_activity_summary
 
     engine, load_seconds, _ = load_model_only(
         source, args.device, "float16", hub_transfer=setup["hub_transfer"])
+    if args.gemm_epilogues != "off":
+        _load("fused_gemm").prepare_model(engine.model)
     config = make_config(cpp, case)
     packed_config = make_config(cpp, case)
     packed_config.packed_mixed_step = True
+    packed_config.forward_returns_token_ids = fused_output
     if args.intervention != "packed-callback":
         config.packed_mixed_step = True
+    if control_metadata:
+        config.reuse_stable_decode_metadata = True
     if reuse_metadata:
         packed_config.reuse_stable_decode_metadata = True
     schedule = dry_schedule(torch, cpp, case, args.seed, requests)
@@ -141,7 +201,12 @@ def main():
                    max_prefill_shapes=len(buckets), prefill_buckets=buckets,
                    enable_residual_rmsnorm=True,
                    enable_native_decode_qkv_postprocess=True,
-                   enable_prefill_swiglu_fusion=True)
+                   enable_prefill_swiglu_fusion=True,
+                   enable_decode_fused_gemm_epilogues=(
+                       args.gemm_epilogues in ("decode", "all")),
+                   enable_prefill_fused_gemm_epilogues=(
+                       args.gemm_epilogues in ("prefill", "all")),
+                   output_head_config=greedy_output_head_config)
     if args.intervention != "packed-callback":
         # Match the accepted eight-cell --attention fa3 baseline: FA3 for pure
         # prefill too, not the Triton packed kernel that fa3 decode otherwise
@@ -152,11 +217,15 @@ def main():
             engine.model, pool, None, mixed_attention_policy="fa3_varlen",
             full_mixed_graph=False, **options)
     else:
-        control = CppPackedMixedModelAdapter(engine.model, pool, None, **options)
+        control = CppPackedMixedModelAdapter(
+            engine.model, pool, None, **options,
+            enable_prefill_boundary_buffer_reuse=control_buffers,
+            enable_stable_decode_table_cache=control_metadata)
     candidate = CppPackedMixedModelAdapter(
         engine.model, pool, None, **options,
         enable_prefill_boundary_buffer_reuse=reuse_buffers,
-        enable_stable_decode_table_cache=reuse_metadata)
+        enable_stable_decode_table_cache=reuse_metadata,
+        output_head_policy=("fused_argmax" if fused_output else "logits"))
 
     def run_one(adapter, scheduler_config, observer=None):
         for tensor in pool.k_pool + pool.v_pool:
@@ -179,7 +248,8 @@ def main():
     control_logits = LogitObserver(torch)
     reference = run_one(control, config, control_logits)
     reference_kv = kv_snapshot()
-    candidate_logits = LogitObserver(torch, control_logits.rows)
+    candidate_logits = (TokenObserver(torch, control_logits.rows) if fused_output
+                        else LogitObserver(torch, control_logits.rows))
     checked = run_one(candidate, packed_config, candidate_logits)
     candidate_logits.finish()
     kv_equal = all(torch.allclose(a, b, atol=.05, rtol=.01, equal_nan=True)
@@ -248,22 +318,29 @@ def main():
              traces["control"]["target_callback_count"] == (
                  2 if args.intervention == "packed-callback" else 1) and
              traces["candidate"]["target_callback_count"] == 1)
-    metadata_executed = (not reuse_metadata or all(
+    metadata_executed = (not target_metadata or all(
         row["device_decode_state_replays"] > 0 for row in samples["candidate"]))
+    output_executed = (not fused_output or (
+        candidate.output_head_policy == "fused_argmax"
+        and packed_config.forward_returns_token_ids))
     # Buffer reuse must remove every boundary copy the control performs; a
     # silently disabled path would otherwise report ~1.0x as a valid result.
-    boundary_executed = (not reuse_buffers or (
+    boundary_executed = (not target_buffers or (
         all(row["boundary_copies"] == {"residual": 0, "attention": 0}
             for row in samples["candidate"])
         and all(row["boundary_copies"]["residual"] > 0
                 and row["boundary_copies"]["attention"] > 0
                 for row in samples["control"])))
-    valid = valid and metadata_executed and boundary_executed
+    valid = valid and metadata_executed and boundary_executed and output_executed
     report = {"status": "complete" if valid else "invalid_comparison",
               "intervention": args.intervention,
               "shape_id": args.shape_id,
-              "metadata_reuse_executed": metadata_executed if reuse_metadata else None,
-              "boundary_reuse_executed": boundary_executed if reuse_buffers else None,
+              "metadata_reuse_executed": metadata_executed if target_metadata else None,
+              "boundary_reuse_executed": boundary_executed if target_buffers else None,
+              "baseline_boundary_buffers": control_buffers,
+              "baseline_stable_decode_metadata": control_metadata,
+              "fused_greedy_output_executed": output_executed if fused_output else None,
+              "gemm_epilogues": args.gemm_epilogues,
               "boundary_copies": {arm: [row["boundary_copies"] for row in rows]
                                   for arm, rows in samples.items()},
               "model": source, "model_load_seconds": load_seconds,

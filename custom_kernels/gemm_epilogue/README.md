@@ -100,5 +100,12 @@ exactly those GEMMs; `CUDAGraphDecoder(enable_fused_gemm_epilogues=True)` uses
 `fused_graph_decode_forward`. The eight-cell harnesses take
 `--gemm-epilogues {off,prefill,decode,all}` and verify the flag reached the model.
 
+The opt-in `--fused-greedy-output` contract is shared by decode, prefill, and
+packed mixed callbacks. With the fused GEMMs, piecewise prefill preserves D15's
+final row partials, selects the last row of each request, and passes both residual
+and partials to `fused_lm_head_argmax`; this is the same D16 path used by decode.
+The C++ scheduler then validates rank-one int64 output and bypasses its logits
+argmax. Logits remain the default and the fallback for non-greedy or logprob use.
+
 Decode rows use 128-row tiles; rows past M are zero-filled by TMA and cost
 tensor-core time, not memory bandwidth, which is what decode GEMMs spend.

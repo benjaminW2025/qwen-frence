@@ -10,6 +10,7 @@ from unittest import mock
 import torch
 
 from experiments.integration import ab_gemm_epilogues as ab
+from experiments.integration import benchmark_cpp_packed_mixed as control_ab
 from experiments.integration import divergence_report as divergence
 from experiments.integration import run_integrated_8 as session
 
@@ -74,9 +75,11 @@ class Decisions(unittest.TestCase):
 
     def test_variant_cli_matches_the_harness_flags(self):
         cli = session.variant_cli({"graph_pool": "shared", "gemm_epilogues": "all",
-                                   "boundary_buffers": True, "stable_decode_metadata": True})
+                                   "boundary_buffers": True, "stable_decode_metadata": True,
+                                   "fused_greedy_output": True})
         self.assertEqual(cli, ["--prefill-graph-pool", "shared", "--gemm-epilogues", "all",
-                               "--boundary-buffers", "--stable-decode-metadata"])
+                               "--boundary-buffers", "--stable-decode-metadata",
+                               "--fused-greedy-output"])
 
     def test_advisory_failure_is_recorded_without_stopping_session(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -122,6 +125,20 @@ class Divergence(unittest.TestCase):
 
 
 class ModelAB(unittest.TestCase):
+    def test_token_observer_checks_callback_argmax_exactly(self):
+        logits = torch.tensor([[4.0, 3.0, 0.0], [0.0, 2.0, 5.0]])
+        reference = [(False, tuple(logits.shape), logits)]
+        observer = control_ab.TokenObserver(torch, reference)
+        observer((None, None, None, None, None, None, None, False),
+                 torch.tensor([0, 2]))
+        observer.finish()
+        self.assertEqual(observer.mismatched_callbacks, [])
+
+        observer = control_ab.TokenObserver(torch, reference)
+        observer((None, None, None, None, None, None, None, False),
+                 torch.tensor([1, 2]))
+        self.assertEqual(observer.mismatched_callbacks[0]["control_margins"], [1.0])
+
     def test_disagreements_are_scored_by_the_control_margin(self):
         control = torch.tensor([[5., 4.9, 0.], [3., 0., 2.], [1., 2., 0.]])
         candidate = torch.tensor([[4.8, 5., 0.], [2., 0., 3.], [1., 2., 0.]])

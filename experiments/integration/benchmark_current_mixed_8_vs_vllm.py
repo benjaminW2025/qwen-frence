@@ -27,6 +27,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
 
 from benchmark_current_8_vs_vllm import (ATTENTION_MODES, ENGINE_FLAGS, SHAPES, VLLM_BUDGETS,
                                          atomic_json, attention_options, engine_flags,
+                                         greedy_output_head_config,
                                          vllm_budget_kwargs, add_variant_arguments,
                                          apply_variant_config,
                                          check_variant_reached, variant_adapter_options,
@@ -89,8 +90,11 @@ def paths(args, shape_id):
 def adapter_options(case, buckets, attention="project", variant_options=None):
     if not buckets or min(buckets) < 1:
         raise ValueError("mixed graph buckets must be positive")
+    variant_options = dict(variant_options or {})
+    if variant_options.get("output_head_policy") == "fused_argmax":
+        variant_options["output_head_config"] = greedy_output_head_config
     return dict(max_running=case["max_running"],
-                **(variant_options or {}),
+                **variant_options,
                 max_context_length=max(length + output for length, output in
                                        zip(case["lengths"], case["outputs"])),
                 **attention_options(attention),

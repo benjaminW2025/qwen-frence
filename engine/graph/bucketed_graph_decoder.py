@@ -30,7 +30,8 @@ class BucketedGraphDecoder:
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  enable_stable_decode_table_cache=False,
-                 enable_fused_gemm_epilogues=False):
+                 enable_fused_gemm_epilogues=False,
+                 output_head_policy="logits", output_head_config=None):
         self.max_blocks = max_blocks
         self.buckets = default_buckets(max_running) if buckets is None else sorted(set(buckets))
         self.decode_attention_policy = decode_attention_policy
@@ -41,6 +42,8 @@ class BucketedGraphDecoder:
         # than of the batch, so it does not vary across buckets.
         self.decoders = {}
         for b in self.buckets:
+            head_config = (output_head_config(b) if callable(output_head_config)
+                           else output_head_config)
             dec = CUDAGraphDecoder(model, cache, batch_size=b, max_blocks=max_blocks,
                                    device=device, dtype=dtype,
                                    decode_attention_policy=decode_attention_policy,
@@ -61,7 +64,9 @@ class BucketedGraphDecoder:
                                    enable_stable_decode_table_cache=(
                                        enable_stable_decode_table_cache
                                    ),
-                                   enable_fused_gemm_epilogues=enable_fused_gemm_epilogues)
+                                   enable_fused_gemm_epilogues=enable_fused_gemm_epilogues,
+                                   output_head_policy=output_head_policy,
+                                   output_head_config=head_config)
             dec.capture()
             self.decoders[b] = dec
 

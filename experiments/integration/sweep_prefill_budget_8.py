@@ -61,7 +61,8 @@ def common(args):
             "--prefill-graph-pool", args.prefill_graph_pool,
             "--gemm-epilogues", args.gemm_epilogues,
             *(["--boundary-buffers"] if args.boundary_buffers else []),
-            *(["--stable-decode-metadata"] if args.stable_decode_metadata else [])]
+            *(["--stable-decode-metadata"] if args.stable_decode_metadata else []),
+            *(["--fused-greedy-output"] if args.fused_greedy_output else [])]
 
 
 def push(args, message):
@@ -129,6 +130,7 @@ def summarize(args, runs):
                    gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
                    boundary_buffers=bool(getattr(args, "boundary_buffers", False)),
                    stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)),
+                   fused_greedy_output=bool(getattr(args, "fused_greedy_output", False)),
                    budgets=args.budgets, cells=cells,
                    geomean_speedup_vs_2048=geomean,
                    best_single_budget=max(geomean, key=geomean.get) if geomean else None,
@@ -172,6 +174,7 @@ def main():
                              "epilogues change per-token cost, so the best budget can move")
     parser.add_argument("--boundary-buffers", action="store_true")
     parser.add_argument("--stable-decode-metadata", action="store_true")
+    parser.add_argument("--fused-greedy-output", action="store_true")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=20260914)

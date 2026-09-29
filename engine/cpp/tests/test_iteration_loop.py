@@ -104,6 +104,17 @@ def cpp_forward(trace=None):
     return forward
 
 
+def cpp_token_forward():
+    """The same deterministic greedy policy, returned through token-mode ABI."""
+    def forward(input_ids, positions, slot_mapping, cu_seqlens, context_lens,
+                block_table, max_query_length, is_decode):
+        del positions, slot_mapping, context_lens, block_table, max_query_length
+        source = (input_ids if is_decode else
+                  input_ids.index_select(0, cu_seqlens[1:].to(torch.long) - 1))
+        return ((source.reshape(-1).to(torch.long) + 1) % VOCAB_SIZE)
+    return forward
+
+
 def run_cpp_workload(prompts, output_lengths, *, trace=None):
     loop = cpp.IterationLoop(make_cpp_config(), torch.device("cpu"))
     for prompt, output_length in zip(prompts, output_lengths):
@@ -275,6 +286,33 @@ class IterationLoopTests(unittest.TestCase):
 
         self.assertEqual(dict(loop.pop_completed()), {0: [2, 3, 4], 1: [6, 7]})
         self.assertEqual(modes, [False, True, False, True])
+
+    def test_explicit_token_return_contract_matches_logits(self):
+        def run(tokens):
+            loop = cpp.IterationLoop(make_cpp_config(
+                packed_mixed_step=True,
+                forward_returns_token_ids=tokens), torch.device("cpu"))
+            loop.submit_request([1, 2, 3], 4)
+            loop.submit_request([5], 3)
+            forward = cpp_token_forward() if tokens else cpp_forward()
+            while loop.num_pending() or loop.num_running():
+                loop.step(forward)
+            return dict(loop.pop_completed())
+
+        self.assertEqual(run(True), run(False))
+
+    def test_token_return_contract_rejects_logits_and_wrong_dtype(self):
+        loop = cpp.IterationLoop(make_cpp_config(
+            forward_returns_token_ids=True), torch.device("cpu"))
+        loop.submit_request([1], 1)
+        with self.assertRaisesRegex(RuntimeError, "rank-one int64"):
+            loop.step(cpp_forward())
+
+        loop = cpp.IterationLoop(make_cpp_config(
+            forward_returns_token_ids=True), torch.device("cpu"))
+        loop.submit_request([1], 1)
+        with self.assertRaisesRegex(RuntimeError, "rank-one int64"):
+            loop.step(lambda *args: cpp_token_forward()(*args).to(torch.int32))
 
     def test_single_callback_mixed_metadata_matches_two_callback_contract(self):
         def run(packed):

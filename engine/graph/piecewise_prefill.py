@@ -80,7 +80,9 @@ class _AttentionBoundary:
                 x, partials = fused.layer_tail(weights[index - 1], self.attention,
                                                self.residual, cfg)
             if self.last:
-                return x  # the final norm runs on the selected last-token rows only
+                # Preserve D15's partial sums so D16 can apply final RMSNorm in
+                # the LM-head input load after selecting last-token rows.
+                return x, partials
             q_rows = fused.attention_inputs(
                 weights[index], x, partials, cfg, positions=self.positions,
                 slots=self.slots, k_pool=pool.k_pool[index], v_pool=pool.v_pool[index],
@@ -189,7 +191,8 @@ class PiecewisePrefill:
                  token_buckets=None, enable_packed_qkv_rope_cache=False,
                  enable_residual_rmsnorm=False, enable_swiglu_fusion=False,
                  enable_boundary_buffer_reuse=False, share_graph_pool=False,
-                 enable_fused_gemm_epilogues=False):
+                 enable_fused_gemm_epilogues=False,
+                 output_head_policy="logits", output_head_config=None):
         if max_capture_tokens < 1 or max_shapes < 1:
             raise ValueError("capture token and shape limits must be positive")
         if pool.k_pool[0].device.type != "cuda":
@@ -200,6 +203,10 @@ class PiecewisePrefill:
         self.enable_swiglu_fusion = bool(enable_swiglu_fusion)
         self.enable_boundary_buffer_reuse = bool(enable_boundary_buffer_reuse)
         self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
+        if output_head_policy not in ("logits", "fused_argmax"):
+            raise ValueError("piecewise output head must be 'logits' or 'fused_argmax'")
+        self.output_head_policy = output_head_policy
+        self.output_head_config = output_head_config
         # One memory pool for every segment of every bucket. Each graph otherwise
         # keeps its segment's peak scratch reserved: at 16384 tokens that is ~1 GB
         # per segment, times 29 segments, times each captured bucket. Sharing is
@@ -334,10 +341,35 @@ class PiecewisePrefill:
             if i + 1 < len(model.layers):
                 q, residual = result
             else:
-                x = result
+                if getattr(self, "enable_fused_gemm_epilogues", False):
+                    x, final_partials = result
+                else:
+                    x, final_partials = result, None
         last_rows = cu[1:].to(torch.long) - 1
+        selected = x.index_select(0, last_rows)
+        if getattr(self, "output_head_policy", "logits") == "fused_argmax":
+            from kernel_dispatch import fused_lm_head_argmax
+            output_head_config = getattr(self, "output_head_config", None)
+            head_config = (output_head_config(selected.shape[0])
+                           if callable(output_head_config) else output_head_config)
+            if self.enable_fused_gemm_epilogues:
+                return fused_lm_head_argmax(
+                    selected, model.lm_head.weight,
+                    norm_weight=model.norm.weight,
+                    row_partials=final_partials.index_select(0, last_rows),
+                    epsilon=cfg.rms_norm_eps,
+                    **(head_config or {}),
+                )
+            # The accepted residual fusion has already applied model.norm. The
+            # unfused fallback normalizes only the selected rows.
+            if not self.enable_residual_rmsnorm:
+                selected = apply_rms_norm(selected, model.norm, cfg)
+            return fused_lm_head_argmax(
+                selected.contiguous(), model.lm_head.weight,
+                **(head_config or {}),
+            )
         if getattr(self, "enable_fused_gemm_epilogues", False):
-            return model.lm_head(apply_rms_norm(x.index_select(0, last_rows), model.norm, cfg))
+            return model.lm_head(apply_rms_norm(selected, model.norm, cfg))
         if not self.enable_residual_rmsnorm:
             x = apply_rms_norm(x, model.norm, cfg)
         return model.lm_head(x.index_select(0, last_rows))

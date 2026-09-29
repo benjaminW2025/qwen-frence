@@ -21,8 +21,13 @@ def allocate_pool(cfg, blocks, device):
 
 
 class ModelAdapter:
-    def __init__(self, model, pool, loop, policy=None):
+    def __init__(self, model, pool, loop, policy=None,
+                 output_head_policy="logits", output_head_config=None):
         self.model, self.pool, self.loop, self.policy = model, pool, loop, policy
+        if output_head_policy not in ("logits", "fused_argmax"):
+            raise ValueError("output head must be 'logits' or 'fused_argmax'")
+        self.output_head_policy = output_head_policy
+        self.output_head_config = output_head_config
         self.decisions = {}
         self.step_calls = []
         self.observer = None
@@ -90,15 +95,24 @@ class ModelAdapter:
             h = apply_rms_norm(x, layer.post_attn_norm, cfg)
             gate, up = layer.project_gate_up(h)
             x = residual + layer.down_proj(apply_swiglu(gate, up, cfg))
-        x = apply_rms_norm(x, model.norm, cfg)
         if not decode:
             x = x.index_select(0, cu[1:].to(torch.long) - 1)
-        logits = model.lm_head(x)
+        x = apply_rms_norm(x, model.norm, cfg)
+        if self.output_head_policy == "fused_argmax":
+            from kernel_dispatch import fused_lm_head_argmax
+            head_config = (self.output_head_config(x.shape[0])
+                           if callable(self.output_head_config)
+                           else self.output_head_config)
+            output = fused_lm_head_argmax(
+                x.contiguous(), model.lm_head.weight,
+                **(head_config or {}))
+        else:
+            output = model.lm_head(x)
         if self.observer is not None:
-            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), output)
             if checked is not None:
                 return checked
-        return logits
+        return output
 
 
 class GraphModelAdapter(ModelAdapter):
@@ -117,8 +131,10 @@ class GraphModelAdapter(ModelAdapter):
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  enable_stable_decode_table_cache=False,
-                 enable_decode_fused_gemm_epilogues=False):
-        super().__init__(model, pool, loop)
+                 enable_decode_fused_gemm_epilogues=False,
+                 output_head_policy="logits", output_head_config=None):
+        super().__init__(model, pool, loop, output_head_policy=output_head_policy,
+                         output_head_config=output_head_config)
         if decode_attention_policy not in ("production", "splitk", "fa3", "flash"):
             raise ValueError("graph decode policy must be 'production', 'splitk', 'fa3', or 'flash'")
         graph_dir = Path(__file__).resolve().parents[2] / "engine/graph"
@@ -171,6 +187,8 @@ class GraphModelAdapter(ModelAdapter):
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
             enable_stable_decode_table_cache=enable_stable_decode_table_cache,
             enable_fused_gemm_epilogues=self.enable_decode_fused_gemm_epilogues,
+            output_head_policy=self.output_head_policy,
+            output_head_config=self.output_head_config,
         )
 
     @torch.no_grad()
@@ -185,14 +203,16 @@ class GraphModelAdapter(ModelAdapter):
 
         self.decisions[self.action] = self.decisions.get(self.action, 0) + 1
         self.step_calls.append((True, ids.numel(), context.numel(), max_query))
-        logits = self.graph_decoder.decode(
+        output = self.graph_decoder.decode(
             ids.view(-1, 1), positions, context, table, slots
-        ).squeeze(1)
+        )
+        if self.output_head_policy == "logits":
+            output = output.squeeze(1)
         if self.observer is not None:
-            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), logits)
+            checked = self.observer((ids, positions, slots, cu, context, table, max_query, decode), output)
             if checked is not None:
                 return checked
-        return logits
+        return output
 
 
 class PiecewiseGraphModelAdapter(GraphModelAdapter):
@@ -214,7 +234,8 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  enable_prefill_shared_graph_pool=False,
                  prefill_attention_policy=None,
                  enable_decode_fused_gemm_epilogues=False,
-                 enable_prefill_fused_gemm_epilogues=False):
+                 enable_prefill_fused_gemm_epilogues=False,
+                 output_head_policy="logits", output_head_config=None):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
                          decode_attention_policy=decode_attention_policy,
@@ -227,7 +248,9 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          enable_fused_qkv_rope_cache=enable_fused_qkv_rope_cache,
                          enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache,
                          enable_stable_decode_table_cache=enable_stable_decode_table_cache,
-                         enable_decode_fused_gemm_epilogues=enable_decode_fused_gemm_epilogues)
+                         enable_decode_fused_gemm_epilogues=enable_decode_fused_gemm_epilogues,
+                         output_head_policy=output_head_policy,
+                         output_head_config=output_head_config)
         # Pure-prefill attention. The default keeps each decode policy's
         # historical pairing (independent kernel with "flash", Triton packed
         # prefill otherwise); pass "fa3_varlen" to run FA3 end to end.
@@ -259,7 +282,9 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
             enable_swiglu_fusion=self.enable_prefill_swiglu_fusion,
             enable_boundary_buffer_reuse=enable_prefill_boundary_buffer_reuse,
             share_graph_pool=enable_prefill_shared_graph_pool,
-            enable_fused_gemm_epilogues=self.enable_prefill_fused_gemm_epilogues)
+            enable_fused_gemm_epilogues=self.enable_prefill_fused_gemm_epilogues,
+            output_head_policy=self.output_head_policy,
+            output_head_config=self.output_head_config)
 
     @torch.no_grad()
     def __call__(self, ids, positions, slots, cu, context, table, max_query, decode):

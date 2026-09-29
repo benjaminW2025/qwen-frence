@@ -41,6 +41,39 @@ void validate_logits(
     }
 }
 
+void validate_token_ids(
+    const torch::Tensor& tokens,
+    int64_t expected_rows,
+    const char* phase
+) {
+    if (!tokens.defined()) {
+        throw std::runtime_error(std::string(phase) + " forward returned undefined token IDs");
+    }
+    if (tokens.dim() != 1 || tokens.scalar_type() != torch::kInt64) {
+        throw std::runtime_error(
+            std::string(phase) + " token IDs must be a rank-one int64 tensor"
+        );
+    }
+    if (tokens.size(0) != expected_rows) {
+        throw std::runtime_error(
+            std::string(phase) + " token count does not match scheduled sequences"
+        );
+    }
+}
+
+void validate_forward_output(
+    const torch::Tensor& output,
+    int64_t expected_rows,
+    const char* phase,
+    bool returns_tokens
+) {
+    if (returns_tokens) {
+        validate_token_ids(output, expected_rows, phase);
+    } else {
+        validate_logits(output, expected_rows, phase);
+    }
+}
+
 }  // namespace
 
 // Generic c10 wrappers dispatch to CUDA at runtime, so the CPU-only extension
@@ -936,7 +969,7 @@ int64_t IterationLoop::step(
             transfer.copied.block(*compute_stream);
         };
 
-        torch::Tensor logits;
+        torch::Tensor model_output;
 
         if (config_.packed_mixed_step && current_step_is_mixed_) {
             build_mixed_batch(plan);
@@ -946,7 +979,7 @@ int64_t IterationLoop::step(
             const int64_t seqs = metadata.num_mixed_seqs;
             {
                 RECORD_FUNCTION("cpp/callback_packed_mixed", {});
-                logits = forward_fn(
+                model_output = forward_fn(
                     metadata.mixed_input_ids.slice(0, 0, tokens),
                     metadata.mixed_positions.slice(0, 0, tokens),
                     metadata.mixed_slot_mapping.slice(0, 0, tokens),
@@ -958,7 +991,8 @@ int64_t IterationLoop::step(
                     /*is_decode=*/false
                 );
             }
-            validate_logits(logits, seqs, "packed mixed");
+            validate_forward_output(model_output, seqs, "packed mixed",
+                                    config_.forward_returns_token_ids);
         } else {
 
         if (!config_.overlap_prefill_build && !plan.prefill_requests.empty()) {
@@ -985,10 +1019,10 @@ int64_t IterationLoop::step(
             }
             auto& metadata = device_metadata();
             int64_t n = metadata.num_decode_tokens;
-            torch::Tensor decode_logits;
+            torch::Tensor decode_output;
             {
                 RECORD_FUNCTION("cpp/callback_decode", {});
-                decode_logits = forward_fn(
+                decode_output = forward_fn(
                     metadata.decode_input_ids.slice(0, 0, n),
                     metadata.decode_positions.slice(0, 0, n),
                     metadata.decode_slot_mapping.slice(0, 0, n),
@@ -1003,8 +1037,9 @@ int64_t IterationLoop::step(
                     /*is_decode=*/true
                 );
             }
-            validate_logits(decode_logits, n, "decode");
-            logits = decode_logits;
+            validate_forward_output(decode_output, n, "decode",
+                                    config_.forward_returns_token_ids);
+            model_output = decode_output;
             // Decode and prefill share the active metadata buffer within a
             // mixed iteration. Publish decode consumption before the copy
             // stream is allowed to overwrite it for prefill.
@@ -1025,10 +1060,10 @@ int64_t IterationLoop::step(
             int64_t num_tokens = metadata.num_prefill_tokens;
             int64_t num_seqs = metadata.num_prefill_seqs;
 
-            torch::Tensor prefill_logits;
+            torch::Tensor prefill_output;
             {
                 RECORD_FUNCTION("cpp/callback_prefill", {});
-                prefill_logits = forward_fn(
+                prefill_output = forward_fn(
                     metadata.prefill_input_ids.slice(0, 0, num_tokens),
                     metadata.prefill_positions.slice(0, 0, num_tokens),
                     metadata.prefill_slot_mapping.slice(0, 0, num_tokens),
@@ -1040,19 +1075,22 @@ int64_t IterationLoop::step(
                     /*is_decode=*/false
                 );
             }
-            validate_logits(prefill_logits, num_seqs, "prefill");
+            validate_forward_output(prefill_output, num_seqs, "prefill",
+                                    config_.forward_returns_token_ids);
 
-            if (logits.defined()) {
-                logits = torch::cat({logits, prefill_logits}, 0);
+            if (model_output.defined()) {
+                model_output = torch::cat({model_output, prefill_output}, 0);
             } else {
-                logits = prefill_logits;
+                model_output = prefill_output;
             }
         }
 
         }  // Existing separate decode/prefill callback path.
 
-        // Sample
-        torch::Tensor next_tokens = sample(logits);
+        // A greedy fused head has already sampled without materializing logits.
+        torch::Tensor next_tokens = config_.forward_returns_token_ids
+            ? model_output
+            : sample(model_output);
 
         if (config_.reuse_stable_decode_metadata
             && !plan.decode_requests.empty() && plan.prefill_requests.empty()) {

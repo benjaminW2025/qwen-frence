@@ -38,6 +38,7 @@ PYBIND11_MODULE(inference_engine_cpp, m) {
         .def_readwrite("overlap_prefill_build", &SchedulerConfig::overlap_prefill_build)
         .def_readwrite("reuse_stable_decode_metadata", &SchedulerConfig::reuse_stable_decode_metadata)
         .def_readwrite("packed_mixed_step", &SchedulerConfig::packed_mixed_step)
+        .def_readwrite("forward_returns_token_ids", &SchedulerConfig::forward_returns_token_ids)
         .def_readwrite("eos_token_id", &SchedulerConfig::eos_token_id);
 
     // IterationLoop

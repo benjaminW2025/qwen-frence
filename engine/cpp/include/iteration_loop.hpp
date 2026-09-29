@@ -132,6 +132,10 @@ struct SchedulerConfig {
     // then retain sampled IDs and advance positions/lengths/slots on device.
     bool reuse_stable_decode_metadata = false;
     bool packed_mixed_step = false;  // one packed H2D phase and model callback
+    // Greedy-only fast path: forward_fn returns one int64 token ID per
+    // scheduled sequence instead of [rows, vocab] logits. This is explicit;
+    // tensor rank is never used to guess the callback contract.
+    bool forward_returns_token_ids = false;
 };
 
 // The main C++ iteration loop
