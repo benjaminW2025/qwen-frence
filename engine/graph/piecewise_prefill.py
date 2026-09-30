@@ -33,6 +33,7 @@ class _AttentionBoundary:
     residual_copies = 0
     attention_copies = 0
 
+    @torch.no_grad()
     def __init__(self, model, pool, index, tokens, positions, slots, valid_tokens,
                  enable_packed_qkv_rope_cache=False,
                  enable_residual_rmsnorm=False, enable_swiglu_fusion=False,
@@ -272,6 +273,7 @@ class PiecewisePrefill:
         return {"residual": sum(piece.residual_copies for piece in pieces),
                 "attention": sum(piece.attention_copies for piece in pieces)}
 
+    @torch.no_grad()
     def forward(self, ids, positions, slots, cu, context, table, max_query,
                 *, mixed_decode_count=0, mixed_attention_policy="packed_paged"):
         from kernel_dispatch import packed_paged_prefill_attention

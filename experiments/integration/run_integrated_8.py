@@ -241,6 +241,11 @@ def main():
     parser.add_argument("--plan", action="store_true", help="print every stage's command; run nothing")
     args = parser.parse_args()
     root = args.output_dir
+    # The preflight command validates kernels without writing into the session
+    # directory.  Create that directory before recording its successful
+    # sentinel; a brand-new --output-dir must work without manual preparation.
+    if not args.plan:
+        root.mkdir(parents=True, exist_ok=True)
     session = Session(args)
     python = sys.executable
     common = ["--model", args.model, "--attention", args.attention]

@@ -21,6 +21,7 @@ extension.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 from pathlib import Path
@@ -146,6 +147,7 @@ def main():
     from benchmark_latest_vs_vllm import resolve_model_source
     from model_setup import check_startup, load_model_only
     import torch
+    torch.set_grad_enabled(False)
     from model_adapter import allocate_pool
     from piecewise_prefill import PiecewisePrefill
     from paged_graph_decoder import CUDAGraphDecoder
@@ -218,6 +220,7 @@ def main():
               f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
               f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}, max |dKV| {kv:.4f}", flush=True)
         del arms, logits
+        gc.collect()
         torch.cuda.empty_cache()
 
     fill = PiecewisePrefill(model, pools["control"], max_capture_tokens=2048, max_shapes=1,
@@ -268,6 +271,7 @@ def main():
               f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
               f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}", flush=True)
         del decoders
+        gc.collect()
         torch.cuda.empty_cache()
 
     failures = [f"prefill {r['sequences']}x{r['length']}" for r in report["prefill"]

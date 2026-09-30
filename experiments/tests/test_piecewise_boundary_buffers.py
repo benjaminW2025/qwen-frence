@@ -1,5 +1,6 @@
 """CPU address/lifetime contracts for opt-in cross-segment buffer reuse."""
 import importlib.util
+from contextlib import nullcontext
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -18,6 +19,22 @@ with mock.patch.dict(sys.modules, {"ragged_prefill": SimpleNamespace(_rope_facto
 
 
 class BoundaryBuffersTests(unittest.TestCase):
+    def test_capture_does_not_retain_autograd_intermediates(self):
+        model = SimpleNamespace(layers=[], cfg=SimpleNamespace(),
+                                embed=torch.nn.Embedding(16, 4))
+        pool = SimpleNamespace(k_pool=[torch.zeros(1)])
+        stream = mock.Mock()
+        with torch.enable_grad(), \
+                mock.patch.object(torch.cuda, "current_stream", return_value=stream), \
+                mock.patch.object(torch.cuda, "Stream", return_value=stream), \
+                mock.patch.object(torch.cuda, "stream", side_effect=lambda *a, **k: nullcontext()), \
+                mock.patch.object(torch.cuda, "CUDAGraph"), \
+                mock.patch.object(torch.cuda, "graph", side_effect=lambda *a, **k: nullcontext()):
+            boundary = MODULE._AttentionBoundary(model, pool, 0, 8, None, None, None)
+            self.assertFalse(boundary.result.requires_grad)
+            self.assertIsNone(boundary.result.grad_fn)
+            self.assertTrue(torch.is_grad_enabled())
+
     def boundary(self, bound=True):
         boundary = MODULE._AttentionBoundary.__new__(MODULE._AttentionBoundary)
         boundary.bound_residual = bound

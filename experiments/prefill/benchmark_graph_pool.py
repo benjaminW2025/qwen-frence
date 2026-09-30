@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
@@ -22,6 +23,41 @@ for directory in (INTEGRATION, ROOT / "baseline", ROOT / "benchmarks", ROOT / "e
     sys.path.insert(0, str(directory))
 
 from ab_gemm_epilogues import POLICIES, Layout, alternate, parse_case, prefill_inputs  # noqa: E402
+
+
+def run_cases(args):
+    """Isolate allocator/capture failures and persist every completed case."""
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for sequences, length in args.cases:
+        case_output = args.output.parent / f"case-{sequences}x{length}.json"
+        command = [sys.executable, str(Path(__file__).resolve()),
+                   "--worker", "--output", str(case_output), "--model", args.model,
+                   "--device", args.device, "--attention", args.attention,
+                   "--cases", f"{sequences}x{length}",
+                   "--private-limit", str(args.private_limit),
+                   "--rounds", str(args.rounds), "--seed", str(args.seed)]
+        if args.gemm_epilogues:
+            command.append("--gemm-epilogues")
+        if not case_output.exists():
+            result = subprocess.run(command, cwd=ROOT)
+            if result.returncode and not case_output.exists():
+                case_output.write_text(json.dumps({"status": "fail", "rows": [{
+                    "sequences": sequences, "length": length,
+                    "tokens": sequences * length, "error": "case subprocess failed",
+                    "exit_code": result.returncode}]}, indent=2) + "\n")
+        case = json.loads(case_output.read_text())
+        rows.extend(case["rows"])
+        if case["status"] != "pass":
+            break
+    passed = len(rows) == len(args.cases) and all(
+        "error" not in row and row.get("logits_bitwise_equal", True)
+        and row.get("kv_bitwise_equal", True) for row in rows)
+    args.output.write_text(json.dumps({
+        "status": "pass" if passed else "fail", "attention": args.attention,
+        "gemm_epilogues": args.gemm_epilogues, "rows": rows,
+        "case_isolation": "subprocess"}, indent=2) + "\n")
+    return 0 if passed else 1
 
 
 def main():
@@ -37,13 +73,19 @@ def main():
                         help="capture the fused-epilogue segments instead of the accepted ones")
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--seed", type=int, default=20260927)
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.output.exists():
         parser.error(f"refusing to overwrite {args.output}")
+    if not args.worker:
+        sys.exit(run_cases(args))
+    if len(args.cases) != 1:
+        parser.error("each worker must execute exactly one case")
 
     from benchmark_latest_vs_vllm import resolve_model_source
     from model_setup import check_startup, load_model_only
     import torch
+    torch.set_grad_enabled(False)
     from model_adapter import allocate_pool
     from piecewise_prefill import PiecewisePrefill
 
@@ -59,9 +101,10 @@ def main():
     rows = []
     for sequences, length in args.cases:
         tokens = sequences * length
-        pools = {arm: allocate_pool(cfg, tokens // 16 + sequences + 1, device)
-                 for arm in ("private", "shared")}
         arms = ("private", "shared") if tokens <= args.private_limit else ("shared",)
+        # Shared-only large cases do not need a second KV pool.
+        pools = {arm: allocate_pool(cfg, tokens // 16 + sequences + 1, device)
+                 for arm in arms}
         prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(sequences)]
         inputs = prefill_inputs(torch, device, prompts, Layout(torch, device, sequences, length),
                                 list(range(sequences)))
@@ -92,8 +135,6 @@ def main():
             + "; forward " + ", ".join(f"{arm} {value:.3f} ms" for arm, value in timed.items())
             + (f"; bitwise equal logits={row['logits_bitwise_equal']} kv={row['kv_bitwise_equal']}"
                if len(arms) == 2 else ""), flush=True)
-        del graphs, logits, pools
-        torch.cuda.empty_cache()
     passed = all(row.get("logits_bitwise_equal", True) and row.get("kv_bitwise_equal", True) for row in rows)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({"status": "pass" if passed else "fail", "attention": args.attention,
