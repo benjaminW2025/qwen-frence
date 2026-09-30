@@ -168,7 +168,7 @@ class Session:
         """Run command unless report exists. With gate, a nonzero exit that still wrote
         its report is a recorded failure, not a crash."""
         if report.exists():
-            print(f"[{name}] complete; reusing {report.relative_to(ROOT)}", flush=True)
+            print(f"[{name}] complete; reusing {report}", flush=True)
             return True
         stale = report.parent if report.suffix == ".json" and report.name == "report.json" else None
         if stale is not None and stale.exists():
@@ -193,7 +193,7 @@ class Session:
         aside on the next invocation so the experiment remains resumable.
         """
         if report.exists():
-            print(f"[{name}] complete; reusing {report.relative_to(ROOT)}", flush=True)
+            print(f"[{name}] complete; reusing {report}", flush=True)
             return True
         if report.parent.exists():
             aside = report.parent.with_name(

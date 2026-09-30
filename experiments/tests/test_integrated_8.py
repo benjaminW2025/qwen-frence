@@ -1,5 +1,6 @@
 """CPU contracts for the integrated eight-cell session, its gates and the divergence report."""
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -29,6 +30,17 @@ class BudgetChoice(unittest.TestCase):
 
 
 class ResultRetention(unittest.TestCase):
+    def test_resume_accepts_relative_output_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(os.path.relpath(directory))
+            report = root / "preflight.json"
+            report.write_text('{"status": "pass"}')
+            runner = session.Session(SimpleNamespace(output_dir=root, push=False, plan=False))
+            with mock.patch.object(session.subprocess, "run") as run:
+                self.assertTrue(runner.stage("preflight", report, ["false"]))
+                self.assertTrue(runner.advisory("advisory", report, ["false"]))
+                run.assert_not_called()
+
     def test_only_compact_reviewable_artifacts_are_pushable(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
