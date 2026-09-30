@@ -88,6 +88,7 @@ def paths(args, shape_id):
 
 
 def adapter_options(case, buckets, attention="project", variant_options=None):
+    from engine.accepted_config import retained_fusion_options
     if not buckets or min(buckets) < 1:
         raise ValueError("mixed graph buckets must be positive")
     variant_options = dict(variant_options or {})
@@ -101,9 +102,7 @@ def adapter_options(case, buckets, attention="project", variant_options=None):
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
-                enable_residual_rmsnorm=True,
-                enable_native_decode_qkv_postprocess=True,
-                enable_prefill_swiglu_fusion=True)
+                **retained_fusion_options())
 
 
 def validate_saved(path, *, shape_id, fingerprint, model, args):

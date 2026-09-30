@@ -11,6 +11,7 @@ total phase time accompany every median step latency.
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import importlib.metadata
 import json
@@ -185,6 +186,11 @@ def run_local(args, shape_id, model_source):
     if sorted(adapter.piecewise_prefill.shapes) != burst_dispatch["prefill_buckets"]:
         raise AssertionError(f"{shape_id}: phase burst prefill bucket missed capture")
     del adapter
+    # Segment closures form cycles; collect before capturing the mixed model,
+    # rather than retaining two private graph sets at larger token budgets.
+    del loop
+    gc.collect()
+    torch.cuda.empty_cache()
 
     config = make_config(cpp, case)
     config.packed_mixed_step = True

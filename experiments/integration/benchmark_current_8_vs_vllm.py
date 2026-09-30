@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks",
+for directory in (ROOT, HERE, ROOT / "baseline", ROOT / "benchmarks",
                   ROOT / "engine/model_runner", ROOT / "engine/kvcache",
                   ROOT / "engine/cpp/build"):
     sys.path.insert(0, str(directory))
@@ -29,6 +29,7 @@ from benchmark_latest_vs_vllm import load_frozen, resolve_model_source
 from reference_version import VLLM_VERSION, require_vllm_version
 from fixed_regime import (FACTORIAL_SHAPES, PREFILL_TOKENS_PER_STEP,
                           get_fixed_case, shape_summary, verify_fixed_result)
+from engine.accepted_config import retained_fusion_options
 
 SHAPES = tuple(row["id"] for row in FACTORIAL_SHAPES)
 # Local-engine attention. "project" runs the independent SM90a kernel.
@@ -375,9 +376,7 @@ def adapter_options(case, buckets, attention="project", variant_options=None):
                 decode_buckets=[case["max_running"]],
                 max_capture_tokens=max(buckets),
                 max_prefill_shapes=len(buckets), prefill_buckets=buckets,
-                enable_residual_rmsnorm=True,
-                enable_native_decode_qkv_postprocess=True,
-                enable_prefill_swiglu_fusion=True)
+                **retained_fusion_options())
 
 
 def validate_capture_options(options):
