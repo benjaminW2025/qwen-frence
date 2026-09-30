@@ -219,20 +219,21 @@ artifacts](experiments/results/current-eight-vs-vllm-v2/).
 
 ## Reproducing the benchmarks
 
-On the H100 pod, use the pinned vLLM environment and cached model snapshot:
+Use Python 3.12 on an H100, install
+`benchmarks/requirements-vllm-current.txt`, build the C++ scheduler and CUTLASS
+epilogue extensions against that environment's PyTorch/CUDA versions, and set
+`VLLM_USE_FLASHINFER_SAMPLER=0`. Print the complete session before allocating
+GPU time:
 
 ```bash
-cd /workspace/qwen-frence
-git pull --ff-only
-bash experiments/integration/run_current_eight_checkpoint.sh plan
-bash experiments/integration/run_current_eight_checkpoint.sh check
-bash experiments/integration/run_current_eight_checkpoint.sh run-table
-bash experiments/integration/run_current_eight_checkpoint.sh analyze
+python experiments/integration/run_integrated_8.py \
+  --output-dir experiments/results/integrated-final-vllm030 \
+  --attention fa3 --vllm-budget default --plan
 ```
 
-The wrapper reuses only validated prior cells and refuses stale workload, model,
-capacity, or commit metadata. Phase results are written under
-`experiments/results/current-eight-vs-vllm-v2/phases/`.
+Then remove `--plan` to run the resumable candidate gates, budget sweep, and all
+eight burst/mixed/phase comparisons. The runner admits each optional optimization
+only when its paired correctness and timing gate passes.
 
 ## Repository layout
 
