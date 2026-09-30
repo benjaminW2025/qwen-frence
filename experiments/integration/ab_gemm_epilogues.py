@@ -36,6 +36,7 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks", ROOT / "engine/g
     sys.path.insert(0, str(directory))
 
 POLICIES = {"fa3": ("fa3_varlen", "fa3"), "project": ("flash_varlen", "flash")}
+INTERVENTIONS = ("all", "residual-o", "gate-up", "residual-down", "qkv", "combined")
 PRIVATE_POOL_LIMIT = 8192
 
 
@@ -50,11 +51,12 @@ def compare_logits(control, candidate, tie_margin):
     """Greedy agreement, and for each disagreement the control's own margin to the candidate's pick."""
     import torch
     control, candidate = control.float(), candidate.float()
+    finite = bool(torch.isfinite(control).all() and torch.isfinite(candidate).all())
     control_top, candidate_top = control.argmax(-1), candidate.argmax(-1)
     differ = (control_top != candidate_top).nonzero().flatten().tolist()
     margins = [float(control[row, control_top[row]] - control[row, candidate_top[row]])
                for row in differ]
-    return {"rows": control.shape[0], "greedy_agree": control.shape[0] - len(differ),
+    return {"rows": control.shape[0], "finite": finite, "greedy_agree": control.shape[0] - len(differ),
             "max_abs_logit_diff": float((control - candidate).abs().max()),
             "mean_abs_logit_diff": float((control - candidate).abs().mean()),
             "disagreement_margins": margins,
@@ -65,7 +67,8 @@ def compare_logits(control, candidate, tie_margin):
 def merge(rows):
     rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in rows]
     margins = [m for row in rows for m in row["disagreement_margins"]]
-    return {"rows": sum(r["rows"] for r in rows), "greedy_agree": sum(r["greedy_agree"] for r in rows),
+    return {"rows": sum(r["rows"] for r in rows), "finite": all(r.get("finite", True) for r in rows),
+            "greedy_agree": sum(r["greedy_agree"] for r in rows),
             "max_abs_logit_diff": max(r["max_abs_logit_diff"] for r in rows),
             "mean_abs_logit_diff": statistics.fmean(r["mean_abs_logit_diff"] for r in rows),
             "max_disagreement_margin": max(margins, default=0.0),
@@ -125,6 +128,8 @@ def main():
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--attention", choices=tuple(POLICIES), default="fa3")
+    parser.add_argument("--intervention", choices=INTERVENTIONS, default="all",
+                        help="all folds RMSNorm; individual/combined epilogues retain the engine's RMSNorm")
     parser.add_argument("--prefill-cases", type=parse_case, nargs="+",
                         default=[(8, 256), (1, 2048), (4, 2048), (8, 2048)],
                         help="SEQUENCESxLENGTH packed prefill forwards; 2048, 8192 and 16384 "
@@ -160,7 +165,10 @@ def main():
                                    hub_transfer=setup["hub_transfer"])
     model, cfg, device = engine.model, engine.cfg, engine.device
     prepare_started = time.perf_counter()
-    fused.prepare_model(model)
+    if args.intervention == "all":
+        fused.prepare_model(model)
+    elif args.intervention in ("gate-up", "combined"):
+        fused.prepare_gate_only(model)
     torch.cuda.synchronize()
     prepare_seconds = time.perf_counter() - prepare_started
     prefill_policy, decode_policy = POLICIES[args.attention]
@@ -171,11 +179,15 @@ def main():
                       for b, length in args.decode_cases])
     blocks = capacity // 16 + max(n for n, _ in args.prefill_cases + args.decode_cases) + 1
     pools = {"control": allocate_pool(cfg, blocks, device), "candidate": allocate_pool(cfg, blocks, device)}
-    report = {"status": "running", "attention": args.attention, "model": args.model,
+    report = {"status": "running", "intervention": args.intervention,
+              "normalization": "folded" if args.intervention == "all" else "existing_rmsnorm",
+              "attention": args.attention, "model": args.model,
               "gpu": torch.cuda.get_device_name(device), "tie_margin": args.tie_margin,
               "fused_configs": extension.configs(), "prepare_model_seconds": prepare_seconds,
-              "fused_weight_bytes": sum(t.numel() * t.element_size() for layer in model.fused_gemm_layers
-                                        for t in (layer.qkv, layer.gate_up)),
+              "fused_weight_bytes": (sum(t.numel() * t.element_size() for layer in model.fused_gemm_layers
+                                         for t in (layer.qkv, layer.gate_up)) if args.intervention == "all"
+                                     else sum(t.numel() * t.element_size() for t in
+                                              getattr(model, "gate_only_epilogue_weights", []))),
               "prefill": [], "decode": []}
 
     def prefill_arm(name, bucket):
@@ -183,7 +195,8 @@ def main():
                                 token_buckets=[bucket], enable_residual_rmsnorm=True,
                                 enable_swiglu_fusion=True,
                                 share_graph_pool=bucket > PRIVATE_POOL_LIMIT,
-                                enable_fused_gemm_epilogues=name == "candidate")
+                                enable_fused_gemm_epilogues=name == "candidate",
+                                gemm_epilogue_intervention=args.intervention)
 
     for sequences, length in args.prefill_cases:
         tokens = sequences * length
@@ -235,7 +248,8 @@ def main():
             dtype=torch.float16, decode_attention_policy=decode_policy,
             max_decode_context_length=capacity, enable_residual_rmsnorm=True,
             enable_native_decode_qkv_postprocess=True,
-            enable_fused_gemm_epilogues=name == "candidate").capture()
+            enable_fused_gemm_epilogues=name == "candidate",
+            gemm_epilogue_intervention=args.intervention).capture()
             for name in ("control", "candidate")}
         prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
         group = max(1, 2048 // length)
@@ -259,9 +273,22 @@ def main():
             steps.append(compare_logits(step_logits["control"], step_logits["candidate"], args.tie_margin))
             tokens = steps[-1]["_next"]  # teacher-forced on the control's greedy token
         numerics = merge(steps)
+        live_positions = torch.arange(capacity, device=device)[None, :].expand(batch, -1)
+        live_rows = rows[:, None].expand_as(live_positions)
+        live_slots = layout.slots(torch, live_rows, live_positions).reshape(-1)
+        kv_finite = True
+        kv = 0.0
+        for a, b in zip(pools["control"].k_pool + pools["control"].v_pool,
+                        pools["candidate"].k_pool + pools["candidate"].v_pool):
+            left = a.view(-1, 2, 128)[live_slots].float()
+            right = b.view(-1, 2, 128)[live_slots].float()
+            kv_finite = kv_finite and bool(torch.isfinite(right).all())
+            kv = max(kv, float((left - right).abs().max()))
+        del left, right
         timed, samples = alternate(torch, {name: decoder.graph.replay for name, decoder in decoders.items()},
                                    repetitions=50, rounds=args.rounds)
         row = {"batch": batch, "context": length, "steps": args.decode_steps, "numerics": numerics,
+               "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
                "first_disagreement_step": next((i for i, s in enumerate(steps)
                                                 if s["greedy_agree"] < s["rows"]), None),
                "median_graph_replay_ms": timed, "samples_ms": samples,
@@ -275,9 +302,11 @@ def main():
         torch.cuda.empty_cache()
 
     failures = [f"prefill {r['sequences']}x{r['length']}" for r in report["prefill"]
-                if r["numerics"]["non_tie_disagreements"] or not r["candidate_kv_finite"]]
+                if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                or not r["candidate_kv_finite"]]
     failures += [f"decode B={r['batch']} L={r['context']}" for r in report["decode"]
-                 if r["numerics"]["non_tie_disagreements"]]
+                 if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                 or not r["candidate_kv_finite"]]
     report["status"] = "pass" if not failures else "fail"
     report["failures"] = failures
     report["note"] = ("speedups are per forward (prefill: graphs plus eager attention, host included) "

@@ -98,6 +98,12 @@ def decide(root, args):
     auto = {(): "off", ("prefill",): "prefill", ("decode",): "decode",
             ("prefill", "decode"): "all"}[tuple(admitted)]
     decision["gemm_epilogues"] = auto if args.gemm_epilogues == "auto" else args.gemm_epilogues
+    ladder = load(root / "micro/epilogue-interventions/report.json")
+    if ladder and ladder.get("status") == "complete" and args.gemm_epilogues == "auto":
+        selection = ladder["selection"]
+        decision["gemm_epilogues"] = selection["mode"]
+        decision["gemm_intervention"] = selection["intervention"]
+        evidence["individual_epilogues"] = ladder
 
     pool = load(root / "micro/graph-pool/report.json")
     evidence["graph_pool"] = pool and {"status": pool["status"], "rows": pool["rows"]}
@@ -126,6 +132,8 @@ def decide(root, args):
 def variant_cli(decision):
     return ["--prefill-graph-pool", decision["graph_pool"],
             "--gemm-epilogues", decision["gemm_epilogues"],
+            *(["--gemm-intervention", decision["gemm_intervention"]]
+              if decision.get("gemm_intervention", "all") != "all" else []),
             *(["--boundary-buffers"] if decision["boundary_buffers"] else []),
             *(["--stable-decode-metadata"] if decision["stable_decode_metadata"] else []),
             *(["--fused-greedy-output"] if decision["fused_greedy_output"] else [])]
@@ -270,6 +278,10 @@ def main():
                    "--rows", "16384", "8192", "4096", "2048", "1024", "256", "64", "8"], gate=True)
     session.stage("micro/model", micro / "model/report.json",
                   [python, HERE / "ab_gemm_epilogues.py", "--output-dir", micro / "model", *common], gate=True)
+    session.stage("micro/epilogue-interventions", micro / "epilogue-interventions/report.json",
+                  [python, HERE / "benchmark_epilogue_interventions.py",
+                   "--output-dir", micro / "epilogue-interventions", "--all-report", micro / "model/report.json",
+                   *common], gate=True)
     session.stage("micro/graph-pool", micro / "graph-pool/report.json",
                   [python, ROOT / "experiments/prefill/benchmark_graph_pool.py",
                    "--output", micro / "graph-pool/report.json", *common,
@@ -317,6 +329,8 @@ def main():
                    "--output-dir", micro / f"output/{label}"]
         if not args.plan:
             command.extend(["--gemm-epilogues", decision["gemm_epilogues"]])
+            if decision.get("gemm_intervention", "all") != "all":
+                command.extend(["--gemm-intervention", decision["gemm_intervention"]])
             if decision["boundary_buffers"]:
                 command.append("--baseline-boundary-buffers")
             if decision["stable_decode_metadata"]:
@@ -352,7 +366,8 @@ def main():
                    "--warmups", str(max(1, args.warmups)),
                    "--repetitions", str(max(10, args.repetitions)),
                    "--output-dir", micro / f"kstep/{label}"]
-        if not args.plan and decision["gemm_epilogues"] in ("decode", "all"):
+        if (not args.plan and decision["gemm_epilogues"] in ("decode", "all")
+                and decision.get("gemm_intervention", "all") == "all"):
             command.append("--fused-gemm-epilogues")
         session.advisory(f"micro/kstep/{label}",
                          micro / f"kstep/{label}/report.json", command)

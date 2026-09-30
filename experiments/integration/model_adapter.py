@@ -131,7 +131,7 @@ class GraphModelAdapter(ModelAdapter):
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  enable_stable_decode_table_cache=False,
-                 enable_decode_fused_gemm_epilogues=False,
+                 enable_decode_fused_gemm_epilogues=False, gemm_epilogue_intervention="all",
                  output_head_policy="logits", output_head_config=None):
         super().__init__(model, pool, loop, output_head_policy=output_head_policy,
                          output_head_config=output_head_config)
@@ -151,7 +151,7 @@ class GraphModelAdapter(ModelAdapter):
         self.enable_fused_qkv_rope_cache = bool(enable_fused_qkv_rope_cache)
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.enable_decode_fused_gemm_epilogues = bool(enable_decode_fused_gemm_epilogues)
-        if self.enable_decode_fused_gemm_epilogues:
+        if self.enable_decode_fused_gemm_epilogues and gemm_epilogue_intervention == "all":
             # Prepare fused weights before any capture warms up on a side stream.
             from kernel_dispatch import _load
             _load("fused_gemm").prepare_model(model)
@@ -187,6 +187,7 @@ class GraphModelAdapter(ModelAdapter):
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
             enable_stable_decode_table_cache=enable_stable_decode_table_cache,
             enable_fused_gemm_epilogues=self.enable_decode_fused_gemm_epilogues,
+            gemm_epilogue_intervention=gemm_epilogue_intervention,
             output_head_policy=self.output_head_policy,
             output_head_config=self.output_head_config,
         )
@@ -235,6 +236,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                  prefill_attention_policy=None,
                  enable_decode_fused_gemm_epilogues=False,
                  enable_prefill_fused_gemm_epilogues=False,
+                 gemm_epilogue_intervention="all",
                  output_head_policy="logits", output_head_config=None):
         super().__init__(model, pool, loop, max_running=max_running,
                          max_context_length=max_context_length,
@@ -249,6 +251,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
                          enable_packed_qkv_rope_cache=enable_packed_qkv_rope_cache,
                          enable_stable_decode_table_cache=enable_stable_decode_table_cache,
                          enable_decode_fused_gemm_epilogues=enable_decode_fused_gemm_epilogues,
+                         gemm_epilogue_intervention=gemm_epilogue_intervention,
                          output_head_policy=output_head_policy,
                          output_head_config=output_head_config)
         # Pure-prefill attention. The default keeps each decode policy's
@@ -271,7 +274,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
         self.enable_prefill_residual_rmsnorm = bool(enable_prefill_residual_rmsnorm)
         self.enable_prefill_swiglu_fusion = bool(enable_prefill_swiglu_fusion)
         self.enable_prefill_fused_gemm_epilogues = bool(enable_prefill_fused_gemm_epilogues)
-        if self.enable_prefill_fused_gemm_epilogues:
+        if self.enable_prefill_fused_gemm_epilogues and gemm_epilogue_intervention == "all":
             from kernel_dispatch import _load
             _load("fused_gemm").prepare_model(model)
         self.piecewise_prefill = PiecewisePrefill(
@@ -283,6 +286,7 @@ class PiecewiseGraphModelAdapter(GraphModelAdapter):
             enable_boundary_buffer_reuse=enable_prefill_boundary_buffer_reuse,
             share_graph_pool=enable_prefill_shared_graph_pool,
             enable_fused_gemm_epilogues=self.enable_prefill_fused_gemm_epilogues,
+            gemm_epilogue_intervention=gemm_epilogue_intervention,
             output_head_policy=self.output_head_policy,
             output_head_config=self.output_head_config)
 

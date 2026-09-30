@@ -95,13 +95,14 @@ def main():
         for name, operation in (('cublas_gemm', cublas_gemm), ('baseline_triton', baseline_triton),
                                 ('baseline_torch', baseline_torch),
                                 ('fused', lambda: gate_up_swiglu(x, interleaved)),
+                                ('fused_config0', lambda: gate_up_swiglu(x, interleaved, config=0)),
                                 ('cutlass_plain', lambda: gemm_plain(x, interleaved))):
             median, samples, output = graph_median_ms(torch, operation, args.repetitions)
             arms[name] = dict(median_ms=median, samples_ms=samples, output=output)
 
         # Correctness before timing is believed.
         errors = {}
-        for name in ('baseline_triton', 'baseline_torch', 'fused'):
+        for name in ('baseline_triton', 'baseline_torch', 'fused', 'fused_config0'):
             out = arms[name]['output'].float()
             errors[name] = (out - reference).abs().max().item()
             torch.testing.assert_close(out, reference, **TOLERANCE)
@@ -119,6 +120,10 @@ def main():
                    samples_ms={name: arm['samples_ms'] for name, arm in arms.items()},
                    fused_speedup_vs_baseline=arms[best]['median_ms'] / arms['fused']['median_ms'],
                    cutlass_mainloop_vs_cublas=arms['cublas_gemm']['median_ms'] / arms['cutlass_plain']['median_ms'],
+                   parity_config=0,
+                   parity_matches_default_fused=rows > 64,
+                   matched_config_fusion_speedup=arms[best]['median_ms'] / arms['fused_config0']['median_ms'],
+                   default_vs_config0=arms['fused_config0']['median_ms'] / arms['fused']['median_ms'],
                    gemm_tflops={name: flops / arm['median_ms'] / 1e9
                                 for name, arm in arms.items() if name in ('cublas_gemm', 'cutlass_plain', 'fused')},
                    max_abs_error_vs_fp32=errors)
@@ -134,7 +139,9 @@ def main():
     (args.output_dir / 'report.json').write_text(json.dumps(dict(
         device=props.name, torch=torch.__version__, cuda=torch.version.cuda, K=K, F=F,
         seed=args.seed, repetitions=args.repetitions, tolerance=TOLERANCE,
-        note='speedup > 1 means the fused kernel is faster; mainloop ratio > 1 means CUTLASS beats cuBLAS',
+        note='mainloop parity uses config 0 and is paired with fused_config0. At M<=64 the default '
+             'fused kernel uses config 1 (Stream-K); its mainloop parity is not measured by this binary. '
+             'default_vs_config0 isolates the observed schedule/tile difference; speedup > 1 is faster.',
         rows=rows_report), indent=2) + '\n')
 
 

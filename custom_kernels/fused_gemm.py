@@ -24,6 +24,27 @@ ABI_VERSION = 4
 INTERLEAVE_BLOCK = 8
 PARTIAL_TILE = 256
 QKV_WIDTH = 2048
+INTERVENTIONS = ("all", "residual-o", "gate-up", "residual-down", "qkv", "combined")
+
+
+def intervention_ops(intervention):
+    if intervention not in INTERVENTIONS:
+        raise ValueError(f"unknown GEMM intervention {intervention!r}")
+    return frozenset(("residual-o", "gate-up", "residual-down", "qkv")) if intervention == "combined" else frozenset((intervention,))
+
+
+def prepare_gate_only(model):
+    """Interleave original gate/up weights; preserve the existing RMSNorm."""
+    weights = getattr(model, "gate_only_epilogue_weights", None)
+    if weights is None:
+        weights = []
+        for layer in model.layers:
+            if layer.gate_up_proj is None:
+                raise ValueError("gate/up epilogue requires packed gate/up weights")
+            gate, up = layer.gate_up_proj.weight.detach().chunk(2, dim=0)
+            weights.append(interleave_gate_up(gate, up))
+        model.gate_only_epilogue_weights = weights
+    return weights
 
 
 @lru_cache(maxsize=1)

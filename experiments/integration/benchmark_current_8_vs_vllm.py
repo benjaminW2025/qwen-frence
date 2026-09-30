@@ -67,7 +67,7 @@ def greedy_output_head_config(rows):
 
 def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private",
                  gemm_epilogues="off", boundary_buffers=False,
-                 stable_decode_metadata=False, fused_greedy_output=False):
+                 stable_decode_metadata=False, fused_greedy_output=False, gemm_intervention="all"):
     mode = ATTENTION_MODES[attention]
     if gemm_epilogues not in GEMM_EPILOGUE_MODES:
         raise ValueError(f"unknown GEMM epilogue mode {gemm_epilogues!r}")
@@ -78,6 +78,8 @@ def engine_flags(attention, budget=PREFILL_TOKENS_PER_STEP, graph_pool="private"
         extra["prefill_graph_pool"] = graph_pool
     if gemm_epilogues != "off":
         extra["gemm_epilogues"] = gemm_epilogues
+        if gemm_intervention != "all":
+            extra["gemm_intervention"] = gemm_intervention
     if boundary_buffers:
         extra["prefill_boundary_buffer_reuse"] = True
     if stable_decode_metadata:
@@ -110,7 +112,8 @@ def variant(args):
                 gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
                 boundary_buffers=bool(getattr(args, "boundary_buffers", False)),
                 stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)),
-                fused_greedy_output=bool(getattr(args, "fused_greedy_output", False)))
+                fused_greedy_output=bool(getattr(args, "fused_greedy_output", False)),
+                gemm_intervention=getattr(args, "gemm_intervention", "all"))
 
 
 def variant_flags(args):
@@ -123,12 +126,16 @@ def variant_cli(args):
     return ["--prefill-budget", str(value["budget"]),
             "--prefill-graph-pool", value["graph_pool"],
             "--gemm-epilogues", value["gemm_epilogues"],
+            *(["--gemm-intervention", value["gemm_intervention"]]
+              if value["gemm_intervention"] != "all" else []),
             *(["--boundary-buffers"] if value["boundary_buffers"] else []),
             *(["--stable-decode-metadata"] if value["stable_decode_metadata"] else []),
             *(["--fused-greedy-output"] if value["fused_greedy_output"] else [])]
 
 
 def add_variant_arguments(parser):
+    parser.add_argument("--gemm-intervention", choices=("all", "residual-o", "gate-up", "residual-down", "qkv", "combined"),
+                        default="all", help="select which fused GEMM operations execute; only all folds RMSNorm")
     parser.add_argument("--prefill-budget", type=int, default=PREFILL_TOKENS_PER_STEP,
                         help="packed prefill tokens per step for the local engine. The staggered "
                              "workload's arrival step stays derived from the frozen "
@@ -155,7 +162,9 @@ def add_variant_arguments(parser):
 def variant_adapter_options(args):
     """Adapter keyword arguments for the variant, on top of the accepted configuration."""
     value = variant(args)
-    return dict(enable_prefill_shared_graph_pool=value["graph_pool"] == "shared",
+    extra = ({"gemm_epilogue_intervention": value["gemm_intervention"]}
+             if value["gemm_intervention"] != "all" else {})
+    return dict(**extra, enable_prefill_shared_graph_pool=value["graph_pool"] == "shared",
                 enable_prefill_boundary_buffer_reuse=value["boundary_buffers"],
                 enable_stable_decode_table_cache=value["stable_decode_metadata"],
                 enable_prefill_fused_gemm_epilogues=value["gemm_epilogues"] in ("prefill", "all"),
@@ -185,6 +194,10 @@ def check_variant_reached(adapter, args, label):
                       decoder.enable_fused_gemm_epilogues
                       for decoder in adapter.graph_decoder.decoders.values()),
                   output_head_policy=output_head)
+    if "gemm_epilogue_intervention" in options:
+        selections = {prefill.gemm_epilogue_intervention, *(
+            decoder.gemm_epilogue_intervention for decoder in adapter.graph_decoder.decoders.values())}
+        actual["gemm_epilogue_intervention"] = (selections.pop() if len(selections) == 1 else "inconsistent")
     if actual != options:
         raise AssertionError(f"{label}: engine variant did not reach the model: "
                              f"requested {options}, constructed {actual}")

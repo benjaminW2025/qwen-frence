@@ -60,6 +60,8 @@ def common(args):
             "--repetitions", str(args.repetitions), "--attention", args.attention,
             "--prefill-graph-pool", args.prefill_graph_pool,
             "--gemm-epilogues", args.gemm_epilogues,
+            *(["--gemm-intervention", getattr(args, "gemm_intervention", "all")]
+              if getattr(args, "gemm_intervention", "all") != "all" else []),
             *(["--boundary-buffers"] if args.boundary_buffers else []),
             *(["--stable-decode-metadata"] if args.stable_decode_metadata else []),
             *(["--fused-greedy-output"] if args.fused_greedy_output else [])]
@@ -128,6 +130,7 @@ def summarize(args, runs):
     summary = dict(status="complete" if len(complete) == len(args.shape_ids) else "partial",
                    attention=args.attention, prefill_graph_pool=args.prefill_graph_pool,
                    gemm_epilogues=getattr(args, "gemm_epilogues", "off"),
+                   gemm_intervention=getattr(args, "gemm_intervention", "all"),
                    boundary_buffers=bool(getattr(args, "boundary_buffers", False)),
                    stable_decode_metadata=bool(getattr(args, "stable_decode_metadata", False)),
                    fused_greedy_output=bool(getattr(args, "fused_greedy_output", False)),
@@ -172,6 +175,7 @@ def main():
     parser.add_argument("--gemm-epilogues", choices=("off", "prefill", "decode", "all"), default="off",
                         help="tune the budget on the engine that will run: the fused GEMM "
                              "epilogues change per-token cost, so the best budget can move")
+    parser.add_argument("--gemm-intervention", choices=("all", "residual-o", "gate-up", "residual-down", "qkv", "combined"), default="all")
     parser.add_argument("--boundary-buffers", action="store_true")
     parser.add_argument("--stable-decode-metadata", action="store_true")
     parser.add_argument("--fused-greedy-output", action="store_true")

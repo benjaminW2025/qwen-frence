@@ -30,7 +30,7 @@ class BucketedGraphDecoder:
                  enable_fused_qkv_rope_cache=False,
                  enable_packed_qkv_rope_cache=False,
                  enable_stable_decode_table_cache=False,
-                 enable_fused_gemm_epilogues=False,
+                 enable_fused_gemm_epilogues=False, gemm_epilogue_intervention="all",
                  output_head_policy="logits", output_head_config=None):
         self.max_blocks = max_blocks
         self.buckets = default_buckets(max_running) if buckets is None else sorted(set(buckets))
@@ -65,6 +65,7 @@ class BucketedGraphDecoder:
                                        enable_stable_decode_table_cache
                                    ),
                                    enable_fused_gemm_epilogues=enable_fused_gemm_epilogues,
+                                   gemm_epilogue_intervention=gemm_epilogue_intervention,
                                    output_head_policy=output_head_policy,
                                    output_head_config=head_config)
             dec.capture()

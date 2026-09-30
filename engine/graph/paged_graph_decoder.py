@@ -38,7 +38,7 @@ class CUDAGraphDecoder:
                  enable_packed_qkv_rope_cache=False,
                  output_head_policy="logits", output_head_config=None,
                  enable_stable_decode_table_cache=False,
-                 enable_fused_gemm_epilogues=False):
+                 enable_fused_gemm_epilogues=False, gemm_epilogue_intervention="all"):
         self.model = model
         self.cache = cache
         self.B = batch_size
@@ -63,6 +63,7 @@ class CUDAGraphDecoder:
         self.enable_packed_qkv_rope_cache = bool(enable_packed_qkv_rope_cache)
         self.enable_stable_decode_table_cache = bool(enable_stable_decode_table_cache)
         self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
+        self.gemm_epilogue_intervention = gemm_epilogue_intervention
         self.output_head_policy = output_head_policy
         self.output_head_config = output_head_config
         if output_head_policy not in ("logits", "fused_argmax"):
@@ -90,7 +91,7 @@ class CUDAGraphDecoder:
         self._block_table_source_signature = None
 
     def _step_forward(self):
-        if self.enable_fused_gemm_epilogues:
+        if self.enable_fused_gemm_epilogues and self.gemm_epilogue_intervention == "all":
             return fused_graph_decode_forward(
                 self.model, self.cache,
                 self.s_input_ids, self.s_positions, self.s_seq_lens,
@@ -115,8 +116,11 @@ class CUDAGraphDecoder:
             enable_packed_qkv_rope_cache=self.enable_packed_qkv_rope_cache,
             output_head_policy=self.output_head_policy,
             output_head_config=self.output_head_config,
+            gemm_epilogue_intervention=(self.gemm_epilogue_intervention
+                                       if self.enable_fused_gemm_epilogues else None),
         )
 
+    @torch.no_grad()
     def capture(self, warmup=3):
         """
         Warm up then record the graph
@@ -176,12 +180,21 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                          enable_residual_rmsnorm=False,
                          output_head_policy="logits",
                          output_head_config=None,
-                         layer_observer=None):
+                         layer_observer=None, gemm_epilogue_intervention=None):
     """
     Mirrors paged_forward's decode branch, with RoPE from a
     positions tensor and the KV write as a tensor scatter.
     """
     cfg = model.cfg
+    fused = None
+    ops = frozenset()
+    gate_weights = None
+    if gemm_epilogue_intervention is not None:
+        from kernel_dispatch import _load
+        fused = _load("fused_gemm")
+        ops = fused.intervention_ops(gemm_epilogue_intervention)
+        if "gate-up" in ops:
+            gate_weights = fused.prepare_gate_only(model)
     B = input_ids.shape[0]
     S = 1
     n_kv, d_head = cfg.n_kv_heads, cfg.d_head
@@ -200,7 +213,15 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
         residual = x
         h = (normalized if enable_residual_rmsnorm
              else apply_rms_norm(x, layer.input_norm, cfg))
-        if enable_fused_qkv_rope_cache:
+        direct_q = "qkv" in ops or enable_fused_qkv_rope_cache or enable_packed_qkv_rope_cache
+        if "qkv" in ops:
+            if layer.qkv_proj is None:
+                raise ValueError("QKV epilogue requires packed QKV weights")
+            q = fused.qkv_rope_cache(
+                h.reshape(B, cfg.d_model), layer.qkv_proj.weight, layer.qkv_proj.bias, None,
+                positions=positions.to(torch.long), slots=slot_mapping,
+                k_pool=cache.k_pool[i], v_pool=cache.v_pool[i], theta=cfg.rope_theta)
+        elif enable_fused_qkv_rope_cache:
             from kernel_dispatch import fused_qkv_rope_cache
             if layer.qkv_proj is None:
                 raise ValueError("full QKV fusion requires packed QKV weights")
@@ -222,7 +243,7 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             q = q.view(B, S, cfg.n_heads, d_head).transpose(1, 2)
             k = k.view(B, S, n_kv, d_head).transpose(1, 2)
             v = v.view(B, S, n_kv, d_head).transpose(1, 2)
-        if enable_fused_qkv_rope_cache or enable_packed_qkv_rope_cache:
+        if direct_q:
             pass
         elif enable_native_decode_qkv_postprocess:
             from kernel_dispatch import native_decode_rope_kv_write
@@ -253,13 +274,12 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
 
         if layer_observer is not None:
             observed_q = (q[:, :, None, :]
-                          if (enable_fused_qkv_rope_cache or
-                              enable_packed_qkv_rope_cache) else q)
+                          if direct_q else q)
             layer_observer(i, "rope_kv", observed_q,
                            cache.k_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping),
                            cache.v_pool[i].view(-1, n_kv, d_head).index_select(0, slot_mapping))
 
-        query = (q if (enable_fused_qkv_rope_cache or enable_packed_qkv_rope_cache)
+        query = (q if direct_q
                  else q[:, :, 0, :])
         out = paged_decode_attention_dispatch(
             query, cache.k_pool[i], cache.v_pool[i], block_table, seq_lens,
@@ -267,29 +287,39 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
             max_context_length=max_decode_context_length,
         )                                                                     # (B, n_heads, d)
         attn = out[:, :, None, :].transpose(1, 2).reshape(B, S, cfg.n_heads * d_head)
-        projected = layer.o_proj(attn)
-        if enable_residual_rmsnorm:
+        if "residual-o" in ops:
+            x, _ = fused.residual_gemm(attn.reshape(B, cfg.d_model), layer.o_proj.weight,
+                                       residual.reshape(B, cfg.d_model), partials=False)
+            x = x.view(B, S, cfg.d_model)
+            h = apply_rms_norm(x, layer.post_attn_norm, cfg)
+        elif enable_residual_rmsnorm:
             from kernel_dispatch import residual_add_rms_norm
+            projected = layer.o_proj(attn)
             x, h = residual_add_rms_norm(
                 residual, projected, layer.post_attn_norm.weight,
                 cfg.rms_norm_eps,
             )
         else:
+            projected = layer.o_proj(attn)
             x = residual + projected
             h = apply_rms_norm(x, layer.post_attn_norm, cfg)
 
         residual = x
-        gate, up = layer.project_gate_up(h)
-        h = layer.down_proj(
-            apply_swiglu(
-                gate,
-                up,
-                cfg,
-                enable_regime_fusions=enable_regime_fusions,
-            )
-        )
-        branch = h
-        if enable_residual_rmsnorm:
+        if "gate-up" in ops:
+            activation = fused.gate_up_swiglu(h.reshape(B, cfg.d_model), gate_weights[i]).view(B, S, cfg.d_ff)
+        else:
+            gate, up = layer.project_gate_up(h)
+            activation = apply_swiglu(gate, up, cfg, enable_regime_fusions=enable_regime_fusions)
+        if "residual-down" in ops:
+            x, _ = fused.residual_gemm(activation.reshape(B, cfg.d_ff), layer.down_proj.weight,
+                                       residual.reshape(B, cfg.d_model), partials=False)
+            x = x.view(B, S, cfg.d_model)
+            if enable_residual_rmsnorm:
+                next_norm = (model.layers[i + 1].input_norm
+                             if i + 1 < len(model.layers) else model.norm)
+                normalized = apply_rms_norm(x, next_norm, cfg)
+        elif enable_residual_rmsnorm:
+            branch = layer.down_proj(activation)
             from kernel_dispatch import residual_add_rms_norm
             next_norm = (model.layers[i + 1].input_norm
                          if i + 1 < len(model.layers) else model.norm)
@@ -297,6 +327,7 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
                 residual, branch, next_norm.weight, cfg.rms_norm_eps,
             )
         else:
+            branch = layer.down_proj(activation)
             x = residual + branch
         if layer_observer is not None:
             layer_observer(i, "layer_output", x)

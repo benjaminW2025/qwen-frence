@@ -98,6 +98,7 @@ def main():
                         help="new arms compare against the current single-callback FA3 path")
     parser.add_argument("--gemm-epilogues", choices=("off", "prefill", "decode", "all"),
                         default="off", help="hold the admitted GEMM path constant in both arms")
+    parser.add_argument("--gemm-intervention", choices=("all", "residual-o", "gate-up", "residual-down", "qkv", "combined"), default="all")
     parser.add_argument("--baseline-boundary-buffers", action="store_true",
                         help="hold admitted boundary reuse constant in both arms")
     parser.add_argument("--baseline-stable-decode-metadata", action="store_true",
@@ -173,7 +174,7 @@ def main():
 
     engine, load_seconds, _ = load_model_only(
         source, args.device, "float16", hub_transfer=setup["hub_transfer"])
-    if args.gemm_epilogues != "off":
+    if args.gemm_epilogues != "off" and args.gemm_intervention == "all":
         _load("fused_gemm").prepare_model(engine.model)
     config = make_config(cpp, case)
     packed_config = make_config(cpp, case)
@@ -202,6 +203,7 @@ def main():
                    enable_residual_rmsnorm=True,
                    enable_native_decode_qkv_postprocess=True,
                    enable_prefill_swiglu_fusion=True,
+                   gemm_epilogue_intervention=args.gemm_intervention,
                    enable_decode_fused_gemm_epilogues=(
                        args.gemm_epilogues in ("decode", "all")),
                    enable_prefill_fused_gemm_epilogues=(

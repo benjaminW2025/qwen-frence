@@ -38,7 +38,7 @@ class _AttentionBoundary:
                  enable_packed_qkv_rope_cache=False,
                  enable_residual_rmsnorm=False, enable_swiglu_fusion=False,
                  capture_graph=True, residual_input=None, graph_pool=None,
-                 enable_fused_gemm_epilogues=False):
+                 enable_fused_gemm_epilogues=False, gemm_epilogue_intervention="all"):
         cfg = model.cfg
         device, dtype = pool.k_pool[0].device, pool.k_pool[0].dtype
         layers = model.layers
@@ -48,6 +48,16 @@ class _AttentionBoundary:
         self.enable_residual_rmsnorm = bool(enable_residual_rmsnorm)
         self.enable_swiglu_fusion = bool(enable_swiglu_fusion)
         self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
+        self.gemm_epilogue_intervention = gemm_epilogue_intervention
+        full_epilogues = self.enable_fused_gemm_epilogues and gemm_epilogue_intervention == "all"
+        ops = frozenset()
+        fused = None
+        if self.enable_fused_gemm_epilogues:
+            from kernel_dispatch import _load
+            fused = _load("fused_gemm")
+            ops = fused.intervention_ops(gemm_epilogue_intervention)
+        gate_weights = (fused.prepare_gate_only(model)
+                        if "gate-up" in ops else None)
         self.bound_residual = residual_input is not None
         if index == 0:
             if self.bound_residual:
@@ -91,32 +101,48 @@ class _AttentionBoundary:
             return q_rows.transpose(0, 1).unsqueeze(0), x
 
         def run_segment():
-            if self.enable_fused_gemm_epilogues:
+            if full_epilogues:
                 return run_fused_segment()
             if index == 0:
                 x = model.embed(self.ids)
                 next_h = None
             else:
                 previous = layers[index - 1]
-                projected = previous.o_proj(self.attention)
-                if self.enable_residual_rmsnorm:
+                if "residual-o" in ops:
+                    x, _ = fused.residual_gemm(self.attention, previous.o_proj.weight,
+                                               self.residual, partials=False)
+                    h = apply_rms_norm(x, previous.post_attn_norm, cfg)
+                elif self.enable_residual_rmsnorm:
                     from kernel_dispatch import residual_add_rms_norm
+                    projected = previous.o_proj(self.attention)
                     x, h = residual_add_rms_norm(
                         self.residual, projected,
                         previous.post_attn_norm.weight, cfg.rms_norm_eps,
                     )
                 else:
+                    projected = previous.o_proj(self.attention)
                     x = self.residual + projected
                     h = apply_rms_norm(x, previous.post_attn_norm, cfg)
-                gate, up = previous.project_gate_up(h)
-                branch = previous.down_proj(apply_swiglu(
-                    gate, up, cfg, enable_regime_fusions=self.enable_swiglu_fusion))
-                if self.enable_residual_rmsnorm:
+                if "gate-up" in ops:
+                    activation = fused.gate_up_swiglu(h, gate_weights[index - 1])
+                else:
+                    gate, up = previous.project_gate_up(h)
+                    activation = apply_swiglu(gate, up, cfg,
+                                              enable_regime_fusions=self.enable_swiglu_fusion)
+                if "residual-down" in ops:
+                    x, _ = fused.residual_gemm(activation, previous.down_proj.weight,
+                                               x, partials=False)
+                    next_norm = model.norm if self.last else layers[index].input_norm
+                    next_h = apply_rms_norm(x, next_norm, cfg) if self.enable_residual_rmsnorm else None
+                elif self.enable_residual_rmsnorm:
+                    branch = previous.down_proj(activation)
+                    from kernel_dispatch import residual_add_rms_norm
                     next_norm = model.norm if self.last else layers[index].input_norm
                     x, next_h = residual_add_rms_norm(
                         x, branch, next_norm.weight, cfg.rms_norm_eps,
                     )
                 else:
+                    branch = previous.down_proj(activation)
                     x = x + branch
                     next_h = None
             if self.last:
@@ -126,7 +152,16 @@ class _AttentionBoundary:
             layer = layers[index]
             h = (next_h if self.enable_residual_rmsnorm and index > 0 else
                  apply_rms_norm(x, layer.input_norm, cfg))
-            if self.enable_packed_qkv_rope_cache:
+            if "qkv" in ops:
+                if layer.qkv_proj is None:
+                    raise ValueError("QKV epilogue requires packed QKV weights")
+                q_rows = fused.qkv_rope_cache(
+                    h, layer.qkv_proj.weight, layer.qkv_proj.bias, None,
+                    positions=self.positions, slots=self.slots,
+                    k_pool=pool.k_pool[index], v_pool=pool.v_pool[index],
+                    valid_tokens=self.valid_tokens, theta=cfg.rope_theta)
+                q = q_rows.transpose(0, 1).unsqueeze(0)
+            elif self.enable_packed_qkv_rope_cache:
                 from kernel_dispatch import packed_qkv_rope_cache
                 if layer.qkv_proj is None:
                     raise ValueError("packed prefill QKV epilogue requires packed QKV weights")
@@ -192,7 +227,7 @@ class PiecewisePrefill:
                  token_buckets=None, enable_packed_qkv_rope_cache=False,
                  enable_residual_rmsnorm=False, enable_swiglu_fusion=False,
                  enable_boundary_buffer_reuse=False, share_graph_pool=False,
-                 enable_fused_gemm_epilogues=False,
+                 enable_fused_gemm_epilogues=False, gemm_epilogue_intervention="all",
                  output_head_policy="logits", output_head_config=None):
         if max_capture_tokens < 1 or max_shapes < 1:
             raise ValueError("capture token and shape limits must be positive")
@@ -204,6 +239,8 @@ class PiecewisePrefill:
         self.enable_swiglu_fusion = bool(enable_swiglu_fusion)
         self.enable_boundary_buffer_reuse = bool(enable_boundary_buffer_reuse)
         self.enable_fused_gemm_epilogues = bool(enable_fused_gemm_epilogues)
+        self.gemm_epilogue_intervention = gemm_epilogue_intervention
+        self.full_fused_gemm_epilogues = self.enable_fused_gemm_epilogues and gemm_epilogue_intervention == "all"
         if output_head_policy not in ("logits", "fused_argmax"):
             raise ValueError("piecewise output head must be 'logits' or 'fused_argmax'")
         self.output_head_policy = output_head_policy
@@ -254,6 +291,7 @@ class PiecewisePrefill:
                     extra["graph_pool"] = self.graph_pool
                 if getattr(self, "enable_fused_gemm_epilogues", False):
                     extra["enable_fused_gemm_epilogues"] = True
+                    extra["gemm_epilogue_intervention"] = getattr(self, "gemm_epilogue_intervention", "all")
                 pieces.append(_AttentionBoundary(self.model, self.pool, i, bucket,
                                    positions, slots, valid_tokens,
                                    getattr(self, "enable_packed_qkv_rope_cache", False),
@@ -343,7 +381,7 @@ class PiecewisePrefill:
             if i + 1 < len(model.layers):
                 q, residual = result
             else:
-                if getattr(self, "enable_fused_gemm_epilogues", False):
+                if getattr(self, "full_fused_gemm_epilogues", False):
                     x, final_partials = result
                 else:
                     x, final_partials = result, None
@@ -354,7 +392,7 @@ class PiecewisePrefill:
             output_head_config = getattr(self, "output_head_config", None)
             head_config = (output_head_config(selected.shape[0])
                            if callable(output_head_config) else output_head_config)
-            if self.enable_fused_gemm_epilogues:
+            if self.full_fused_gemm_epilogues:
                 return fused_lm_head_argmax(
                     selected, model.lm_head.weight,
                     norm_weight=model.norm.weight,
@@ -370,7 +408,7 @@ class PiecewisePrefill:
                 selected.contiguous(), model.lm_head.weight,
                 **(head_config or {}),
             )
-        if getattr(self, "enable_fused_gemm_epilogues", False):
+        if getattr(self, "full_fused_gemm_epilogues", False):
             return model.lm_head(apply_rms_norm(selected, model.norm, cfg))
         if not self.enable_residual_rmsnorm:
             x = apply_rms_norm(x, model.norm, cfg)

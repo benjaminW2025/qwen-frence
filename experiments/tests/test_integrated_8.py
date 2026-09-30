@@ -14,6 +14,7 @@ from experiments.integration import ab_gemm_epilogues as ab
 from experiments.integration import benchmark_cpp_packed_mixed as control_ab
 from experiments.integration import divergence_report as divergence
 from experiments.integration import run_integrated_8 as session
+from experiments.integration import benchmark_epilogue_interventions as ladder
 
 ROOT = Path(__file__).resolve().parents[2]
 SUITE = ROOT / "experiments/results/full-checkpoint-20260916T033540Z"
@@ -56,6 +57,29 @@ class ResultRetention(unittest.TestCase):
 
 
 class Decisions(unittest.TestCase):
+    def test_single_epilogue_is_selected_and_forwarded_to_final_engine(self):
+        row = {"speedup": 1.08, "numerics": {"finite": True, "non_tie_disagreements": 0},
+               "candidate_kv_finite": True}
+        reports = {"gate-up": {"status": "pass", "prefill": [row], "decode": [row]},
+                   "all": {"status": "fail", "prefill": [row], "decode": [row]}}
+        selection = ladder.select(reports)
+        self.assertEqual((selection["intervention"], selection["mode"]), ("gate-up", "all"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write(root, "micro/epilogue-interventions/report.json",
+                       {"status": "complete", "selection": selection, "reports": reports})
+            decision, _ = session.decide(root, self.args())
+            self.assertEqual(decision["gemm_intervention"], "gate-up")
+            decision["fused_greedy_output"] = False
+            self.assertIn("--gemm-intervention", session.variant_cli(decision))
+
+    def test_failed_or_nonfinite_epilogue_cannot_be_admitted(self):
+        good = {"speedup": 1.1, "numerics": {"finite": True, "non_tie_disagreements": 0}}
+        bad = {"speedup": 1.2, "numerics": {"finite": False, "non_tie_disagreements": 0}}
+        result = ladder.select({"gate-up": {"status": "pass", "prefill": [good], "decode": [bad]}})
+        self.assertEqual(result["mode"], "prefill")
+        self.assertEqual(ladder.select({"gate-up": {"status": "crashed"}})["mode"], "off")
+
     def write(self, root, path, value):
         target = root / path
         target.parent.mkdir(parents=True, exist_ok=True)
