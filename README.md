@@ -166,7 +166,9 @@ to the final engine.
 | Custom full-QKV fused GEMM | Isolated kernel was about 1.8x faster, but full decode fell to 0.892x, wall to 0.948x, and logits exceeded tolerance. | Rejected for full-model slowdown and numerical error. |
 | Mixed attention overlap | Two-stream upper-bound tests did not show a stable end-to-end gain. | Resource contention and join dependencies erased the benefit. |
 
-The detailed status, source paths, tolerances, and missing production gates are in [`experiments/FUSION_CHECKLIST.md`](experiments/FUSION_CHECKLIST.md). Historical rationale and rejected hypotheses remain in [`experiments/RESULTS.md`](experiments/RESULTS.md) and [`experiments/INTERVENTIONS.md`](experiments/INTERVENTIONS.md).
+This README is the consolidated optimization ledger: retained interventions,
+rejected alternatives, numerical gates, and production status are recorded here
+rather than split across separate design notes.
 
 Important scope note: the final eight-cell scorecard uses K=1 decode graph replay.
 The K=2/4/8 unrolled graph is a validated prototype only. Its benchmark retains

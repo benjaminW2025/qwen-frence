@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resumable pages/program experiment and held-out (K, stages) policy study.
 
-Commands: plan, run, analyze, profile. See experiments/decode/STAGE_POLICY.md.
+Commands: plan, run, analyze, and profile.
 H=1, page size=16, head dimension=128, four warps, FP16 are fixed.
 """
 from __future__ import annotations

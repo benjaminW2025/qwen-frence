@@ -14,6 +14,12 @@ from experiments.integration import benchmark_current_8_vs_vllm as benchmark
 
 ROOT = Path(__file__).resolve().parents[2]
 SUITE = ROOT / "experiments/results/full-checkpoint-20260916T033540Z"
+ACCEPTED = ROOT / "experiments/results/attention-rerun-4XR8Oi/eight-fa3"
+
+
+def vllm_fixture(shape):
+    """A retained vLLM 0.30 result with the complete benchmark schema."""
+    return next((ACCEPTED / shape / "vllm").glob("*.json"))
 
 
 class CurrentEightTests(unittest.TestCase):
@@ -48,11 +54,13 @@ class CurrentEightTests(unittest.TestCase):
         args = SimpleNamespace(suite_dir=SUITE, seed=20260914)
         shape = benchmark.SHAPES[0]
         case, _, workload, digest, blocks = benchmark.input_contract(args, shape)
-        source = next((SUITE / shape / "reference").glob("*.json"))
+        source = vllm_fixture(shape)
         payload = json.loads(source.read_text())
         model = payload["configuration"]["model"]
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / "reference.json"
+            destination.write_text(json.dumps(payload))
+            payload["system"]["packages"]["vllm"] = "0.10.2"
             destination.write_text(json.dumps(payload))
             with self.assertRaisesRegex(ValueError, "requires vLLM"):
                 benchmark.vllm_result(
@@ -119,7 +127,7 @@ class CurrentEightTests(unittest.TestCase):
 
     def test_analysis_joins_local_and_vllm_by_request_id(self):
         shape = benchmark.SHAPES[0]
-        source = next((SUITE / shape / "reference").glob("*.json"))
+        source = vllm_fixture(shape)
         payload = json.loads(source.read_text())
         payload["system"]["packages"]["vllm"] = benchmark.VLLM_VERSION
         model = payload["configuration"]["model"]
