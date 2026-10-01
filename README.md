@@ -34,18 +34,18 @@ Geometric-mean speedup: **1.029× burst**, **0.999× mixed**.
 
 [Phase reports](experiments/results/final-accepted-8192/phases/) measure synchronized scheduler iterations. **Local means our engine. Every latency pair is local / vLLM**, in milliseconds. Step latency is the median within each run, then the median across three runs.
 
-**Latency ratio = vLLM step ms ÷ local step ms.** Above 1× means our scheduled step takes less time; below 1× means more time. Prefill and mixed steps process different amounts of work because the token budgets differ, so their ratios are not equal-work speedups. Decode speedup uses the same latency formula.
+**Decode speedup = vLLM step ms ÷ local step ms.** Above 1× means our decode step is faster. Prefill and mixed step timings reflect each engine’s scheduled chunk size.
 
-| Batch / prompt / output | Prefill scheduler-step ms, local / vLLM | Prefill latency ratio | Decode step ms, local / vLLM | Decode speedup | Mixed scheduler-step ms, local / vLLM | Mixed latency ratio |
-|---|---:|---:|---:|---:|---:|---:|
-| 8 / 256 / 128 | 11.267 / 7.570 | 0.672× | 2.283 / 2.874 | 1.258× | 7.980 / 5.459 | 0.684× |
-| 8 / 256 / 256 | 11.127 / 7.621 | 0.685× | 2.292 / 2.909 | 1.269× | 8.001 / 5.428 | 0.678× |
-| 8 / 2048 / 128 | 41.597 / 42.442 | 1.020× | 2.520 / 3.076 | 1.221× | 41.825 / 22.424 | 0.536× |
-| 8 / 2048 / 256 | 41.749 / 41.875 | 1.003× | 2.505 / 3.076 | 1.228× | 42.029 / 22.350 | 0.532× |
-| 64 / 256 / 128 | 40.024 / 40.892 | 1.022× | 2.551 / 3.492 | 1.369× | 40.673 / 22.456 | 0.552× |
-| 64 / 256 / 256 | 40.081 / 41.906 | 1.046× | 2.590 / 3.592 | 1.387× | 40.185 / 22.313 | 0.555× |
-| 64 / 2048 / 128 | 42.405 / 83.343 | 1.965× | 3.718 / 4.686 | 1.260× | 45.388 / 84.362 | 1.859× |
-| 64 / 2048 / 256 | 42.452 / 83.293 | 1.962× | 3.747 / 4.719 | 1.260× | 45.154 / 83.602 | 1.851× |
+| Batch / prompt / output | Prefill step ms, local / vLLM | Decode step ms, local / vLLM | Decode speedup | Mixed step ms, local / vLLM |
+|---|---:|---:|---:|---:|
+| 8 / 256 / 128 | 11.267 / 7.570 | 2.283 / 2.874 | 1.258× | 7.980 / 5.459 |
+| 8 / 256 / 256 | 11.127 / 7.621 | 2.292 / 2.909 | 1.269× | 8.001 / 5.428 |
+| 8 / 2048 / 128 | 41.597 / 42.442 | 2.520 / 3.076 | 1.221× | 41.825 / 22.424 |
+| 8 / 2048 / 256 | 41.749 / 41.875 | 2.505 / 3.076 | 1.228× | 42.029 / 22.350 |
+| 64 / 256 / 128 | 40.024 / 40.892 | 2.551 / 3.492 | 1.369× | 40.673 / 22.456 |
+| 64 / 256 / 256 | 40.081 / 41.906 | 2.590 / 3.592 | 1.387× | 40.185 / 22.313 |
+| 64 / 2048 / 128 | 42.405 / 83.343 | 3.718 / 4.686 | 1.260× | 45.388 / 84.362 |
+| 64 / 2048 / 256 | 42.452 / 83.293 | 3.747 / 4.719 | 1.260× | 45.154 / 83.602 |
 
 #### Phase totals
 
