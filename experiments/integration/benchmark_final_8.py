@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from importlib.metadata import version as package_version
 import json
 import math
 from pathlib import Path
@@ -148,8 +149,10 @@ def validate_reference(args, budgets, *, check_hardware=True):
             if any(gpu.get(key) != value for key, value in expected.items()):
                 raise ValueError(f"{shape}: reference GPU hardware differs")
             recorded_torch = payload.get("system", {}).get("packages", {}).get("torch")
-            if recorded_torch is not None and recorded_torch != torch.__version__:
-                raise ValueError(f"{shape}: reference PyTorch version differs")
+            current_torch = package_version("torch")
+            if recorded_torch is not None and recorded_torch != current_torch:
+                raise ValueError(f"{shape}: reference PyTorch package version differs: "
+                                 f"reference={recorded_torch}, current={current_torch}")
         for source, relative in ((files[0], Path(shape) / "vllm" / files[0].name),
                                  (mixed_path, Path("mixed") / shape / "vllm.json"),
                                  (phase_path, Path("phases") / shape / "vllm.json")):

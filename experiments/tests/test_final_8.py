@@ -118,6 +118,21 @@ class FinalEightTests(unittest.TestCase):
                 burst_check.assert_called_once()
                 mixed_check.assert_called_once()
                 phase_check.assert_called_once()
+                gpu = {"name": "test GPU", "total_memory_bytes": 123,
+                       "compute_capability": "9.0"}
+                rows[0][0].write_text(json.dumps({"system": {
+                    "repository": {"commit": source_commit}, "gpu": gpu,
+                    "packages": {"torch": "2.13.0"}}}))
+                import torch
+                with patch.object(torch, "__version__", "2.13.0+cu130"), \
+                     patch.object(final, "package_version", return_value="2.13.0"), \
+                     patch.object(torch.cuda, "get_device_properties", return_value=
+                         SimpleNamespace(name="test GPU", total_memory=123, major=9, minor=0)):
+                    self.assertEqual(len(final.validate_reference(
+                        args, {shape: 8192}, check_hardware=True)), 3)
+                    with patch.object(final, "package_version", return_value="2.12.0"):
+                        with self.assertRaisesRegex(ValueError, "package version differs"):
+                            final.validate_reference(args, {shape: 8192}, check_hardware=True)
                 wrong = dict(rows[1][1], arrival_step=5)
                 rows[1][0].write_text(json.dumps(wrong))
                 with self.assertRaisesRegex(ValueError, "arrival"):
