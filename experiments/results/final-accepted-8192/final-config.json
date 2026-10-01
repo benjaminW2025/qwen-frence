@@ -1,0 +1,28 @@
+{
+  "preset": "accepted-fa3-no-candidates-v1",
+  "model": "/root/huggingface-cache/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "suite_dir": "/workspace/qwen-frence/experiments/results/full-checkpoint-20260916T033540Z",
+  "seed": 20260914,
+  "warmups": 1,
+  "repetitions": 3,
+  "vllm_version": "0.30.0",
+  "vllm_budget": "default",
+  "local_graph_pool": "private",
+  "budgets": {
+    "fixed-b8-l256-o128": 8192,
+    "fixed-b8-l256-o256": 8192,
+    "fixed-b8-l2048-o128": 8192,
+    "fixed-b8-l2048-o256": 8192,
+    "fixed-b64-l256-o128": 8192,
+    "fixed-b64-l256-o256": 8192,
+    "fixed-b64-l2048-o128": 8192,
+    "fixed-b64-l2048-o256": 8192
+  },
+  "budget_tolerance": 0.01,
+  "budget_calibration": null,
+  "note": "Sweep rates choose budgets only; all final timings are measured anew.",
+  "backend": "local",
+  "fused_greedy_output": false,
+  "k_step_production": false,
+  "reference_dir": "/workspace/qwen-frence/experiments/results/final-vllm030-reference"
+}

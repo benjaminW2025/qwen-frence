@@ -1,0 +1,37 @@
+{
+  "status": "complete",
+  "shape_id": "fixed-b8-l256-o256",
+  "workload_sha256": "aa3d703f36dcd82749ec23a637175ba43e6282cd7530f5427e1fa6ffc2018034",
+  "local_repository_commit": "8c7bdd431eff40febcb41161c39e964bbb3116c5",
+  "vllm_repository_commit": "f92779a340abfea40ec4aef0ea3f899a467da65b",
+  "local_output_tokens_per_s": 3435.47846227748,
+  "vllm_output_tokens_per_s": 3264.236751308237,
+  "local_over_vllm": 1.052459954352457,
+  "vllm_budget": "default",
+  "vllm_max_num_batched_tokens": 4096,
+  "local_prefill_token_budget": 8192,
+  "local_engine_flags": {
+    "prefill_token_budget": 8192,
+    "cpp_scheduler": true,
+    "packed_mixed_step": true,
+    "decode_attention_policy": "fa3",
+    "mixed_attention_policy": "fa3_varlen",
+    "prefill_attention_policy": "fa3_varlen",
+    "attention_implementation": "external_vllm_flash_attn_fa3",
+    "decode_graph_bucket": "exact_batch",
+    "prefill_graph_buckets": "CPU-scheduled pure/mixed exact upper bounds",
+    "residual_rmsnorm": true,
+    "native_decode_qkv_postprocess": true,
+    "prefill_swiglu_fusion": true,
+    "prefill_packed_qkv_rope_cache": false
+  },
+  "exact_output_requests": 8,
+  "total_requests": 8,
+  "vllm_result_dir": "/workspace/qwen-frence/experiments/results/final-accepted-8192/fixed-b8-l256-o256/vllm",
+  "mixed_steps": 0,
+  "packed_mixed_calls": 0,
+  "prefill_buckets": [
+    2048
+  ],
+  "note": "burst fixed table; packed mixed callback exercised where C++ overlaps decode/prefill"
+}

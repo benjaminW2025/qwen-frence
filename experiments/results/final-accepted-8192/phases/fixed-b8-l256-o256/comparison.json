@@ -1,0 +1,53 @@
+{
+  "status": "complete",
+  "timing_scheme": "synchronized-burst-and-mixed-step-wall-v1",
+  "shape_id": "fixed-b8-l256-o256",
+  "workload_sha256": "0e9d11d4aec5e981a586d6e41afe7363af8d5032e989e23557e92a0901de5bde",
+  "local_repository_commit": "8c7bdd431eff40febcb41161c39e964bbb3116c5",
+  "vllm_repository_commit": "f92779a340abfea40ec4aef0ea3f899a467da65b",
+  "same_output_requests_expected": 8,
+  "same_burst_output_hash": true,
+  "same_mixed_output_hash": false,
+  "phases": {
+    "prefill": {
+      "local": {
+        "steps": 1,
+        "total_wall_ms": 11.126983910799026,
+        "median_step_wall_ms": 11.126983910799026
+      },
+      "vllm": {
+        "steps": 2,
+        "total_wall_ms": 15.242792665958405,
+        "median_step_wall_ms": 7.621396332979202
+      },
+      "median_step_local_over_vllm": 1.4599665762887168
+    },
+    "decode": {
+      "local": {
+        "steps": 255,
+        "total_wall_ms": 584.3616053462029,
+        "median_step_wall_ms": 2.2920221090316772
+      },
+      "vllm": {
+        "steps": 255,
+        "total_wall_ms": 746.1506687104702,
+        "median_step_wall_ms": 2.9090717434883118
+      },
+      "median_step_local_over_vllm": 0.7878877907229882
+    },
+    "mixed": {
+      "local": {
+        "steps": 1,
+        "total_wall_ms": 8.001226931810379,
+        "median_step_wall_ms": 8.001226931810379
+      },
+      "vllm": {
+        "steps": 2,
+        "total_wall_ms": 10.85624098777771,
+        "median_step_wall_ms": 5.428120493888855
+      },
+      "median_step_local_over_vllm": 1.4740326676274793
+    }
+  },
+  "note": "Separate synchronized-step diagnostic: pure prefill/decode from burst workload, mixed from staggered workload; scheduler step counts and work per step may differ. Do not compare these medians as whole-workload throughput."
+}

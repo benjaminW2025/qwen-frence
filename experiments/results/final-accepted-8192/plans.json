@@ -1,0 +1,206 @@
+{
+  "fixed-b8-l256-o128": {
+    "burst": {
+      "prefill_buckets": [
+        2048
+      ],
+      "mixed_steps": 0,
+      "max_packed_mixed_tokens": 0,
+      "swiglu_fused_buckets": [
+        2048
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 2048
+    },
+    "staggered_mixed": {
+      "first_wave": 4,
+      "arrival_step": 4,
+      "prefill_buckets": [
+        1024,
+        1028
+      ],
+      "max_capture_tokens": 1028,
+      "batch": 8
+    }
+  },
+  "fixed-b8-l256-o256": {
+    "burst": {
+      "prefill_buckets": [
+        2048
+      ],
+      "mixed_steps": 0,
+      "max_packed_mixed_tokens": 0,
+      "swiglu_fused_buckets": [
+        2048
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 2048
+    },
+    "staggered_mixed": {
+      "first_wave": 4,
+      "arrival_step": 4,
+      "prefill_buckets": [
+        1024,
+        1028
+      ],
+      "max_capture_tokens": 1028,
+      "batch": 8
+    }
+  },
+  "fixed-b8-l2048-o128": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8196
+      ],
+      "mixed_steps": 1,
+      "max_packed_mixed_tokens": 8196,
+      "swiglu_fused_buckets": [
+        8192,
+        8196
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8196
+    },
+    "staggered_mixed": {
+      "first_wave": 4,
+      "arrival_step": 7,
+      "prefill_buckets": [
+        8192,
+        8196
+      ],
+      "max_capture_tokens": 8196,
+      "batch": 8
+    }
+  },
+  "fixed-b8-l2048-o256": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8196
+      ],
+      "mixed_steps": 1,
+      "max_packed_mixed_tokens": 8196,
+      "swiglu_fused_buckets": [
+        8192,
+        8196
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8196
+    },
+    "staggered_mixed": {
+      "first_wave": 4,
+      "arrival_step": 7,
+      "prefill_buckets": [
+        8192,
+        8196
+      ],
+      "max_capture_tokens": 8196,
+      "batch": 8
+    }
+  },
+  "fixed-b64-l256-o128": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8224
+      ],
+      "mixed_steps": 1,
+      "max_packed_mixed_tokens": 8224,
+      "swiglu_fused_buckets": [
+        8192,
+        8224
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8224
+    },
+    "staggered_mixed": {
+      "first_wave": 32,
+      "arrival_step": 7,
+      "prefill_buckets": [
+        8192,
+        8224
+      ],
+      "max_capture_tokens": 8224,
+      "batch": 64
+    }
+  },
+  "fixed-b64-l256-o256": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8224
+      ],
+      "mixed_steps": 1,
+      "max_packed_mixed_tokens": 8224,
+      "swiglu_fused_buckets": [
+        8192,
+        8224
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8224
+    },
+    "staggered_mixed": {
+      "first_wave": 32,
+      "arrival_step": 7,
+      "prefill_buckets": [
+        8192,
+        8224
+      ],
+      "max_capture_tokens": 8224,
+      "batch": 64
+    }
+  },
+  "fixed-b64-l2048-o128": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8252
+      ],
+      "mixed_steps": 15,
+      "max_packed_mixed_tokens": 8252,
+      "swiglu_fused_buckets": [
+        8192,
+        8252
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8252
+    },
+    "staggered_mixed": {
+      "first_wave": 32,
+      "arrival_step": 35,
+      "prefill_buckets": [
+        8192,
+        8252
+      ],
+      "max_capture_tokens": 8252,
+      "batch": 64
+    }
+  },
+  "fixed-b64-l2048-o256": {
+    "burst": {
+      "prefill_buckets": [
+        8192,
+        8252
+      ],
+      "mixed_steps": 15,
+      "max_packed_mixed_tokens": 8252,
+      "swiglu_fused_buckets": [
+        8192,
+        8252
+      ],
+      "prefill_budget": 8192,
+      "max_capture_tokens": 8252
+    },
+    "staggered_mixed": {
+      "first_wave": 32,
+      "arrival_step": 35,
+      "prefill_buckets": [
+        8192,
+        8252
+      ],
+      "max_capture_tokens": 8252,
+      "batch": 64
+    }
+  }
+}
