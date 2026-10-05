@@ -30,39 +30,24 @@ Burst submits all requests together. Mixed submits requests in two staggered wav
 
 Geometric-mean speedup: **1.029× burst**, **0.999× mixed**.
 
-### Prefill, decode, and mixed phases
+### Pure decode step latency
 
-[Phase reports](experiments/results/final-accepted-8192/phases/) measure synchronized scheduler iterations. **Local means our engine. Every latency pair is local / vLLM**, in milliseconds. Step latency is the median within each run, then the median across three runs.
+[Phase reports](experiments/results/final-accepted-8192/phases/) measure synchronized pure-decode iterations. Each step generates one token per active request. Step latency is the median within each run, then the median across three runs.
 
-**Decode speedup = vLLM step ms ÷ local step ms.** Above 1× means our decode step is faster. Prefill and mixed step timings reflect each engine’s scheduled chunk size.
+**Local means our engine. Latencies are local / vLLM, in milliseconds. Decode speedup = vLLM ms ÷ local ms.**
 
-| Batch / prompt / output | Prefill step ms, local / vLLM | Decode step ms, local / vLLM | Decode speedup | Mixed step ms, local / vLLM |
-|---|---:|---:|---:|---:|
-| 8 / 256 / 128 | 11.267 / 7.570 | 2.283 / 2.874 | 1.258× | 7.980 / 5.459 |
-| 8 / 256 / 256 | 11.127 / 7.621 | 2.292 / 2.909 | 1.269× | 8.001 / 5.428 |
-| 8 / 2048 / 128 | 41.597 / 42.442 | 2.520 / 3.076 | 1.221× | 41.825 / 22.424 |
-| 8 / 2048 / 256 | 41.749 / 41.875 | 2.505 / 3.076 | 1.228× | 42.029 / 22.350 |
-| 64 / 256 / 128 | 40.024 / 40.892 | 2.551 / 3.492 | 1.369× | 40.673 / 22.456 |
-| 64 / 256 / 256 | 40.081 / 41.906 | 2.590 / 3.592 | 1.387× | 40.185 / 22.313 |
-| 64 / 2048 / 128 | 42.405 / 83.343 | 3.718 / 4.686 | 1.260× | 45.388 / 84.362 |
-| 64 / 2048 / 256 | 42.452 / 83.293 | 3.747 / 4.719 | 1.260× | 45.154 / 83.602 |
+| Batch / prompt / output | Decode step ms, local / vLLM | Decode speedup |
+|---|---:|---:|
+| 8 / 256 / 128 | 2.283 / 2.874 | 1.258× |
+| 8 / 256 / 256 | 2.292 / 2.909 | 1.269× |
+| 8 / 2048 / 128 | 2.520 / 3.076 | 1.221× |
+| 8 / 2048 / 256 | 2.505 / 3.076 | 1.228× |
+| 64 / 256 / 128 | 2.551 / 3.492 | 1.369× |
+| 64 / 256 / 256 | 2.590 / 3.592 | 1.387× |
+| 64 / 2048 / 128 | 3.718 / 4.686 | 1.260× |
+| 64 / 2048 / 256 | 3.747 / 4.719 | 1.260× |
 
-#### Phase totals
-
-The following are cumulative phase times, not individual step latencies. Pairs remain **local / vLLM**.
-
-| Batch / prompt / output | Pure-prefill phase total ms | Pure-decode median step ms | Mixed phase total ms | Decode speedup |
-|---|---:|---:|---:|---:|
-| 8 / 256 / 128 | 11.27 / 15.14 | 2.283 / 2.874 | 7.98 / 10.92 | 1.258× |
-| 8 / 256 / 256 | 11.13 / 15.24 | 2.292 / 2.909 | 8.00 / 10.86 | 1.269× |
-| 8 / 2048 / 128 | 41.60 / 84.88 | 2.520 / 3.076 | 41.83 / 44.85 | 1.221× |
-| 8 / 2048 / 256 | 41.75 / 83.75 | 2.505 / 3.076 | 42.03 / 44.70 | 1.228× |
-| 64 / 256 / 128 | 40.02 / 81.78 | 2.551 / 3.492 | 40.67 / 44.91 | 1.369× |
-| 64 / 256 / 256 | 40.08 / 83.81 | 2.590 / 3.592 | 40.18 / 44.63 | 1.387× |
-| 64 / 2048 / 128 | 42.41 / 166.69 | 3.718 / 4.686 | 680.49 / 544.14 | 1.260× |
-| 64 / 2048 / 256 | 42.45 / 166.59 | 3.747 / 4.719 | 676.48 / 539.20 | 1.260× |
-
-Pure-prefill totals cover 1 local step versus 2 vLLM steps. Mixed totals cover 1 versus 2 steps, except B64/P2048: 15 versus 10. Decode covers the same 127 or 255 steps. Prefill work performed in mixed iterations is counted under mixed, not pure prefill.
+Both engines record 127 pure-decode steps for 128-token outputs and 255 for 256-token outputs. Prefill and mixed step timings remain in the raw reports; they are omitted here because the scheduled token counts differ between engines.
 
 ### Correctness
 
