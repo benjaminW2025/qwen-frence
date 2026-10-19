@@ -226,7 +226,6 @@ IterationLoop::IterationLoop(SchedulerConfig config, torch::Device device)
     }
 
     // Initialize block allocator
-    // TODO(you): Calculate total_blocks_ based on GPU memory
     //
     // DESIGN CHOICE: How much memory to reserve for KV cache?
     //   - Need: num_blocks * block_size * num_kv_heads * head_dim * 2 (K+V) * 2 (bytes for fp16)
@@ -346,9 +345,6 @@ IterationPlan IterationLoop::schedule() {
     //   - Always admit if memory available (aggressive)
     //   - Only admit if decode batch < threshold (conservative)
     //   - We go aggressive for throughput
-    //
-    // HINT: You need to allocate KV cache blocks for new requests
-    //       Use allocate_block() and check for std::nullopt
 
     while (
         !pending_queue_.empty()
@@ -813,9 +809,6 @@ void IterationLoop::update_requests(
     //   1. Update num_prompt_tokens_computed += chunk_size
     //   2. If prefill complete, append next_token and switch to DECODING
     //   3. If prefill not complete, continue next iteration
-    //
-    // HINT: next_tokens is on GPU, use .item<int64_t>() to get scalar
-    //       or copy to CPU first for batch access
     // ==========================================================================
 
     torch::Tensor cpu_tokens;

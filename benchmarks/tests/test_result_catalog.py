@@ -14,11 +14,8 @@ class ResultCatalogTests(unittest.TestCase):
     def test_stage_ids_are_unique_and_follow_the_project_story(self):
         ids = [stage["id"] for stage in self.catalog["stages"]]
         self.assertEqual(ids, [
-            "engine-foundations",
-            "packed-prefill",
-            "mixed-scheduling",
-            "focused-optimization",
-            "final-scorecard",
+            "frozen-workloads",
+            "final-comparison",
         ])
 
     def test_every_canonical_artifact_exists(self):

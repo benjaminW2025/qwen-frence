@@ -5,17 +5,30 @@ RUN_ID := $(shell date -u +%Y%m%dT%H%M%SZ)
 endif
 ARTIFACT_DIR ?= artifacts/reproduction/$(RUN_ID)
 LOCAL_SUITE ?=
+FINAL_REFERENCE ?= artifacts/final-reference
+FINAL_OUTPUT ?= artifacts/final-local
 
 .NOTPARALLEL: reproduce-local reproduce-vllm reproduce-experiments
 
-.PHONY: help unit preflight-local preflight-vllm correctness correctness-primary \
+.PHONY: help help-experiments unit preflight-local preflight-vllm correctness correctness-primary \
 	benchmark-smoke phase-scorecard intervention-suite dispatch-policy-suite \
 	scorecard-local scorecard-vllm reproduce-local reproduce-vllm reproduce-experiments \
-	cpp-scheduler-build cpp-scheduler-test cpp-scheduler-benchmark
+	cpp-scheduler-build cpp-scheduler-test cpp-scheduler-benchmark \
+	final-reference final-local
 
 help:
-	@echo "Reproducible validation and benchmark targets"
-	@echo "  make unit                 CPU-only harness contracts"
+	@echo "Qwen-frence: docs/reproducing.md"
+	@echo "  make cpp-scheduler-build  build the C++ extension"
+	@echo "  make final-reference      measure the vLLM reference"
+	@echo "  make final-local          compare the accepted engine with saved reference"
+	@echo "  make unit                 harness contracts; build C++ extension first"
+	@echo "  make cpp-scheduler-test   build and test scheduler contracts"
+	@echo "  make correctness          broader GPU numerical and lifecycle checks"
+	@echo "  make help-experiments     list earlier benchmark workflows"
+	@echo "Override PYTHON, FINAL_REFERENCE, and FINAL_OUTPUT as needed."
+
+help-experiments:
+	@echo "Earlier benchmarks and focused experiments"
 	@echo "  make preflight-local      H100/local-engine setup and 1-request smoke"
 	@echo "  make correctness          complete GPU correctness suite"
 	@echo "  make correctness-primary  eager production checks; skips legacy graphs"
@@ -25,11 +38,24 @@ help:
 	@echo "  make dispatch-policy-suite  dense crossover sweeps and policy fit"
 	@echo "  make cpp-scheduler-test   build and test the C++ scheduler on CPU"
 	@echo "  make cpp-scheduler-benchmark  compare C++ and Python scheduler overhead"
-	@echo "  make scorecard-local      complete eight-cell local H100 scorecard"
+	@echo "  make scorecard-local      earlier custom-kernel/regime-dispatch scorecard"
 	@echo "  make scorecard-vllm LOCAL_SUITE=... VLLM_PYTHON=..."
 	@echo "  make reproduce-local      unit + preflight + correctness + local scorecard"
 	@echo "  make reproduce-vllm LOCAL_SUITE=...  preflight + matched vLLM replay"
 	@echo "  ARTIFACT_DIR defaults to $(ARTIFACT_DIR)"
+
+final-reference:
+	$(PYTHON) experiments/integration/benchmark_final_8.py \
+		--backend vllm --output-dir "$(FINAL_REFERENCE)" \
+		--prefill-budget 8192 --model Qwen/Qwen2.5-1.5B \
+		--warmups 1 --repetitions 3
+
+final-local:
+	$(PYTHON) experiments/integration/benchmark_final_8.py \
+		--backend local --reference-dir "$(FINAL_REFERENCE)" \
+		--output-dir "$(FINAL_OUTPUT)" \
+		--prefill-budget 8192 --model Qwen/Qwen2.5-1.5B \
+		--warmups 1 --repetitions 3
 
 unit:
 	$(PYTHON) -m unittest discover -s benchmarks/tests -p 'test_*.py'

@@ -62,7 +62,7 @@ class BaselineEngine:
         return decode_logits[0, -1]
 
     def sample(self, logits):
-        """Greedy by default. TODO (you): temperature / top-k / top-p."""
+        """Select the token with the highest logit."""
         return int(logits.argmax(dim=-1).item())
 
     # ------------------------------------------------------------------ #
