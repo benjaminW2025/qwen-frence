@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Single entry point for the quantization experiments.
 
-  python quant.py full-model --help
-  python quant.py attention --help
-  python quant.py capture --help
-  python quant.py baselines --help
-  python quant.py test
+  python experiments/quant/quant.py full-model --help
+  python experiments/quant/quant.py attention --help
+  python experiments/quant/quant.py capture --help
+  python experiments/quant/quant.py baselines --help
+  python experiments/quant/quant.py test
 """
 import argparse
 import importlib
 import sys
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 
 def main(argv=None):
@@ -28,7 +31,7 @@ def main(argv=None):
         if remaining:
             parser.error("test takes no arguments")
         suite = unittest.defaultTestLoader.discover(
-            str(Path(__file__).resolve().parent / "experiments/quant/tests"))
+            str(Path(__file__).resolve().parent / "tests"))
         return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
 

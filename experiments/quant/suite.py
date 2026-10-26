@@ -1,7 +1,7 @@
 """Run baseline quantization experiments and record actual hardware coverage.
 
-Hopper: python quant.py baselines --output-dir artifacts/quant-baselines
-CPU:    python quant.py baselines --reference-only --output-dir artifacts/quant-reference
+Hopper: python experiments/quant/quant.py baselines --output-dir artifacts/quant-baselines
+CPU:    python experiments/quant/quant.py baselines --reference-only --output-dir artifacts/quant-reference
 
 All GPU results remain hardware-specific. CPU reference math does not validate
 Triton or FA3 kernels. Missing stages are explicit and never counted as passes.

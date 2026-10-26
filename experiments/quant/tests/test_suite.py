@@ -31,7 +31,7 @@ class SuiteContracts(unittest.TestCase):
 
     def test_subcommand_help_is_forwarded(self):
         root = Path(__file__).resolve().parents[3]
-        spec = importlib.util.spec_from_file_location("quant_entry_contract", root / "quant.py")
+        spec = importlib.util.spec_from_file_location("quant_entry_contract", root / "experiments/quant/quant.py")
         entry = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(entry)
         main = mock.Mock(return_value=0)
