@@ -1,0 +1,4875 @@
+{
+  "status": "complete",
+  "model_source": "/workspace/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323",
+  "seed": 19,
+  "hardware": "NVIDIA H100 80GB HBM3",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "triton": "3.7.1",
+  "accumulation_settings": {
+    "allow_fp16_reduced_precision_reduction": false,
+    "allow_tf32": false,
+    "allow_fp16_accumulation": false
+  },
+  "kernel_gate": {
+    "passed": true,
+    "comparison": {
+      "finite": true,
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "relative_l2": 0.0
+    }
+  },
+  "native_fa3_gate": {
+    "passed": true,
+    "page_size": 16,
+    "query_heads": 12,
+    "kv_heads": 2,
+    "head_dim": 128,
+    "note": "constant-value kernel canary, not model quality certification"
+  },
+  "native_fa3": {
+    "enabled": true,
+    "scope": "pure decode",
+    "kv_scales": "fixed per-sequence/KV-head from FP16 prefix only",
+    "scale_headroom": 1.25,
+    "q_scales": "dynamic per sequence/GQA group",
+    "arithmetic": "external FA3 FP8 path; PyTorch matmul flags do not control its internal arithmetic",
+    "output": "FA3 BF16 output cast to FP16",
+    "workspace": "FP16 producer pool retained for new KV writes; no full-pool dequantization"
+  },
+  "sweep": {
+    "prefixes": [
+      256,
+      2048,
+      8192
+    ],
+    "samples": 3,
+    "prompt_tokens": 256,
+    "cases": [
+      {
+        "kind": "decode",
+        "prefix": 256,
+        "sample": 0,
+        "seed": 19
+      },
+      {
+        "kind": "decode",
+        "prefix": 256,
+        "sample": 1,
+        "seed": 20
+      },
+      {
+        "kind": "decode",
+        "prefix": 256,
+        "sample": 2,
+        "seed": 21
+      },
+      {
+        "kind": "decode",
+        "prefix": 2048,
+        "sample": 0,
+        "seed": 19
+      },
+      {
+        "kind": "decode",
+        "prefix": 2048,
+        "sample": 1,
+        "seed": 20
+      },
+      {
+        "kind": "decode",
+        "prefix": 2048,
+        "sample": 2,
+        "seed": 21
+      },
+      {
+        "kind": "decode",
+        "prefix": 8192,
+        "sample": 0,
+        "seed": 19
+      },
+      {
+        "kind": "decode",
+        "prefix": 8192,
+        "sample": 1,
+        "seed": 20
+      },
+      {
+        "kind": "decode",
+        "prefix": 8192,
+        "sample": 2,
+        "seed": 21
+      }
+    ],
+    "note": "decode context is cached prefix + 1; independent histories, not autoregressive rollouts"
+  },
+  "quantization": {
+    "format": "e4m3fn",
+    "weights": "per-output-channel",
+    "activations": "dynamic-per-token",
+    "accumulator": "fp32",
+    "max_num_imprecise_acc": 0,
+    "output": "fp16"
+  },
+  "thresholds": {
+    "atol": null,
+    "rtol": null,
+    "min_top1_agreement": null
+  },
+  "scope": "fixed-history full forwards; synthetic tokens; warm forward latency, not serving throughput",
+  "timing": {
+    "warmup": 3,
+    "repeats": 20,
+    "excludes": [
+      "model/weight setup",
+      "capture/JIT",
+      "cache reset",
+      "scheduler",
+      "sampling",
+      "accuracy diagnostics"
+    ],
+    "includes": [
+      "adapter dispatch",
+      "graph-input preparation",
+      "activation quantization",
+      "forward",
+      "KV staging when enabled"
+    ],
+    "order": "control first, seeded shuffled candidates, control again"
+  },
+  "kv_storage": {
+    "format": "e4m3fn",
+    "scale": "FP32 per token per KV head",
+    "attention": "FP16 FA3 with full-pool dequantization staging",
+    "native_fp8_attention": false,
+    "limitation": "extra FP16 workspace retained; timings include staging and do not establish native FP8 cache bandwidth gains"
+  },
+  "source_sha256": {
+    "experiments/quant/full_model.py": "6d358fe3cc70308a13959320502a950c2ac0b85f294865bb3785dc3d7cfd42b5",
+    "experiments/quant/projections.py": "81dc9555e5fd23cdbfb41fdae6c0d35413ab107d26a1e601fc2feef4b0f3cced",
+    "experiments/quant/kernels/projections.py": "85f9f1941fcac70253038418149cf673ec04a2f9fafb71de8783627f49720b96",
+    "experiments/quant/staged_cache.py": "cd4704eeb39177ddcf8cf75ac807eb28805677fa2df1bad152d89526a329af4d",
+    "experiments/quant/kernels/staged_cache.py": "7990b29e61f013c409cf2596d3c198363b16ec73fad08b6627b9e3790bcac57f",
+    "experiments/quant/native_fa3.py": "4fc2f52879035fd825c484f7999ec93c57f243637f0612bfdcb5dc8143462aad"
+  },
+  "accumulation_note": "FP32 accumulators and accuracy-oriented FP8 promotion requested; hardware instructions not profiled",
+  "cases": [
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.69140625,
+          0.484375,
+          0.125,
+          0.18359375,
+          0.046875,
+          0.3515625,
+          0.453125,
+          1.2421875
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          89,
+          220
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          89,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.211295962333679,
+          "min_ms": 2.20633602142334,
+          "max_ms": 2.2248640060424805,
+          "samples_ms": [
+            2.223520040512085,
+            2.2218239307403564,
+            2.2248640060424805,
+            2.213536024093628,
+            2.2105278968811035,
+            2.208224058151245,
+            2.2101120948791504,
+            2.208672046661377,
+            2.214463949203491,
+            2.2113280296325684,
+            2.214047908782959,
+            2.21126389503479,
+            2.2119359970092773,
+            2.2098240852355957,
+            2.211519956588745,
+            2.210848093032837,
+            2.212415933609009,
+            2.2105278968811035,
+            2.2084479331970215,
+            2.20633602142334
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.2294835071079433,
+          "min_ms": 2.2254529176279902,
+          "max_ms": 2.267276984639466,
+          "samples_ms": [
+            2.267276984639466,
+            2.2422289475798607,
+            2.2420480381697416,
+            2.231392078101635,
+            2.2308509796857834,
+            2.227645949460566,
+            2.225662930868566,
+            2.2271049674600363,
+            2.2340250434353948,
+            2.2379320580512285,
+            2.2305200109258294,
+            2.2264650324359536,
+            2.2281070705503225,
+            2.2254529176279902,
+            2.228447003290057,
+            2.23333400208503,
+            2.2310009226202965,
+            2.2263539722189307,
+            2.225502044893801,
+            2.2270659683272243
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 3.1226806640625,
+        "mean_abs": 0.2799091935157776,
+        "relative_l2": 0.20169328153133392,
+        "top1_agreement": 0.875,
+        "reference_top2_margins": [
+          0.69140625,
+          0.484375,
+          0.125,
+          0.18359375,
+          0.046875,
+          0.3515625,
+          0.453125,
+          1.2421875
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          89,
+          220
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          220,
+          220
+        ],
+        "divergent_rows": [
+          6
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 12.75,
+        "mean_abs": 0.2682622969150543,
+        "relative_l2": 0.059907447546720505
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 12.75,
+          "mean_abs": 0.24192515015602112,
+          "relative_l2": 0.03578389808535576
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 10.92578125,
+          "mean_abs": 0.2945994436740875,
+          "relative_l2": 0.48532789945602417
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 31198720,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.212112069129944,
+          "min_ms": 3.2066879272460938,
+          "max_ms": 3.2286078929901123,
+          "samples_ms": [
+            3.2286078929901123,
+            3.222752094268799,
+            3.2199039459228516,
+            3.213184118270874,
+            3.2104640007019043,
+            3.207200050354004,
+            3.2103359699249268,
+            3.211519956588745,
+            3.2066879272460938,
+            3.20796799659729,
+            3.216063976287842,
+            3.2126400470733643,
+            3.211519956588745,
+            3.2078399658203125,
+            3.2117440700531006,
+            3.2151360511779785,
+            3.207520008087158,
+            3.214463949203491,
+            3.212480068206787,
+            3.213599920272827
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.231351962313056,
+          "min_ms": 3.2247519120573997,
+          "max_ms": 3.2761000329628587,
+          "samples_ms": [
+            3.2761000329628587,
+            3.2436209730803967,
+            3.2395439920946956,
+            3.2308909576386213,
+            3.2284270273521543,
+            3.2247519120573997,
+            3.228626912459731,
+            3.2278470462188125,
+            3.226834931410849,
+            3.226625034585595,
+            3.2343060011044145,
+            3.2303599873557687,
+            3.2318129669874907,
+            3.225312102586031,
+            3.23214300442487,
+            3.2363589853048325,
+            3.227235982194543,
+            3.2328139059245586,
+            3.232432994991541,
+            3.232572926208377
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.6884242874292512,
+        "synchronized_wall": 0.6899537819185879
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.69140625,
+          0.484375,
+          0.125,
+          0.18359375,
+          0.046875,
+          0.3515625,
+          0.453125,
+          1.2421875
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          89,
+          220
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          198,
+          12,
+          198,
+          52,
+          89,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.2174720764160156,
+          "min_ms": 2.2095038890838623,
+          "max_ms": 2.2402238845825195,
+          "samples_ms": [
+            2.229055881500244,
+            2.2195520401000977,
+            2.2193920612335205,
+            2.2180800437927246,
+            2.219520092010498,
+            2.2168641090393066,
+            2.218463897705078,
+            2.2139840126037598,
+            2.2109439373016357,
+            2.2146239280700684,
+            2.21942400932312,
+            2.2194559574127197,
+            2.223583936691284,
+            2.2117440700531006,
+            2.2402238845825195,
+            2.214560031890869,
+            2.211168050765991,
+            2.214751958847046,
+            2.2151999473571777,
+            2.2095038890838623
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.235157531686127,
+          "min_ms": 2.2250619949772954,
+          "max_ms": 2.270482014864683,
+          "samples_ms": [
+            2.270482014864683,
+            2.238502027466893,
+            2.2394440602511168,
+            2.2353180684149265,
+            2.234996994957328,
+            2.2356489207595587,
+            2.2367399651557207,
+            2.2309509804472327,
+            2.225973061285913,
+            2.231743070296943,
+            2.236829954199493,
+            2.2389129735529423,
+            2.240255940705538,
+            2.228847937658429,
+            2.2552679292857647,
+            2.230691025033593,
+            2.2273659706115723,
+            2.2299899719655514,
+            2.230590907856822,
+            2.2250619949772954
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.9972147951047399,
+        "synchronized_wall": 0.9974614654682064
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.27734375,
+          0.21875,
+          0.421875,
+          0.2578125,
+          0.9609375,
+          0.5390625,
+          0.109375,
+          0.6484375
+        ],
+        "reference_tokens": [
+          198,
+          220,
+          198,
+          62,
+          500,
+          68,
+          220,
+          220
+        ],
+        "candidate_tokens": [
+          198,
+          220,
+          198,
+          62,
+          500,
+          68,
+          220,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.2217119932174683,
+          "min_ms": 2.2123520374298096,
+          "max_ms": 2.2308480739593506,
+          "samples_ms": [
+            2.2308480739593506,
+            2.2232959270477295,
+            2.224735975265503,
+            2.2220799922943115,
+            2.2232320308685303,
+            2.2253758907318115,
+            2.2201600074768066,
+            2.2265279293060303,
+            2.2174079418182373,
+            2.2236480712890625,
+            2.2123520374298096,
+            2.226624011993408,
+            2.218463897705078,
+            2.2193920612335205,
+            2.2246079444885254,
+            2.2143681049346924,
+            2.221343994140625,
+            2.2177600860595703,
+            2.2192320823669434,
+            2.2158401012420654
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.2393639665097,
+          "min_ms": 2.229269011877477,
+          "max_ms": 2.268378040753305,
+          "samples_ms": [
+            2.268378040753305,
+            2.2420180030167103,
+            2.2417979780584574,
+            2.238892950117588,
+            2.240165020339191,
+            2.2439409513026476,
+            2.2388630313798785,
+            2.245103009045124,
+            2.232493949122727,
+            2.2410060046240687,
+            2.229269011877477,
+            2.245382987894118,
+            2.2355690598487854,
+            2.240716014057398,
+            2.2398349829018116,
+            2.230241079814732,
+            2.2373610408976674,
+            2.2324330639094114,
+            2.236589090898633,
+            2.2309409687295556
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 3.646484375,
+        "mean_abs": 0.375937819480896,
+        "relative_l2": 0.28645384311676025,
+        "top1_agreement": 0.625,
+        "reference_top2_margins": [
+          0.27734375,
+          0.21875,
+          0.421875,
+          0.2578125,
+          0.9609375,
+          0.5390625,
+          0.109375,
+          0.6484375
+        ],
+        "reference_tokens": [
+          198,
+          220,
+          198,
+          62,
+          500,
+          68,
+          220,
+          220
+        ],
+        "candidate_tokens": [
+          198,
+          220,
+          220,
+          287,
+          500,
+          68,
+          34,
+          220
+        ],
+        "divergent_rows": [
+          2,
+          3,
+          6
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 11.5,
+        "mean_abs": 0.27970486879348755,
+        "relative_l2": 0.056532103568315506
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 11.5,
+          "mean_abs": 0.25906968116760254,
+          "relative_l2": 0.03709009662270546
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 7.14892578125,
+          "mean_abs": 0.30034002661705017,
+          "relative_l2": 0.46645766496658325
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.00048828125,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 31198720,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.2087680101394653,
+          "min_ms": 3.2044479846954346,
+          "max_ms": 3.2370879650115967,
+          "samples_ms": [
+            3.231775999069214,
+            3.2092480659484863,
+            3.2074880599975586,
+            3.2053120136260986,
+            3.23305606842041,
+            3.211872100830078,
+            3.2068800926208496,
+            3.2044479846954346,
+            3.2078399658203125,
+            3.205087900161743,
+            3.206559896469116,
+            3.2074239253997803,
+            3.2061119079589844,
+            3.2370879650115967,
+            3.213184118270874,
+            3.2082879543304443,
+            3.2113919258117676,
+            3.214560031890869,
+            3.2110719680786133,
+            3.2128639221191406
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.2294990378431976,
+          "min_ms": 3.221536986529827,
+          "max_ms": 7.780696963891387,
+          "samples_ms": [
+            3.287666942924261,
+            3.2285370398312807,
+            3.2261740416288376,
+            7.780696963891387,
+            3.25951399281621,
+            3.2317020231857896,
+            3.2245509792119265,
+            3.221536986529827,
+            3.2249720534309745,
+            3.2221080036833882,
+            3.2241609878838062,
+            3.225632943212986,
+            3.2279459992423654,
+            3.267226042225957,
+            3.2336750300601125,
+            3.2304610358551145,
+            3.23384499642998,
+            3.2335950527340174,
+            3.228386980481446,
+            3.2308020163327456
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.6923878529694343,
+        "synchronized_wall": 0.6934090830400885
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.27734375,
+          0.21875,
+          0.421875,
+          0.2578125,
+          0.9609375,
+          0.5390625,
+          0.109375,
+          0.6484375
+        ],
+        "reference_tokens": [
+          198,
+          220,
+          198,
+          62,
+          500,
+          68,
+          220,
+          220
+        ],
+        "candidate_tokens": [
+          198,
+          220,
+          198,
+          62,
+          500,
+          68,
+          220,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.219248056411743,
+          "min_ms": 2.212831974029541,
+          "max_ms": 2.2537920475006104,
+          "samples_ms": [
+            2.236191987991333,
+            2.222656011581421,
+            2.2210559844970703,
+            2.224224090576172,
+            2.2207679748535156,
+            2.2183361053466797,
+            2.218143939971924,
+            2.2257280349731445,
+            2.216831922531128,
+            2.215775966644287,
+            2.2212159633636475,
+            2.2201600074768066,
+            2.2161600589752197,
+            2.217535972595215,
+            2.2144320011138916,
+            2.2537920475006104,
+            2.218208074569702,
+            2.2254719734191895,
+            2.215712070465088,
+            2.212831974029541
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.2367550409398973,
+          "min_ms": 2.229409059509635,
+          "max_ms": 6.007191026583314,
+          "samples_ms": [
+            2.2743568988516927,
+            2.2434600396081805,
+            2.239032997749746,
+            2.2403550101444125,
+            2.2384830517694354,
+            2.235027030110359,
+            6.007191026583314,
+            2.2468450479209423,
+            2.2346869809553027,
+            2.2315020905807614,
+            2.2387229837477207,
+            2.2347770864143968,
+            2.2308509796857834,
+            2.2338649723678827,
+            2.2305509774014354,
+            2.2694399813190103,
+            2.2335549583658576,
+            2.2425390779972076,
+            2.2319519193843007,
+            2.229409059509635
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0011102575030342,
+        "synchronized_wall": 1.0011663885951079
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0078125,
+          0.4609375,
+          0.98828125,
+          0.38671875,
+          0.66796875,
+          0.18359375,
+          0.40625,
+          0.0234375
+        ],
+        "reference_tokens": [
+          287,
+          198,
+          20929,
+          220,
+          220,
+          33071,
+          3295,
+          1
+        ],
+        "candidate_tokens": [
+          287,
+          198,
+          20929,
+          220,
+          220,
+          33071,
+          3295,
+          1
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.221200108528137,
+          "min_ms": 2.2154879570007324,
+          "max_ms": 2.2369918823242188,
+          "samples_ms": [
+            2.230560064315796,
+            2.222304105758667,
+            2.225856065750122,
+            2.215712070465088,
+            2.2184319496154785,
+            2.218559980392456,
+            2.223423957824707,
+            2.218816041946411,
+            2.215519905090332,
+            2.2154879570007324,
+            2.2369918823242188,
+            2.2267520427703857,
+            2.217535972595215,
+            2.22707200050354,
+            2.223680019378662,
+            2.2235519886016846,
+            2.217888116836548,
+            2.2200961112976074,
+            2.224735975265503,
+            2.219775915145874
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.2387285134755075,
+          "min_ms": 2.231182064861059,
+          "max_ms": 2.2692090133205056,
+          "samples_ms": [
+            2.2692090133205056,
+            2.241277019493282,
+            2.2433099802583456,
+            2.2331239888444543,
+            2.234937041066587,
+            2.236770000308752,
+            2.239494933746755,
+            2.235337975434959,
+            2.231452031992376,
+            2.231182064861059,
+            2.258674008771777,
+            2.24250799510628,
+            2.2330040810629725,
+            2.2439409513026476,
+            2.2404961055144668,
+            2.2413469851017,
+            2.2328540217131376,
+            2.237581997178495,
+            2.240917063318193,
+            2.23796209320426
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 4.595703125,
+        "mean_abs": 0.3188933730125427,
+        "relative_l2": 0.21371881663799286,
+        "top1_agreement": 0.75,
+        "reference_top2_margins": [
+          0.0078125,
+          0.4609375,
+          0.98828125,
+          0.38671875,
+          0.66796875,
+          0.18359375,
+          0.40625,
+          0.0234375
+        ],
+        "reference_tokens": [
+          287,
+          198,
+          20929,
+          220,
+          220,
+          33071,
+          3295,
+          1
+        ],
+        "candidate_tokens": [
+          287,
+          198,
+          62,
+          220,
+          220,
+          9370,
+          3295,
+          1
+        ],
+        "divergent_rows": [
+          2,
+          5
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 11.5,
+        "mean_abs": 0.2358798235654831,
+        "relative_l2": 0.048770222812891006
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 11.5,
+          "mean_abs": 0.21781215071678162,
+          "relative_l2": 0.03260456398129463
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 7.84765625,
+          "mean_abs": 0.2539474666118622,
+          "relative_l2": 0.36751309037208557
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 31198720,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.2072800397872925,
+          "min_ms": 3.1995840072631836,
+          "max_ms": 3.223360061645508,
+          "samples_ms": [
+            3.223360061645508,
+            3.2087039947509766,
+            3.207711935043335,
+            3.2037758827209473,
+            3.21126389503479,
+            3.204927921295166,
+            3.21942400932312,
+            3.2113919258117676,
+            3.2068800926208496,
+            3.2084479331970215,
+            3.2053439617156982,
+            3.203648090362549,
+            3.204576015472412,
+            3.2022080421447754,
+            3.2057600021362305,
+            3.2076799869537354,
+            3.2067840099334717,
+            3.1995840072631836,
+            3.21014404296875,
+            3.2079360485076904
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.2262239838019013,
+          "min_ms": 3.2168299658223987,
+          "max_ms": 3.281538956798613,
+          "samples_ms": [
+            3.281538956798613,
+            3.2299000304192305,
+            3.226344007998705,
+            3.2239799620583653,
+            3.2317829318344593,
+            3.2279370352625847,
+            3.2439810456708074,
+            3.2298300648108125,
+            3.225071937777102,
+            3.226563916541636,
+            3.2242609886452556,
+            3.2216570107266307,
+            3.221586928702891,
+            3.220896003767848,
+            3.2228389754891396,
+            3.2283070031553507,
+            3.2238001003861427,
+            3.2168299658223987,
+            3.228096989914775,
+            3.2261039596050978
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.6925494752480197,
+        "synchronized_wall": 0.6939160221719346
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 256,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257,
+        257
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0078125,
+          0.4609375,
+          0.98828125,
+          0.38671875,
+          0.66796875,
+          0.18359375,
+          0.40625,
+          0.0234375
+        ],
+        "reference_tokens": [
+          287,
+          198,
+          20929,
+          220,
+          220,
+          33071,
+          3295,
+          1
+        ],
+        "candidate_tokens": [
+          287,
+          198,
+          20929,
+          220,
+          220,
+          33071,
+          3295,
+          1
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.2141600847244263,
+          "min_ms": 2.206752061843872,
+          "max_ms": 2.230015993118286,
+          "samples_ms": [
+            2.230015993118286,
+            2.2224960327148438,
+            2.21395206451416,
+            2.2147200107574463,
+            2.219167947769165,
+            2.2128639221191406,
+            2.2232959270477295,
+            2.2134079933166504,
+            2.218751907348633,
+            2.211872100830078,
+            2.212383985519409,
+            2.209439992904663,
+            2.2114880084991455,
+            2.2168641090393066,
+            2.2095038890838623,
+            2.2131519317626953,
+            2.2159039974212646,
+            2.2287681102752686,
+            2.206752061843872,
+            2.2143681049346924
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.231356978882104,
+          "min_ms": 2.2224989952519536,
+          "max_ms": 2.2725240560248494,
+          "samples_ms": [
+            2.2725240560248494,
+            2.2411069367080927,
+            2.230350044555962,
+            2.2317529655992985,
+            2.234535990282893,
+            2.2284769220277667,
+            2.239394001662731,
+            2.23096099216491,
+            2.238182001747191,
+            2.228416968137026,
+            2.2285180166363716,
+            2.2279969416558743,
+            2.22878810018301,
+            2.2333350498229265,
+            2.226414973847568,
+            2.2303599398583174,
+            2.2361590526998043,
+            2.2457039449363947,
+            2.2224989952519536,
+            2.231911988928914
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.003179545983274,
+        "synchronized_wall": 1.003303610611466
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.88671875,
+          0.578125,
+          0.24609375,
+          1.875,
+          1.44140625,
+          1.8515625,
+          0.13671875,
+          0.4140625
+        ],
+        "reference_tokens": [
+          220,
+          62,
+          29,
+          1413,
+          82,
+          854,
+          220,
+          15060
+        ],
+        "candidate_tokens": [
+          220,
+          62,
+          29,
+          1413,
+          82,
+          854,
+          220,
+          15060
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.446176052093506,
+          "min_ms": 2.434943914413452,
+          "max_ms": 2.476383924484253,
+          "samples_ms": [
+            2.476383924484253,
+            2.461951971054077,
+            2.4692800045013428,
+            2.4570560455322266,
+            2.4569919109344482,
+            2.4544639587402344,
+            2.4556479454040527,
+            2.454400062561035,
+            2.4518721103668213,
+            2.452320098876953,
+            2.436511993408203,
+            2.437119960784912,
+            2.438591957092285,
+            2.4387519359588623,
+            2.4356160163879395,
+            2.4381120204925537,
+            2.434943914413452,
+            2.4404799938201904,
+            2.4392640590667725,
+            2.4356799125671387
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.464201010297984,
+          "min_ms": 2.451988053508103,
+          "max_ms": 2.5169060099869967,
+          "samples_ms": [
+            2.5169060099869967,
+            2.481030998751521,
+            2.4863689905032516,
+            2.475322922691703,
+            2.47479195240885,
+            2.471536980010569,
+            2.473960048519075,
+            2.4717770284041762,
+            2.4707060074433684,
+            2.469704020768404,
+            2.4545310297980905,
+            2.4542800383642316,
+            2.4568650405853987,
+            2.4558829609304667,
+            2.451988053508103,
+            2.4533489486202598,
+            2.4531190283596516,
+            2.4586979998275638,
+            2.4560540914535522,
+            2.453929977491498
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 10.79296875,
+        "mean_abs": 0.6230934262275696,
+        "relative_l2": 0.43629738688468933,
+        "top1_agreement": 0.625,
+        "reference_top2_margins": [
+          0.88671875,
+          0.578125,
+          0.24609375,
+          1.875,
+          1.44140625,
+          1.8515625,
+          0.13671875,
+          0.4140625
+        ],
+        "reference_tokens": [
+          220,
+          62,
+          29,
+          1413,
+          82,
+          854,
+          220,
+          15060
+        ],
+        "candidate_tokens": [
+          220,
+          62,
+          62,
+          1413,
+          82,
+          29,
+          220,
+          28319
+        ],
+        "divergent_rows": [
+          2,
+          5,
+          7
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 13.5390625,
+        "mean_abs": 0.4289610981941223,
+        "relative_l2": 0.08601997047662735
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 12.5,
+          "mean_abs": 0.3720858693122864,
+          "relative_l2": 0.047722674906253815
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 13.5390625,
+          "mean_abs": 0.48583632707595825,
+          "relative_l2": 0.6743337512016296
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 236719616,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.3687520027160645,
+          "min_ms": 3.363039970397949,
+          "max_ms": 3.391616106033325,
+          "samples_ms": [
+            3.391616106033325,
+            3.3720641136169434,
+            3.3705599308013916,
+            3.375135898590088,
+            3.367743968963623,
+            3.3684799671173096,
+            3.3790719509124756,
+            3.3632640838623047,
+            3.3654398918151855,
+            3.3690879344940186,
+            3.3638720512390137,
+            3.3681600093841553,
+            3.3688321113586426,
+            3.3686718940734863,
+            3.3644158840179443,
+            3.3732481002807617,
+            3.376703977584839,
+            3.363136053085327,
+            3.369823932647705,
+            3.363039970397949
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.3874239888973534,
+          "min_ms": 3.381410031579435,
+          "max_ms": 3.4419719595462084,
+          "samples_ms": [
+            3.4419719595462084,
+            3.3922470174729824,
+            3.3915359526872635,
+            3.39654297567904,
+            3.3854059875011444,
+            3.3869179897010326,
+            3.397193970158696,
+            3.381410031579435,
+            3.3855570945888758,
+            3.3892219653353095,
+            3.383263014256954,
+            3.3875390654429793,
+            3.387017990462482,
+            3.3873089123517275,
+            3.38347302749753,
+            3.3934179227799177,
+            3.3941389992833138,
+            3.3816309878602624,
+            3.3885810989886522,
+            3.3821009565144777
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7261371719026127,
+        "synchronized_wall": 0.7274557357964837
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.88671875,
+          0.578125,
+          0.24609375,
+          1.875,
+          1.44140625,
+          1.8515625,
+          0.13671875,
+          0.4140625
+        ],
+        "reference_tokens": [
+          220,
+          62,
+          29,
+          1413,
+          82,
+          854,
+          220,
+          15060
+        ],
+        "candidate_tokens": [
+          220,
+          62,
+          29,
+          1413,
+          82,
+          854,
+          220,
+          15060
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.4357919692993164,
+          "min_ms": 2.423424005508423,
+          "max_ms": 2.4954240322113037,
+          "samples_ms": [
+            2.4435839653015137,
+            2.4408960342407227,
+            2.4375360012054443,
+            2.4362239837646484,
+            2.4954240322113037,
+            2.435839891433716,
+            2.434079885482788,
+            2.4345600605010986,
+            2.4299840927124023,
+            2.435744047164917,
+            2.431488037109375,
+            2.436800003051758,
+            2.4391040802001953,
+            2.43558406829834,
+            2.4392640590667725,
+            2.4352641105651855,
+            2.4348480701446533,
+            2.438591957092285,
+            2.427072048187256,
+            2.423424005508423
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.453814959153533,
+          "min_ms": 2.441261080093682,
+          "max_ms": 2.5158649077638984,
+          "samples_ms": [
+            2.4830950424075127,
+            2.4619920877739787,
+            2.4555929703637958,
+            2.459718962199986,
+            2.5158649077638984,
+            2.4538899306207895,
+            2.4503249442204833,
+            2.4535999400541186,
+            2.4460580898448825,
+            2.4517769925296307,
+            2.4501840816810727,
+            2.4537399876862764,
+            2.456633956171572,
+            2.4521478917449713,
+            2.458336064592004,
+            2.454480971209705,
+            2.452087006531656,
+            2.456814981997013,
+            2.4456969695165753,
+            2.441261080093682
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.004263123832031,
+        "synchronized_wall": 1.0042326138349216
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0078125,
+          0.7421875,
+          0.140625,
+          0.8203125,
+          1.10546875,
+          1.296875,
+          0.17578125,
+          0.03125
+        ],
+        "reference_tokens": [
+          62,
+          220,
+          368,
+          220,
+          220,
+          220,
+          34,
+          12802
+        ],
+        "candidate_tokens": [
+          62,
+          220,
+          368,
+          220,
+          220,
+          220,
+          34,
+          12802
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.4535040855407715,
+          "min_ms": 2.4468801021575928,
+          "max_ms": 2.4735360145568848,
+          "samples_ms": [
+            2.4735360145568848,
+            2.458591938018799,
+            2.4596478939056396,
+            2.4556798934936523,
+            2.449023962020874,
+            2.4468801021575928,
+            2.457632064819336,
+            2.4554240703582764,
+            2.4488959312438965,
+            2.4520959854125977,
+            2.4547200202941895,
+            2.4502720832824707,
+            2.4572160243988037,
+            2.4556798934936523,
+            2.454400062561035,
+            2.449536085128784,
+            2.452608108520508,
+            2.449023962020874,
+            2.4478399753570557,
+            2.4487040042877197
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.4727489799261093,
+          "min_ms": 2.4652270367369056,
+          "max_ms": 3.0394200002774596,
+          "samples_ms": [
+            2.515724045224488,
+            2.4773660115897655,
+            2.4764540139585733,
+            2.472738968208432,
+            2.4661890929564834,
+            2.4652270367369056,
+            2.476203953847289,
+            2.473730011843145,
+            2.466449048370123,
+            2.469363040290773,
+            2.4727589916437864,
+            2.4665789678692818,
+            2.4786980357021093,
+            2.473489032126963,
+            2.4709359277039766,
+            2.4662790820002556,
+            2.473360043950379,
+            2.4652869906276464,
+            2.4667601101100445,
+            3.0394200002774596
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 8.51953125,
+        "mean_abs": 0.44532620906829834,
+        "relative_l2": 0.3061096966266632,
+        "top1_agreement": 0.5,
+        "reference_top2_margins": [
+          0.0078125,
+          0.7421875,
+          0.140625,
+          0.8203125,
+          1.10546875,
+          1.296875,
+          0.17578125,
+          0.03125
+        ],
+        "reference_tokens": [
+          62,
+          220,
+          368,
+          220,
+          220,
+          220,
+          34,
+          12802
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          220,
+          220,
+          220,
+          220,
+          220,
+          220
+        ],
+        "divergent_rows": [
+          0,
+          2,
+          6,
+          7
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 19.75,
+        "mean_abs": 0.4202116131782532,
+        "relative_l2": 0.08152337372303009
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 13.125,
+          "mean_abs": 0.36924535036087036,
+          "relative_l2": 0.047624655067920685
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 19.75,
+          "mean_abs": 0.4711778461933136,
+          "relative_l2": 0.7164697051048279
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 236719616,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.3688480854034424,
+          "min_ms": 3.361952066421509,
+          "max_ms": 3.3866240978240967,
+          "samples_ms": [
+            3.3866240978240967,
+            3.368704080581665,
+            3.3696000576019287,
+            3.364703893661499,
+            3.376768112182617,
+            3.3732481002807617,
+            3.372544050216675,
+            3.364032030105591,
+            3.365216016769409,
+            3.3709120750427246,
+            3.3666880130767822,
+            3.366015911102295,
+            3.363231897354126,
+            3.361952066421509,
+            3.371232032775879,
+            3.3635520935058594,
+            3.362175941467285,
+            3.374079942703247,
+            3.373663902282715,
+            3.3689920902252197
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.3889859914779663,
+          "min_ms": 3.3810799941420555,
+          "max_ms": 3.436163067817688,
+          "samples_ms": [
+            3.436163067817688,
+            3.388571087270975,
+            3.389631980098784,
+            3.386166994459927,
+            3.3964529866352677,
+            3.391796024516225,
+            3.3901530550792813,
+            3.3838340314105153,
+            3.3892709761857986,
+            3.3910940401256084,
+            3.3862669952213764,
+            3.3853360218927264,
+            3.3810799941420555,
+            3.381671034730971,
+            3.393027000129223,
+            3.381601069122553,
+            3.386257914826274,
+            3.395350999198854,
+            3.392787999473512,
+            3.388701006770134
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7282916959572393,
+        "synchronized_wall": 0.7296427268050529
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0078125,
+          0.7421875,
+          0.140625,
+          0.8203125,
+          1.10546875,
+          1.296875,
+          0.17578125,
+          0.03125
+        ],
+        "reference_tokens": [
+          62,
+          220,
+          368,
+          220,
+          220,
+          220,
+          34,
+          12802
+        ],
+        "candidate_tokens": [
+          62,
+          220,
+          368,
+          220,
+          220,
+          220,
+          34,
+          12802
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.438080072402954,
+          "min_ms": 2.432096004486084,
+          "max_ms": 2.455967903137207,
+          "samples_ms": [
+            2.455967903137207,
+            2.4391040802001953,
+            2.4417600631713867,
+            2.434015989303589,
+            2.439232110977173,
+            2.437920093536377,
+            2.440608024597168,
+            2.444704055786133,
+            2.4370880126953125,
+            2.4382400512695312,
+            2.4351680278778076,
+            2.442591905593872,
+            2.436000108718872,
+            2.4384000301361084,
+            2.432096004486084,
+            2.438271999359131,
+            2.4375360012054443,
+            2.4344000816345215,
+            2.434720039367676,
+            2.4371840953826904
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.4546714848838747,
+          "min_ms": 2.45024508330971,
+          "max_ms": 2.519620000384748,
+          "samples_ms": [
+            2.519620000384748,
+            2.4603400379419327,
+            2.4587580701336265,
+            2.452217973768711,
+            2.456613932736218,
+            2.454640925861895,
+            2.460290095768869,
+            2.4699450004845858,
+            2.4544199695810676,
+            2.4543809704482555,
+            2.4531889939680696,
+            2.460430026985705,
+            2.4520179722458124,
+            2.455982961691916,
+            2.45024508330971,
+            2.4554718984290957,
+            2.4547020439058542,
+            2.4508259957656264,
+            2.452598069794476,
+            2.4535590782761574
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.006326294740031,
+        "synchronized_wall": 1.0073645272508187
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          1.3671875,
+          0.49609375,
+          0.37890625,
+          0.91796875,
+          0.8046875,
+          0.20703125,
+          0.51953125,
+          0.12890625
+        ],
+        "reference_tokens": [
+          220,
+          220,
+          62,
+          220,
+          220,
+          220,
+          198,
+          220
+        ],
+        "candidate_tokens": [
+          220,
+          220,
+          62,
+          220,
+          220,
+          220,
+          198,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.4673120975494385,
+          "min_ms": 2.4387199878692627,
+          "max_ms": 2.4901440143585205,
+          "samples_ms": [
+            2.4901440143585205,
+            2.477344036102295,
+            2.4753599166870117,
+            2.4711360931396484,
+            2.4791359901428223,
+            2.476896047592163,
+            2.473504066467285,
+            2.475519895553589,
+            2.4733760356903076,
+            2.471872091293335,
+            2.4599359035491943,
+            2.4450559616088867,
+            2.4484479427337646,
+            2.447999954223633,
+            2.440448045730591,
+            2.4397759437561035,
+            2.443711996078491,
+            2.4387199878692627,
+            2.445631980895996,
+            2.4634881019592285
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.4838499375618994,
+          "min_ms": 2.457063994370401,
+          "max_ms": 2.5362850865349174,
+          "samples_ms": [
+            2.5362850865349174,
+            2.4974760599434376,
+            2.494752057828009,
+            2.488221973180771,
+            2.496144035831094,
+            2.4953829124569893,
+            2.4899339769035578,
+            2.4916569236665964,
+            2.490134909749031,
+            2.4883729638531804,
+            2.4767450522631407,
+            2.4609409738332033,
+            2.4666100507602096,
+            2.465658006258309,
+            2.457063994370401,
+            2.4584770435467362,
+            2.4632939603179693,
+            2.4573049740865827,
+            2.4628338869661093,
+            2.479477901943028
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 6.015625,
+        "mean_abs": 0.5459355711936951,
+        "relative_l2": 0.32582688331604004,
+        "top1_agreement": 0.75,
+        "reference_top2_margins": [
+          1.3671875,
+          0.49609375,
+          0.37890625,
+          0.91796875,
+          0.8046875,
+          0.20703125,
+          0.51953125,
+          0.12890625
+        ],
+        "reference_tokens": [
+          220,
+          220,
+          62,
+          220,
+          220,
+          220,
+          198,
+          220
+        ],
+        "candidate_tokens": [
+          220,
+          29,
+          62,
+          220,
+          62,
+          220,
+          198,
+          220
+        ],
+        "divergent_rows": [
+          1,
+          4
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 13.375,
+        "mean_abs": 0.46145230531692505,
+        "relative_l2": 0.08278106898069382
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 13.375,
+          "mean_abs": 0.4055197536945343,
+          "relative_l2": 0.048976823687553406
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 11.08203125,
+          "mean_abs": 0.5173848867416382,
+          "relative_l2": 0.7615168690681458
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 236719616,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.3562400341033936,
+          "min_ms": 3.349855899810791,
+          "max_ms": 3.3808000087738037,
+          "samples_ms": [
+            3.3808000087738037,
+            3.356192111968994,
+            3.3621439933776855,
+            3.377311944961548,
+            3.3650240898132324,
+            3.3694400787353516,
+            3.359935998916626,
+            3.3621439933776855,
+            3.3671998977661133,
+            3.35427188873291,
+            3.3514559268951416,
+            3.3573760986328125,
+            3.355135917663574,
+            3.349855899810791,
+            3.356287956237793,
+            3.352384090423584,
+            3.352544069290161,
+            3.3532800674438477,
+            3.3505280017852783,
+            3.3531200885772705
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.3749149879440665,
+          "min_ms": 3.3692220458760858,
+          "max_ms": 3.4300440456718206,
+          "samples_ms": [
+            3.4300440456718206,
+            3.3774939365684986,
+            3.3854159992188215,
+            3.4032040275633335,
+            3.3847150625661016,
+            3.389021032489836,
+            3.3791769528761506,
+            3.3815399510785937,
+            3.3850150648504496,
+            3.372446051798761,
+            3.37336806114763,
+            3.3750899601727724,
+            3.3733079908415675,
+            3.371665021404624,
+            3.3747400157153606,
+            3.3692220458760858,
+            3.3719459315761924,
+            3.3731169532984495,
+            3.369811922311783,
+            3.3725369721651077
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7351417277902089,
+        "synchronized_wall": 0.7359740753277502
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 2048,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049,
+        2049
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          1.3671875,
+          0.49609375,
+          0.37890625,
+          0.91796875,
+          0.8046875,
+          0.20703125,
+          0.51953125,
+          0.12890625
+        ],
+        "reference_tokens": [
+          220,
+          220,
+          62,
+          220,
+          220,
+          220,
+          198,
+          220
+        ],
+        "candidate_tokens": [
+          220,
+          220,
+          62,
+          220,
+          220,
+          220,
+          198,
+          220
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.4315199851989746,
+          "min_ms": 2.426176071166992,
+          "max_ms": 2.445823907852173,
+          "samples_ms": [
+            2.445823907852173,
+            2.434623956680298,
+            2.4326400756835938,
+            2.4305920600891113,
+            2.4303359985351562,
+            2.4363200664520264,
+            2.426176071166992,
+            2.4310719966888428,
+            2.4266560077667236,
+            2.431391954421997,
+            2.4328320026397705,
+            2.431648015975952,
+            2.4284160137176514,
+            2.4339520931243896,
+            2.435551881790161,
+            2.43123197555542,
+            2.42956805229187,
+            2.430624008178711,
+            2.435904026031494,
+            2.4381120204925537
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.4486270267516375,
+          "min_ms": 2.4426630698144436,
+          "max_ms": 2.4879620177671313,
+          "samples_ms": [
+            2.4879620177671313,
+            2.4550820235162973,
+            2.450385014526546,
+            2.448210958391428,
+            2.447620965540409,
+            2.453219029121101,
+            2.4433640064671636,
+            2.44837102945894,
+            2.4426630698144436,
+            2.4496340192854404,
+            2.448883024044335,
+            2.4481709115207195,
+            2.4442950962111354,
+            2.449412946589291,
+            2.4526179768145084,
+            2.447851002216339,
+            2.4478809209540486,
+            2.447911072522402,
+            2.4536099517717957,
+            2.455992973409593
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0147200568238532,
+        "synchronized_wall": 1.0143847594694684
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0234375,
+          0.59375,
+          0.69921875,
+          0.2421875,
+          1.30859375,
+          0.1796875,
+          0.0625,
+          0.265625
+        ],
+        "reference_tokens": [
+          59,
+          220,
+          220,
+          220,
+          398,
+          220,
+          220,
+          487
+        ],
+        "candidate_tokens": [
+          59,
+          220,
+          220,
+          220,
+          398,
+          220,
+          220,
+          487
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.936400055885315,
+          "min_ms": 2.9255359172821045,
+          "max_ms": 2.9864959716796875,
+          "samples_ms": [
+            2.9864959716796875,
+            2.943552017211914,
+            2.946336030960083,
+            2.936448097229004,
+            2.941823959350586,
+            2.9398720264434814,
+            2.936255931854248,
+            2.9255359172821045,
+            2.940063953399658,
+            2.9322240352630615,
+            2.934783935546875,
+            2.9357759952545166,
+            2.9368960857391357,
+            2.936352014541626,
+            2.936448097229004,
+            2.944927930831909,
+            2.927135944366455,
+            2.9333438873291016,
+            2.9327359199523926,
+            2.9299519062042236
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.9551975312642753,
+          "min_ms": 2.942563034594059,
+          "max_ms": 3.0377780785784125,
+          "samples_ms": [
+            3.0377780785784125,
+            2.963244100101292,
+            2.966398955322802,
+            2.9551320476457477,
+            2.9609310440719128,
+            2.9577160021290183,
+            2.954441006295383,
+            2.942563034594059,
+            2.963704988360405,
+            2.9510549502447248,
+            2.955263014882803,
+            2.955061965622008,
+            2.9567040037363768,
+            2.9552821069955826,
+            2.9539100360125303,
+            2.964004990644753,
+            2.9465080006048083,
+            2.9524880228564143,
+            2.9523679986596107,
+            2.949704066850245
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 6.7509765625,
+        "mean_abs": 0.32306766510009766,
+        "relative_l2": 0.2712881565093994,
+        "top1_agreement": 0.75,
+        "reference_top2_margins": [
+          0.0234375,
+          0.59375,
+          0.69921875,
+          0.2421875,
+          1.30859375,
+          0.1796875,
+          0.0625,
+          0.265625
+        ],
+        "reference_tokens": [
+          59,
+          220,
+          220,
+          220,
+          398,
+          220,
+          220,
+          487
+        ],
+        "candidate_tokens": [
+          59,
+          220,
+          220,
+          220,
+          220,
+          220,
+          220,
+          220
+        ],
+        "divergent_rows": [
+          4,
+          7
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 13.875,
+        "mean_abs": 0.29111093282699585,
+        "relative_l2": 0.05902613326907158
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 13.875,
+          "mean_abs": 0.26457032561302185,
+          "relative_l2": 0.03832443431019783
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 12.76171875,
+          "mean_abs": 0.3176515996456146,
+          "relative_l2": 0.530781626701355
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 941362688,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.677616000175476,
+          "min_ms": 3.6746559143066406,
+          "max_ms": 3.7244479656219482,
+          "samples_ms": [
+            3.7244479656219482,
+            3.7059199810028076,
+            3.7014400959014893,
+            3.699552059173584,
+            3.703263998031616,
+            3.6746559143066406,
+            3.6769919395446777,
+            3.679136037826538,
+            3.681727886199951,
+            3.6765758991241455,
+            3.677311897277832,
+            3.6751039028167725,
+            3.67792010307312,
+            3.6771199703216553,
+            3.6758079528808594,
+            3.684704065322876,
+            3.6746559143066406,
+            3.6752960681915283,
+            3.678719997406006,
+            3.6747519969940186
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.7002944736741483,
+          "min_ms": 3.693834994919598,
+          "max_ms": 3.7781730061396956,
+          "samples_ms": [
+            3.7781730061396956,
+            3.7284670397639275,
+            3.726074006408453,
+            3.719793981872499,
+            3.7292190827429295,
+            3.6971900844946504,
+            3.698881948366761,
+            3.701185924001038,
+            3.7018769653514028,
+            3.696579020470381,
+            3.698101034387946,
+            3.693834994919598,
+            3.7004549521952868,
+            3.6966289626434445,
+            3.70013399515301,
+            3.705071983858943,
+            3.6977409617975354,
+            3.701826906763017,
+            3.6993430694565177,
+            3.695546998642385
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7984520558277987,
+        "synchronized_wall": 0.7986384738536658
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 0,
+      "input_seed": 19,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.0234375,
+          0.59375,
+          0.69921875,
+          0.2421875,
+          1.30859375,
+          0.1796875,
+          0.0625,
+          0.265625
+        ],
+        "reference_tokens": [
+          59,
+          220,
+          220,
+          220,
+          398,
+          220,
+          220,
+          487
+        ],
+        "candidate_tokens": [
+          59,
+          220,
+          220,
+          220,
+          398,
+          220,
+          220,
+          487
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.9484959840774536,
+          "min_ms": 2.9375998973846436,
+          "max_ms": 2.990880012512207,
+          "samples_ms": [
+            2.9626879692077637,
+            2.952224016189575,
+            2.9473280906677246,
+            2.948863983154297,
+            2.949215888977051,
+            2.9467198848724365,
+            2.941823959350586,
+            2.9454081058502197,
+            2.9481279850006104,
+            2.9448959827423096,
+            2.942336082458496,
+            2.939840078353882,
+            2.952064037322998,
+            2.9544320106506348,
+            2.949023962020874,
+            2.9489920139312744,
+            2.9413440227508545,
+            2.990880012512207,
+            2.9571518898010254,
+            2.9375998973846436
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.9676409903913736,
+          "min_ms": 2.9578959802165627,
+          "max_ms": 3.032609005458653,
+          "samples_ms": [
+            3.011557972058654,
+            2.9742809711024165,
+            2.965467981994152,
+            2.9678409919142723,
+            2.967991982586682,
+            2.9665499459952116,
+            2.961602061986923,
+            2.965688006952405,
+            2.967440988868475,
+            2.96490709297359,
+            2.959417994134128,
+            2.9581269482150674,
+            2.9715870041400194,
+            2.9738600132986903,
+            2.968172077089548,
+            2.9680420411750674,
+            2.9628939228132367,
+            3.032609005458653,
+            2.9825130477547646,
+            2.9578959802165627
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.9958975938046178,
+        "synchronized_wall": 0.9958069526713683
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.15234375,
+          1.0078125,
+          0.05859375,
+          0.8125,
+          0.74609375,
+          0.4296875,
+          0.046875,
+          0.15625
+        ],
+        "reference_tokens": [
+          295,
+          220,
+          198,
+          82,
+          220,
+          220,
+          126293,
+          23224
+        ],
+        "candidate_tokens": [
+          295,
+          220,
+          198,
+          82,
+          220,
+          220,
+          126293,
+          23224
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.946560025215149,
+          "min_ms": 2.933759927749634,
+          "max_ms": 2.964832067489624,
+          "samples_ms": [
+            2.964832067489624,
+            2.955712080001831,
+            2.9500479698181152,
+            2.9523520469665527,
+            2.9475839138031006,
+            2.9475200176239014,
+            2.956511974334717,
+            2.950752019882202,
+            2.9432640075683594,
+            2.9539198875427246,
+            2.9406399726867676,
+            2.948319911956787,
+            2.9429121017456055,
+            2.933759927749634,
+            2.94051194190979,
+            2.9375998973846436,
+            2.9362881183624268,
+            2.9456000328063965,
+            2.9402239322662354,
+            2.936768054962158
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.9659680440090597,
+          "min_ms": 2.9525380814448,
+          "max_ms": 3.0134000116959214,
+          "samples_ms": [
+            3.0134000116959214,
+            2.977806027047336,
+            2.9703250620514154,
+            2.9732800321653485,
+            2.965437015518546,
+            2.9664990724995732,
+            2.9747619992122054,
+            2.970776055008173,
+            2.9620128916576505,
+            2.9729389352723956,
+            2.962213009595871,
+            2.9665789334103465,
+            2.96164199244231,
+            2.9525380814448,
+            2.9596089152619243,
+            2.955002011731267,
+            2.95499200001359,
+            2.9671910451725125,
+            2.95888795517385,
+            2.9588869074359536
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 8.84375,
+        "mean_abs": 0.5072093605995178,
+        "relative_l2": 0.31904366612434387,
+        "top1_agreement": 0.5,
+        "reference_top2_margins": [
+          0.15234375,
+          1.0078125,
+          0.05859375,
+          0.8125,
+          0.74609375,
+          0.4296875,
+          0.046875,
+          0.15625
+        ],
+        "reference_tokens": [
+          295,
+          220,
+          198,
+          82,
+          220,
+          220,
+          126293,
+          23224
+        ],
+        "candidate_tokens": [
+          295,
+          220,
+          220,
+          424,
+          220,
+          220,
+          32831,
+          220
+        ],
+        "divergent_rows": [
+          2,
+          3,
+          6,
+          7
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 14.125,
+        "mean_abs": 0.43046361207962036,
+        "relative_l2": 0.08716045320034027
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 14.125,
+          "mean_abs": 0.3681038022041321,
+          "relative_l2": 0.047390565276145935
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 13.49609375,
+          "mean_abs": 0.4928234815597534,
+          "relative_l2": 0.7620130181312561
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 941362688,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.6900159120559692,
+          "min_ms": 3.668384075164795,
+          "max_ms": 3.7535359859466553,
+          "samples_ms": [
+            3.7535359859466553,
+            3.701184034347534,
+            3.69596791267395,
+            3.690239906311035,
+            3.694495916366577,
+            3.6971518993377686,
+            3.6897919178009033,
+            3.6948800086975098,
+            3.69267201423645,
+            3.685152053833008,
+            3.697119951248169,
+            3.6861119270324707,
+            3.685663938522339,
+            3.6833279132843018,
+            3.6982719898223877,
+            3.6703360080718994,
+            3.675168037414551,
+            3.674783945083618,
+            3.668384075164795,
+            3.67740797996521
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.7127239629626274,
+          "min_ms": 3.6877960665151477,
+          "max_ms": 3.812626004219055,
+          "samples_ms": [
+            3.812626004219055,
+            3.7310910411179066,
+            3.722358960658312,
+            3.7132749566808343,
+            3.71530803386122,
+            3.7212659372016788,
+            3.7121729692444205,
+            3.7167200352996588,
+            3.716318984515965,
+            3.704520990140736,
+            3.7203150568529963,
+            3.7065240321680903,
+            3.7050220416858792,
+            3.7030589301139116,
+            3.7191329756751657,
+            3.6905589513480663,
+            3.698240965604782,
+            3.6970690125599504,
+            3.6877960665151477,
+            3.699282999150455
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7985223086947101,
+        "synchronized_wall": 0.7988657582941658
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 1,
+      "input_seed": 20,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.15234375,
+          1.0078125,
+          0.05859375,
+          0.8125,
+          0.74609375,
+          0.4296875,
+          0.046875,
+          0.15625
+        ],
+        "reference_tokens": [
+          295,
+          220,
+          198,
+          82,
+          220,
+          220,
+          126293,
+          23224
+        ],
+        "candidate_tokens": [
+          295,
+          220,
+          198,
+          82,
+          220,
+          220,
+          126293,
+          23224
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.9398239850997925,
+          "min_ms": 2.9271039962768555,
+          "max_ms": 2.963167905807495,
+          "samples_ms": [
+            2.963167905807495,
+            2.951359987258911,
+            2.9425599575042725,
+            2.9530880451202393,
+            2.939743995666504,
+            2.955519914627075,
+            2.940095901489258,
+            2.9323201179504395,
+            2.9271039962768555,
+            2.9348480701446533,
+            2.9277119636535645,
+            2.940608024597168,
+            2.935647964477539,
+            2.9384639263153076,
+            2.9409921169281006,
+            2.9373440742492676,
+            2.930016040802002,
+            2.939903974533081,
+            2.9411520957946777,
+            2.931999921798706
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.9579109977930784,
+          "min_ms": 2.9461380327120423,
+          "max_ms": 3.0125590274110436,
+          "samples_ms": [
+            3.0125590274110436,
+            2.9714059783145785,
+            2.9627829790115356,
+            2.9730990063399076,
+            2.9578059911727905,
+            2.9746820218861103,
+            2.9580160044133663,
+            2.952297916635871,
+            2.946689026430249,
+            2.952227951027453,
+            2.9461380327120423,
+            2.9594990191981196,
+            2.953468938358128,
+            2.95643403660506,
+            2.958497032523155,
+            2.9549309983849525,
+            2.9504350386559963,
+            2.9598590917885303,
+            2.9613919323310256,
+            2.950084046460688
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0022913072855713,
+        "synchronized_wall": 1.0027238974472161
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.6953125,
+          0.16015625,
+          0.66015625,
+          0.0390625,
+          0.01953125,
+          0.56640625,
+          0.671875,
+          0.05078125
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          220,
+          197,
+          261,
+          220,
+          220,
+          372
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          220,
+          197,
+          261,
+          220,
+          220,
+          372
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.935696005821228,
+          "min_ms": 2.929152011871338,
+          "max_ms": 2.9639039039611816,
+          "samples_ms": [
+            2.9639039039611816,
+            2.955359935760498,
+            2.947904109954834,
+            2.936255931854248,
+            2.9390718936920166,
+            2.934688091278076,
+            2.937407970428467,
+            2.929152011871338,
+            2.9353280067443848,
+            2.9351038932800293,
+            2.9357759952545166,
+            2.9345600605010986,
+            2.9433279037475586,
+            2.9340479373931885,
+            2.9360320568084717,
+            2.933504104614258,
+            2.931936025619507,
+            2.9356160163879395,
+            2.9335999488830566,
+            2.9384961128234863
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.955167437903583,
+          "min_ms": 2.949422923848033,
+          "max_ms": 3.013551002368331,
+          "samples_ms": [
+            3.013551002368331,
+            2.976133953779936,
+            2.9674209654331207,
+            2.954661031253636,
+            2.9574159998446703,
+            2.9526579892262816,
+            2.9572549974545836,
+            2.949422923848033,
+            2.955942996777594,
+            2.9541609110310674,
+            2.9558329842984676,
+            2.9519269010052085,
+            2.9621419962495565,
+            2.955071977339685,
+            2.955262898467481,
+            2.9513960471376777,
+            2.9514270136132836,
+            2.953689079731703,
+            2.952517941594124,
+            2.9594278894364834
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 1.0,
+        "synchronized_wall": 1.0
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp8-cache-native",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 2.212890625,
+        "mean_abs": 0.27026864886283875,
+        "relative_l2": 0.1685016006231308,
+        "top1_agreement": 0.5,
+        "reference_top2_margins": [
+          0.6953125,
+          0.16015625,
+          0.66015625,
+          0.0390625,
+          0.01953125,
+          0.56640625,
+          0.671875,
+          0.05078125
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          220,
+          197,
+          261,
+          220,
+          220,
+          372
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          68,
+          82,
+          82,
+          220,
+          220,
+          436
+        ],
+        "divergent_rows": [
+          2,
+          3,
+          4,
+          7
+        ],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 14.25,
+        "mean_abs": 0.2969299256801605,
+        "relative_l2": 0.05745600163936615
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 14.25,
+          "mean_abs": 0.2673681974411011,
+          "relative_l2": 0.03734104707837105
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 7.267578125,
+          "mean_abs": 0.3264915943145752,
+          "relative_l2": 0.4939958453178406
+        }
+      },
+      "cache_mode": "native-fp8-qkv",
+      "cache_backend": "native-fa3-fp8-no-dequantization-staging",
+      "new_kv_saturation": {
+        "k_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "v_by_layer": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "fp8_selected_storage_bytes_including_scales": 941362688,
+      "fp16_producer_pool_retained": true,
+      "latency": {
+        "cuda_event": {
+          "median_ms": 3.680880069732666,
+          "min_ms": 3.673151969909668,
+          "max_ms": 3.722304105758667,
+          "samples_ms": [
+            3.722304105758667,
+            3.6928319931030273,
+            3.6966400146484375,
+            3.698240041732788,
+            3.6752960681915283,
+            3.680448055267334,
+            3.676800012588501,
+            3.684256076812744,
+            3.6760640144348145,
+            3.674015998840332,
+            3.6732161045074463,
+            3.681727886199951,
+            3.6797120571136475,
+            3.681312084197998,
+            3.673151969909668,
+            3.674560070037842,
+            3.6797120571136475,
+            3.68176007270813,
+            3.6837759017944336,
+            3.692064046859741
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 3.7030939711257815,
+          "min_ms": 3.6927430192008615,
+          "max_ms": 3.781147999688983,
+          "samples_ms": [
+            3.781147999688983,
+            3.715067054145038,
+            3.718302003107965,
+            3.7207260029390454,
+            3.6987720523029566,
+            3.7104199873283505,
+            3.6993230460211635,
+            3.704431001096964,
+            3.69897298514843,
+            3.694685990922153,
+            3.6927430192008615,
+            3.7019369192421436,
+            3.7008660146966577,
+            3.7043599877506495,
+            3.694856073707342,
+            3.693984937854111,
+            3.7002749741077423,
+            3.7042510230094194,
+            3.7106400122866035,
+            3.7347569596022367
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.7975527455950069,
+        "synchronized_wall": 0.798026585591934
+      },
+      "status": "unassessed"
+    },
+    {
+      "scenario": "decode",
+      "variant": "fp16-control-closing",
+      "batch": 8,
+      "sample": 2,
+      "input_seed": 21,
+      "cached_prefix_tokens": 8192,
+      "tokens": 8,
+      "query_lengths": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "contexts": [
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193,
+        8193
+      ],
+      "untouched_cache_preserved": true,
+      "logits": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0,
+        "top1_agreement": 1.0,
+        "reference_top2_margins": [
+          0.6953125,
+          0.16015625,
+          0.66015625,
+          0.0390625,
+          0.01953125,
+          0.56640625,
+          0.671875,
+          0.05078125
+        ],
+        "reference_tokens": [
+          82,
+          220,
+          220,
+          197,
+          261,
+          220,
+          220,
+          372
+        ],
+        "candidate_tokens": [
+          82,
+          220,
+          220,
+          197,
+          261,
+          220,
+          220,
+          372
+        ],
+        "divergent_rows": [],
+        "status": "unassessed"
+      },
+      "kv_writes": {
+        "finite": true,
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "kv_writes_by_kind": {
+        "k": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        },
+        "v": {
+          "finite": true,
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "relative_l2": 0.0
+        }
+      },
+      "latency": {
+        "cuda_event": {
+          "median_ms": 2.945919990539551,
+          "min_ms": 2.928447961807251,
+          "max_ms": 2.9652159214019775,
+          "samples_ms": [
+            2.9652159214019775,
+            2.9526400566101074,
+            2.9534718990325928,
+            2.9450559616088867,
+            2.953439950942993,
+            2.9465599060058594,
+            2.951103925704956,
+            2.9497599601745605,
+            2.94649600982666,
+            2.944000005722046,
+            2.9440319538116455,
+            2.9472639560699463,
+            2.9491519927978516,
+            2.928447961807251,
+            2.9362881183624268,
+            2.9453439712524414,
+            2.934688091278076,
+            2.9432640075683594,
+            2.935647964477539,
+            2.9428160190582275
+          ]
+        },
+        "synchronized_wall": {
+          "median_ms": 2.964450977742672,
+          "min_ms": 2.9478799551725388,
+          "max_ms": 3.10356798581779,
+          "samples_ms": [
+            3.0117679852992296,
+            2.974321017973125,
+            2.974180970340967,
+            2.9642049921676517,
+            2.9733089031651616,
+            2.9639750719070435,
+            2.9701440362259746,
+            2.9692540410906076,
+            2.9642960289493203,
+            2.9627630719915032,
+            2.9646059265360236,
+            3.10356798581779,
+            2.972268033772707,
+            2.9478799551725388,
+            2.953148912638426,
+            2.964025945402682,
+            2.956222975626588,
+            2.9657179256901145,
+            2.955312025733292,
+            2.964266110211611
+          ]
+        }
+      },
+      "speedup_vs_opening_control": {
+        "cuda_event": 0.9965294424997434,
+        "synchronized_wall": 0.9968683780204866
+      },
+      "status": "unassessed"
+    }
+  ],
+  "accuracy_by_context": [
+    {
+      "scenario": "decode",
+      "cached_prefix_tokens": 256,
+      "variant": "fp8-cache-native",
+      "independent_histories": 3,
+      "compared_requests": 24,
+      "finite": true,
+      "top1_agreement": 0.75,
+      "worst_max_abs_logit_error": 4.595703125,
+      "median_relative_l2_logit_error": 0.21371881663799286,
+      "median_wall_speedup": 0.6934090830400885
+    },
+    {
+      "scenario": "decode",
+      "cached_prefix_tokens": 2048,
+      "variant": "fp8-cache-native",
+      "independent_histories": 3,
+      "compared_requests": 24,
+      "finite": true,
+      "top1_agreement": 0.625,
+      "worst_max_abs_logit_error": 10.79296875,
+      "median_relative_l2_logit_error": 0.32582688331604004,
+      "median_wall_speedup": 0.7296427268050529
+    },
+    {
+      "scenario": "decode",
+      "cached_prefix_tokens": 8192,
+      "variant": "fp8-cache-native",
+      "independent_histories": 3,
+      "compared_requests": 24,
+      "finite": true,
+      "top1_agreement": 0.5833333333333333,
+      "worst_max_abs_logit_error": 8.84375,
+      "median_relative_l2_logit_error": 0.2712881565093994,
+      "median_wall_speedup": 0.7986384738536658
+    }
+  ]
+}
