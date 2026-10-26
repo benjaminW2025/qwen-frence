@@ -30,10 +30,12 @@ def _gemm(A, W, AS, WS, BIAS, Y, M: tl.constexpr, N: tl.constexpr,
     acc = tl.zeros((BM, BN), tl.float32)
     for start in range(tl.cdiv(K, BK)):
         kk = start * BK + k
+        # FP8 masked loads need a floating-point fill value. Triton cannot
+        # lower the implicit int32 -> fp8 cast produced by the literal 0.
         a = tl.load(A + m[:, None] * K + kk[None, :],
-                    (m[:, None] < M) & (kk[None, :] < K), 0)
+                    (m[:, None] < M) & (kk[None, :] < K), other=0.0)
         w = tl.load(W + n[None, :] * K + kk[:, None],
-                    (n[None, :] < N) & (kk[:, None] < K), 0)
+                    (n[None, :] < N) & (kk[:, None] < K), other=0.0)
         acc = tl.dot(a, w, acc, out_dtype=tl.float32, max_num_imprecise_acc=0)
     sa = tl.load(AS + m, m < M, 0)
     sw = tl.load(WS + n, n < N, 0)

@@ -87,6 +87,14 @@ class FP8AccuracyContracts(unittest.TestCase):
                     self.assertEqual(int(case["slots"][index]), expected)
             self.assertEqual(case["table"].unique().numel(), case["blocks"])
 
+    def test_page_table_has_unit_column_stride_even_for_one_page(self):
+        for kind in ("prefill", "decode", "mixed"):
+            for batch in (2, 8):
+                for length in (1, 5, 17):
+                    case = experiment.make_case(kind, batch, length, length, 100, 1, "cpu")
+                    self.assertEqual(case["table"].stride(-1), 1)
+                    self.assertTrue(case["table"].is_contiguous())
+
     def test_missing_threshold_is_unassessed_not_pass(self):
         logits = torch.tensor([[1., 2., 3.], [3., 1., 0.]])
         result = experiment.compare_logits(logits, logits + .1)
@@ -201,7 +209,7 @@ class FP8CUDAKernels(unittest.TestCase):
     def test_quantization_gemm_and_graph_replay_with_changed_inputs(self):
         from experiments.quant.kernels.projections import quantize_activations
         with strict_accumulation():
-            for m, k, n in ((1, 33, 17), (17, 160, 96), (8, 1536, 2048), (3, 8960, 1536)):
+            for m, k, n in ((1, 1, 1), (1, 33, 17), (17, 160, 96), (8, 1536, 2048), (3, 8960, 1536)):
                 layer = torch.nn.Linear(k, n, bias=(n != 17), device="cuda", dtype=torch.float16)
                 projection = FP8Linear(layer)
                 x = torch.randn(m, k, device="cuda", dtype=torch.float16) * .1

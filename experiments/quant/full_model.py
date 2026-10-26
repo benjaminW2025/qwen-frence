@@ -48,7 +48,10 @@ def make_case(kind, batch, prompt, prefix, vocab, seed, device):
     contexts = [p + q for p, q in zip(prefixes, chunks)]
     pages = (max(contexts) + 15) // 16
     # Transposition interleaves ownership; reversed pages avoid identity mappings.
-    table = torch.arange(batch * pages, dtype=torch.int32).flip(0).reshape(pages, batch).T.contiguous()
+    # .contiguous() can preserve a non-unit last stride when pages == 1,
+    # because PyTorch ignores singleton strides. FA3 explicitly requires 1.
+    table = torch.empty((batch, pages), dtype=torch.int32)
+    table.copy_(torch.arange(batch * pages, dtype=torch.int32).flip(0).reshape(pages, batch).T)
     ids, positions, slots, cu = [], [], [], [0]
     generator = torch.Generator().manual_seed(seed)
     history, history_slots = [], []
