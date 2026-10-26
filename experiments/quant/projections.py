@@ -73,7 +73,7 @@ def replace_projections(model, groups):
 
 @contextmanager
 def strict_accumulation():
-    """Control PyTorch GEMMs; Triton FP8 has its own explicit precision setting."""
+    """Control FP16 GEMMs; FP8 scaled_mm separately disables fast accumulation."""
     backend = torch.backends.cuda.matmul
     names = ["allow_fp16_reduced_precision_reduction", "allow_tf32"]
     if hasattr(backend, "allow_fp16_accumulation"):

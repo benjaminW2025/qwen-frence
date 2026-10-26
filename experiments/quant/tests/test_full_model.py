@@ -21,6 +21,18 @@ SPEC.loader.exec_module(experiment)
 
 
 class FP8AccuracyContracts(unittest.TestCase):
+    def test_forward_uses_accepted_engine_options(self):
+        import model_adapter
+        from engine.accepted_config import retained_fusion_options, accepted_variant_options
+        case = experiment.make_case("decode", 8, 256, 256, 100, 19, "cpu")
+        with mock.patch.object(model_adapter, "PiecewiseGraphModelAdapter") as adapter:
+            experiment.build_forward(object(), object(), case)
+        options = adapter.call_args.kwargs
+        for key, value in {**retained_fusion_options(), **accepted_variant_options()}.items():
+            self.assertEqual(options[key], value)
+        self.assertEqual(options["decode_attention_policy"], "fa3")
+        self.assertEqual(options["prefill_attention_policy"], "fa3_varlen")
+
     def test_quantization_scales_rows_independently_and_preserves_zero(self):
         x = torch.tensor([[0., 0., 0.], [-2., 0., 2.], [-200., 0., 200.]])
         q, scales = quantize_rows_reference(x)
@@ -227,8 +239,8 @@ class FP8CUDAKernels(unittest.TestCase):
     def test_quantization_gemm_and_graph_replay_with_changed_inputs(self):
         from experiments.quant.kernels.projections import quantize_activations
         with strict_accumulation():
-            for m, k, n in ((1, 1, 1), (1, 33, 17), (17, 160, 96), (8, 1536, 2048), (3, 8960, 1536)):
-                layer = torch.nn.Linear(k, n, bias=(n != 17), device="cuda", dtype=torch.float16)
+            for m, k, n in ((1, 16, 16), (1, 48, 32), (17, 160, 96), (8, 1536, 2048), (3, 8960, 1536)):
+                layer = torch.nn.Linear(k, n, bias=(n != 32), device="cuda", dtype=torch.float16)
                 projection = FP8Linear(layer)
                 x = torch.randn(m, k, device="cuda", dtype=torch.float16) * .1
                 x[0].zero_()
@@ -237,10 +249,16 @@ class FP8CUDAKernels(unittest.TestCase):
                 torch.testing.assert_close(q.float(), rq.float(), atol=0, rtol=0)
                 torch.testing.assert_close(scales, rs, atol=0, rtol=0)
                 w = projection.weight_fp8.float() * projection.weight_scales[:, None]
-                expected = (q.float() * scales[:, None]) @ w.T
+                expected = ((q.float() * scales[:, None]) @ w.T).half()
                 if projection.bias is not None:
-                    expected += projection.bias.float()
-                torch.testing.assert_close(projection(x), expected.half(), atol=.003, rtol=.005)
+                    expected = expected + projection.bias
+                with mock.patch.object(torch, "_scaled_mm", wraps=torch._scaled_mm) as gemm:
+                    actual = projection(x)
+                self.assertEqual(gemm.call_count, 1)
+                self.assertNotIn("bias", gemm.call_args.kwargs)
+                self.assertFalse(gemm.call_args.kwargs["use_fast_accum"])
+                self.assertEqual(gemm.call_args.kwargs["out_dtype"], torch.float16)
+                torch.testing.assert_close(actual, expected.half(), atol=.003, rtol=.005)
                 side = torch.cuda.Stream()
                 side.wait_stream(torch.cuda.current_stream())
                 with torch.cuda.stream(side):

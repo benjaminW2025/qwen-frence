@@ -133,14 +133,14 @@ def prepare_prefix(model, pool, case):
 
 
 def build_forward(model, pool, case):
-    from engine.accepted_config import retained_fusion_options
+    from engine.accepted_config import retained_fusion_options, accepted_variant_options
     from model_adapter import PiecewiseGraphModelAdapter
     adapter = PiecewiseGraphModelAdapter(
         model, pool, None, max_running=case["batch"],
         max_context_length=case["max_context"], decode_attention_policy="fa3",
         decode_buckets=[case["batch"]], prefill_attention_policy="fa3_varlen",
         max_capture_tokens=case["ids"].numel(), max_prefill_shapes=1,
-        prefill_buckets=[case["ids"].numel()], **retained_fusion_options())
+        prefill_buckets=[case["ids"].numel()], **retained_fusion_options(), **accepted_variant_options())
 
     def run():
         if case["kind"] == "decode":
@@ -211,6 +211,10 @@ def measure_forward(run, reset, device, warmup, repeats):
 def kernel_gate(device):
     """Validate real FP8 math against dequantized operands before loading model."""
     from experiments.quant.projections import FP8Linear, quantize_rows_reference
+    from packaging.version import Version
+    if (Version(torch.__version__.split("+")[0]) < Version("2.13")
+            or torch.version.cuda is None or Version(torch.version.cuda) < Version("12.9")):
+        raise RuntimeError("cuBLASLt row-scaled FP8 experiment requires PyTorch >=2.13 and CUDA >=12.9")
     from experiments.quant.kernels.projections import quantize_activations
     g = torch.Generator(device=device).manual_seed(317)
     x = torch.randn(7, 160, generator=g, device=device, dtype=torch.float16) * .2
@@ -360,7 +364,9 @@ def main(argv=None):
                             "note": "decode context is cached prefix + 1; independent histories, not autoregressive rollouts"},
                   "quantization": {"format": "e4m3fn", "weights": "per-output-channel",
                                    "activations": "dynamic-per-token", "accumulator": "fp32",
-                                   "max_num_imprecise_acc": 0, "output": "fp16"},
+                                   "gemm_backend": "torch._scaled_mm / cuBLASLt (Hopper CUDA >=12.9)",
+                                   "use_fast_accum": False, "bias": "separate PyTorch addition",
+                                   "optional_gemm_epilogues": False, "output": "fp16"},
                   "thresholds": {"atol": args.atol, "rtol": args.rtol,
                                  "min_top1_agreement": args.min_top1_agreement},
                   "scope": "fixed-history full forwards; synthetic tokens; warm forward latency, not serving throughput",
@@ -379,7 +385,7 @@ def main(argv=None):
                                                  ROOT / "experiments/quant/staged_cache.py",
                                                  ROOT / "experiments/quant/kernels/staged_cache.py",
                                                  ROOT / "experiments/quant/native_fa3.py")},
-                  "accumulation_note": "FP32 accumulators and accuracy-oriented FP8 promotion requested; hardware instructions not profiled",
+                  "accumulation_note": "FP8 scaled_mm use_fast_accum=False; hardware instructions not profiled",
                   "cases": []}
         args.output.parent.mkdir(parents=True, exist_ok=True)
         for spec in case_plan(args):

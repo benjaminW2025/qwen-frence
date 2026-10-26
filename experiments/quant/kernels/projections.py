@@ -1,8 +1,7 @@
-"""Accuracy-first FP8 Tensor Core GEMM, not a tuned throughput candidate.
+"""FP8 projections using PyTorch scaled_mm (cuBLASLt on the target stack).
 
-tl.dot uses FP32 accumulators and max_num_imprecise_acc=0 to request the
-compiler's accuracy-oriented FP8 accumulation. Hardware instruction precision
-is not equivalent to an exact IEEE FP32 multiplication of original inputs.
+Target: PyTorch 2.13+, CUDA 12.9+, Hopper. Triton only quantizes activations;
+there is no custom matrix multiplication. Bias remains a separate addition.
 """
 import torch
 import triton
@@ -19,31 +18,6 @@ def _quantize(X, Q, S, K: tl.constexpr, BLOCK: tl.constexpr):
     tl.store(Q + row * K + col, q, col < K)
     tl.store(S + row, scale)
 
-
-@triton.jit
-def _gemm(A, W, AS, WS, BIAS, Y, M: tl.constexpr, N: tl.constexpr,
-          K: tl.constexpr, HAS_BIAS: tl.constexpr,
-          BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr):
-    m = tl.program_id(0) * BM + tl.arange(0, BM)
-    n = tl.program_id(1) * BN + tl.arange(0, BN)
-    k = tl.arange(0, BK)
-    acc = tl.zeros((BM, BN), tl.float32)
-    for start in range(tl.cdiv(K, BK)):
-        kk = start * BK + k
-        # FP8 masked loads need a floating-point fill value. Triton cannot
-        # lower the implicit int32 -> fp8 cast produced by the literal 0.
-        a = tl.load(A + m[:, None] * K + kk[None, :],
-                    (m[:, None] < M) & (kk[None, :] < K), other=0.0)
-        w = tl.load(W + n[None, :] * K + kk[:, None],
-                    (n[None, :] < N) & (kk[:, None] < K), other=0.0)
-        acc = tl.dot(a, w, acc, out_dtype=tl.float32, max_num_imprecise_acc=0)
-    sa = tl.load(AS + m, m < M, 0)
-    sw = tl.load(WS + n, n < N, 0)
-    result = (acc * sa[:, None]) * sw[None, :]
-    if HAS_BIAS:
-        result += tl.load(BIAS + n, n < N, 0).to(tl.float32)[None, :]
-    tl.store(Y + m[:, None] * N + n[None, :], result,
-             (m[:, None] < M) & (n[None, :] < N))
 
 
 def quantize_activations(x):
@@ -70,12 +44,16 @@ def fp8_linear(x, weights, weight_scales, bias=None):
                              or bias.dtype != torch.float16 or not bias.is_contiguous()):
         raise ValueError("incompatible bias")
     a, scales = quantize_activations(x.reshape(-1, x.shape[-1]))
-    m, k = a.shape
-    n = weights.shape[0]
-    out = torch.empty((m, n), device=x.device, dtype=torch.float16)
-    with torch.cuda.device(x.device):
-        _gemm[(triton.cdiv(m, 16), triton.cdiv(n, 64))](
-            a, weights, scales, weight_scales, bias, out, m, n, k,
-            bias is not None, 16, 64, 32, num_warps=4, num_stages=3,
-            enable_fp_fusion=False)
-    return out.view(*x.shape[:-1], n)
+    if weights.shape[0] % 16 or weights.shape[1] % 16:
+        raise ValueError("cuBLASLt FP8 requires weight dimensions divisible by 16")
+    # A is row-major; transposing the stored row-major weights gives the
+    # column-major B layout required by cuBLASLt without copying weights.
+    # Only the required FP8 operand scales are applied by scaled_mm.
+    # No bias, activation, or residual epilogue is requested.
+    out = torch._scaled_mm(
+        a, weights.T, scale_a=scales.view(-1, 1),
+        scale_b=weight_scales.view(1, -1), out_dtype=torch.float16,
+        use_fast_accum=False)
+    if bias is not None:
+        out = out + bias
+    return out.view(*x.shape[:-1], weights.shape[0])
