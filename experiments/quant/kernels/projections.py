@@ -1,7 +1,7 @@
 """FP8 projections using PyTorch scaled_mm (cuBLASLt on the target stack).
 
 Target: PyTorch 2.13+, CUDA 12.9+, Hopper. Triton only quantizes activations;
-there is no custom matrix multiplication. Bias remains a separate addition.
+there is no custom matrix multiplication. Bias uses the library GEMM, as in the original linear projection.
 """
 import torch
 import triton
@@ -49,11 +49,9 @@ def fp8_linear(x, weights, weight_scales, bias=None):
     # A is row-major; transposing the stored row-major weights gives the
     # column-major B layout required by cuBLASLt without copying weights.
     # Only the required FP8 operand scales are applied by scaled_mm.
-    # No bias, activation, or residual epilogue is requested.
+    # Library bias matches nn.Linear; no activation or residual fusion.
     out = torch._scaled_mm(
         a, weights.T, scale_a=scales.view(-1, 1),
-        scale_b=weight_scales.view(1, -1), out_dtype=torch.float16,
+        scale_b=weight_scales.view(1, -1), bias=bias, out_dtype=torch.float16,
         use_fast_accum=False)
-    if bias is not None:
-        out = out + bias
     return out.view(*x.shape[:-1], weights.shape[0])

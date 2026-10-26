@@ -365,7 +365,7 @@ def main(argv=None):
                   "quantization": {"format": "e4m3fn", "weights": "per-output-channel",
                                    "activations": "dynamic-per-token", "accumulator": "fp32",
                                    "gemm_backend": "torch._scaled_mm / cuBLASLt (Hopper CUDA >=12.9)",
-                                   "use_fast_accum": False, "bias": "separate PyTorch addition",
+                                   "use_fast_accum": False, "bias": "library GEMM bias (matches nn.Linear)",
                                    "optional_gemm_epilogues": False, "output": "fp16"},
                   "thresholds": {"atol": args.atol, "rtol": args.rtol,
                                  "min_top1_agreement": args.min_top1_agreement},

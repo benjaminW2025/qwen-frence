@@ -249,13 +249,13 @@ class FP8CUDAKernels(unittest.TestCase):
                 torch.testing.assert_close(q.float(), rq.float(), atol=0, rtol=0)
                 torch.testing.assert_close(scales, rs, atol=0, rtol=0)
                 w = projection.weight_fp8.float() * projection.weight_scales[:, None]
-                expected = ((q.float() * scales[:, None]) @ w.T).half()
+                expected = (q.float() * scales[:, None]) @ w.T
                 if projection.bias is not None:
-                    expected = expected + projection.bias
+                    expected = expected + projection.bias.float()
                 with mock.patch.object(torch, "_scaled_mm", wraps=torch._scaled_mm) as gemm:
                     actual = projection(x)
                 self.assertEqual(gemm.call_count, 1)
-                self.assertNotIn("bias", gemm.call_args.kwargs)
+                self.assertIs(gemm.call_args.kwargs["bias"], projection.bias)
                 self.assertFalse(gemm.call_args.kwargs["use_fast_accum"])
                 self.assertEqual(gemm.call_args.kwargs["out_dtype"], torch.float16)
                 torch.testing.assert_close(actual, expected.half(), atol=.003, rtol=.005)
