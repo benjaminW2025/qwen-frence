@@ -206,6 +206,24 @@ def hopper_available():
 @unittest.skipUnless(hopper_available(), "requires Hopper CUDA and Triton")
 class FP8CUDAKernels(unittest.TestCase):
     @torch.no_grad()
+    def test_staged_cache_updates_slots_and_dequantizes_prefix(self):
+        pool = SimpleNamespace(k_pool=[torch.randn(4, 16, 2, 128, device="cuda").half()],
+                               v_pool=[torch.randn(4, 16, 2, 128, device="cuda").half()])
+        seed = [x.clone() for x in experiment.cache_state(pool)]
+        cache = StagedFP8KVCache(pool, seed)
+        slots = torch.tensor([1, 33], device="cuda", dtype=torch.int64)
+        for tensor in experiment.cache_state(pool):
+            flat = tensor.flatten(0, 1)
+            flat[slots] = torch.randn(2, 2, 128, device="cuda").half() * 3
+            q, scales = quantize_rows_reference(tensor.reshape(-1, 128))
+            expected = (q.float() * scales[:, None]).half().view_as(tensor)
+            cache.stage(tensor, slots)
+            torch.testing.assert_close(tensor, expected, atol=0, rtol=0)
+            entry = cache.entries[tensor.data_ptr()]
+            torch.testing.assert_close(entry["q"].float(), q.float(), atol=0, rtol=0)
+            torch.testing.assert_close(entry["scale"], scales, atol=0, rtol=0)
+
+    @torch.no_grad()
     def test_quantization_gemm_and_graph_replay_with_changed_inputs(self):
         from experiments.quant.kernels.projections import quantize_activations
         with strict_accumulation():

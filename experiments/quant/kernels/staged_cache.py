@@ -21,7 +21,8 @@ def _write(X, SLOTS, Q, S, HEADS: tl.constexpr, DIM: tl.constexpr,
 def _stage(Q, S, X, ELEMENTS: tl.constexpr, DIM: tl.constexpr,
            BLOCK: tl.constexpr):
     index = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
-    value = tl.load(Q + index, index < ELEMENTS, 0).to(tl.float32)
+    # Q is FP8: an integer masked fill requires an unsupported int32->FP8 cast.
+    value = tl.load(Q + index, index < ELEMENTS, other=0.0).to(tl.float32)
     scale = tl.load(S + index // DIM, index < ELEMENTS, 0)
     tl.store(X + index, value * scale, index < ELEMENTS)
 
