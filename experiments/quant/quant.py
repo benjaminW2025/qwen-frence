@@ -3,6 +3,7 @@
 
   python experiments/quant/quant.py full-model --help
   python experiments/quant/quant.py attention --help
+  python experiments/quant/quant.py key-diagnostics --help
   python experiments/quant/quant.py capture --help
   python experiments/quant/quant.py baselines --help
   python experiments/quant/quant.py test
@@ -19,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 def main(argv=None):
     commands = {"full-model": "full_model", "attention": "attention", "capture": "capture",
-                "baselines": "suite"}
+                "baselines": "suite", "key-diagnostics": "key_diagnostics"}
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in commands:
         module = importlib.import_module("experiments.quant." + commands[argv[0]])
