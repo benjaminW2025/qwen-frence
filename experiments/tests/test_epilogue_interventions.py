@@ -51,7 +51,7 @@ class SelectiveEpilogues(unittest.TestCase):
         self.assertFalse(kwargs["partials"])
         return residual + x @ weight.T, None
 
-    def gate(self, x, weight):
+    def gate(self, x, weight, **kwargs):
         self.calls.append("gate-up")
         gate, up = fused.split_interleaved(x @ weight.T)
         return torch.nn.functional.silu(gate) * up

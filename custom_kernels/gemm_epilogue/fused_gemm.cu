@@ -138,7 +138,11 @@ struct ResidualEpilogue : EpilogueBase<ResidualArgs> {
                 auto const& params = this->params;
                 float2 const r = __half22float2(*reinterpret_cast<__half2 const*>(
                     reinterpret_cast<__half const*>(params.residual) + int64_t(m) * params.ld_residual + n));
-                __half2 const sum = __floats2half2_rn(acc(j) + r.x, acc(j + 1) + r.y);
+                // Selective epilogues preserve the FP16 projection boundary.
+                // Keep the legacy norm-folding path (partials != nullptr) separate.
+                float const a = params.partials ? acc(j) : __half2float(__float2half_rn(acc(j)));
+                float const b = params.partials ? acc(j + 1) : __half2float(__float2half_rn(acc(j + 1)));
+                __half2 const sum = __floats2half2_rn(a + r.x, b + r.y);
                 *reinterpret_cast<__half2*>(reinterpret_cast<__half*>(params.out) + int64_t(m) * params.ld_out + n) = sum;
                 // The next RMSNorm reads the rounded sum, exactly as residual_add_rms_norm does.
                 float2 const s = __half22float2(sum);
@@ -165,6 +169,7 @@ struct ResidualEpilogue : EpilogueBase<ResidualArgs> {
 struct SwigluArgs {
     H* out = nullptr; int64_t ld_out = 0;                   // [M, F]
     RowScale scale;
+    bool round_silu = true;
 };
 struct SwigluEpilogue : EpilogueBase<SwigluArgs> {
     using EpilogueBase::EpilogueBase;
@@ -195,11 +200,20 @@ struct SwigluEpilogue : EpilogueBase<SwigluArgs> {
                 int const m = get<0>(c(gate)), n = get<1>(c(gate));
                 if (m < M && n < N) {
                     float const s = row_scale[half];
-                    float const g0 = acc(gate) * s, g1 = acc(gate + 1) * s;
-                    float const u0 = acc(gate + 4) * s, u1 = acc(gate + 5) * s;
+                    auto projection = [&](float a) {
+                        float const value = a * s;
+                        return params.scale.partials ? value : __half2float(__float2half_rn(value));
+                    };
+                    float const g0 = projection(acc(gate)), g1 = projection(acc(gate + 1));
+                    float const u0 = projection(acc(gate + 4)), u1 = projection(acc(gate + 5));
+                    float silu0 = g0 / (1.f + expf(-g0)), silu1 = g1 / (1.f + expf(-g1));
+                    if (!params.scale.partials && params.round_silu) {
+                        silu0 = __half2float(__float2half_rn(silu0));
+                        silu1 = __half2float(__float2half_rn(silu1));
+                    }
                     int64_t const column = int64_t(n / (2 * Block)) * Block + n % Block;
                     *reinterpret_cast<__half2*>(reinterpret_cast<__half*>(params.out) + int64_t(m) * params.ld_out + column) =
-                        __floats2half2_rn(g0 / (1.f + expf(-g0)) * u0, g1 / (1.f + expf(-g1)) * u1);
+                        __floats2half2_rn(silu0 * u0, silu1 * u1);
                 }
             }
         }
@@ -265,7 +279,8 @@ struct QkvEpilogue : EpilogueBase<QkvArgs> {
             float const s = row_scale[half];
             auto value = [&](int element, int column) {
                 float v = acc(element) * s;
-                return params.bias != nullptr ? v + float(params.bias[column]) : v;
+                v = params.bias != nullptr ? v + float(params.bias[column]) : v;
+                return params.scale.partials ? v : __half2float(__float2half_rn(v));
             };
             float first[2] = {value(j, n), value(j + 1, n + 1)};
             float second[2] = {value(j + 32, n + RopeHalf), value(j + 33, n + RopeHalf + 1)};
@@ -535,12 +550,12 @@ std::tuple<torch::Tensor, c10::optional<torch::Tensor>> residual_gemm(
 }
 
 torch::Tensor gate_up_swiglu(torch::Tensor x, torch::Tensor w, c10::optional<torch::Tensor> partials,
-                             double hidden, double eps, int64_t config) {
+                             double hidden, double eps, int64_t config, bool round_silu) {
     check_operands(x, w);
     c10::cuda::CUDAGuard guard(x.device());
     TORCH_CHECK(w.size(0) % (2 * Block) == 0, "interleaved gate/up weight needs 16-row blocks");
     auto out = torch::empty({x.size(0), w.size(0) / 2}, x.options());
-    SwigluArgs args{reinterpret_cast<H*>(out.data_ptr()), out.stride(0), row_scale(partials, x, hidden, eps)};
+    SwigluArgs args{reinterpret_cast<H*>(out.data_ptr()), out.stride(0), row_scale(partials, x, hidden, eps), round_silu};
     with_candidate(resolve_config(config, x.size(0)), [&](auto tag) { using C = typename decltype(tag)::type; run<SwigluGemm<C>>(x, w, args); });
     return out;
 }
@@ -595,7 +610,7 @@ torch::Tensor gemm_plain(torch::Tensor x, torch::Tensor w) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-    module.attr("abi_version") = 4;
+    module.attr("abi_version") = 5;
     module.attr("source_sha256") = GEMM_EPILOGUE_SOURCE_HASH;
     module.attr("interleave_block") = Block;
     module.attr("partial_tile") = PrefillConfig::TileN;

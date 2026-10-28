@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import torch
 
-from naive_forward import apply_rms_norm, apply_rope, apply_swiglu
+from naive_forward import apply_rms_norm, apply_rope, apply_swiglu, SWIGLU_FUSION_ROW_THRESHOLD
 from ragged_prefill import _rope_factors
 
 
@@ -124,7 +124,9 @@ class _AttentionBoundary:
                     x = self.residual + projected
                     h = apply_rms_norm(x, previous.post_attn_norm, cfg)
                 if "gate-up" in ops:
-                    activation = fused.gate_up_swiglu(h, gate_weights[index - 1])
+                    activation = fused.gate_up_swiglu(h, gate_weights[index - 1],
+                        round_silu=not (self.enable_swiglu_fusion and cfg.use_custom_kernels
+                                        and tokens > SWIGLU_FUSION_ROW_THRESHOLD))
                 else:
                     gate, up = previous.project_gate_up(h)
                     activation = apply_swiglu(gate, up, cfg,

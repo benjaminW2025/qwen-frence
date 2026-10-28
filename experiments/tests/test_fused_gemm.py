@@ -170,7 +170,7 @@ class FusedGemmContract(unittest.TestCase):
                 return y, fused.row_square_partials(y).double() if partials else None
 
             @staticmethod
-            def gate_up_swiglu(x, w, partials, hidden_size, eps, config):
+            def gate_up_swiglu(x, w, partials, hidden_size, eps, config, round_silu):
                 gate, up = fused.split_interleaved((x @ w.T) * row_factor(partials, hidden_size))
                 return torch.nn.functional.silu(gate) * up
 

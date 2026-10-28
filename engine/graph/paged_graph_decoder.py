@@ -25,6 +25,7 @@ from naive_forward import (
     apply_rms_norm,
     apply_rope,
     apply_swiglu,
+    SWIGLU_FUSION_ROW_THRESHOLD,
 )
 
 
@@ -306,7 +307,9 @@ def graph_decode_forward(model, cache, input_ids, positions, seq_lens,
 
         residual = x
         if "gate-up" in ops:
-            activation = fused.gate_up_swiglu(h.reshape(B, cfg.d_model), gate_weights[i]).view(B, S, cfg.d_ff)
+            activation = fused.gate_up_swiglu(h.reshape(B, cfg.d_model), gate_weights[i],
+                round_silu=not (enable_regime_fusions and cfg.use_custom_kernels
+                                and B > SWIGLU_FUSION_ROW_THRESHOLD)).view(B, S, cfg.d_ff)
         else:
             gate, up = layer.project_gate_up(h)
             activation = apply_swiglu(gate, up, cfg, enable_regime_fusions=enable_regime_fusions)

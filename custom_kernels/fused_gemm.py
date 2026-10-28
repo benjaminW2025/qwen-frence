@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import torch
 
-ABI_VERSION = 4
+ABI_VERSION = 5
 INTERLEAVE_BLOCK = 8
 PARTIAL_TILE = 256
 QKV_WIDTH = 2048
@@ -177,13 +177,22 @@ def configs():
 
 
 def residual_gemm(x, weight, residual, *, partials=True, out=None, config=-1):
-    """(residual + x @ weight.T, [M, N/tile] FP32 partial sums of squares of the FP16 output); out may alias residual."""
+    """GEMM + residual; out may alias residual.
+
+    With partials=False preserve the baseline FP16 projection boundary before
+    residual addition. Partials=True is the legacy norm-folding experiment.
+    """
     return _extension().residual_gemm(x, weight, residual, bool(partials), out, int(config))
 
 
-def gate_up_swiglu(x, weight, partials=None, *, hidden=None, eps=1e-6, config=-1):
-    """silu(g) * u from one GEMM on an interleaved weight; with partials, rows are RMS-normalized first."""
-    return _extension().gate_up_swiglu(x, weight, partials, float(hidden or x.shape[1]), float(eps), int(config))
+def gate_up_swiglu(x, weight, partials=None, *, hidden=None, eps=1e-6, config=-1, round_silu=True):
+    """GEMM + SwiGLU, preserving FP16 projection rounding when partials is None.
+
+    round_silu preserves the standalone FP16 SiLU boundary. Set False only
+    where the measured engine already uses fused SiLU/multiply. The legacy
+    norm-folding path (partials provided) remains a distinct experiment.
+    """
+    return _extension().gate_up_swiglu(x, weight, partials, float(hidden or x.shape[1]), float(eps), int(config), bool(round_silu))
 
 
 def qkv_rope_cache(x, weight, bias, partials, *, positions, slots, k_pool, v_pool,

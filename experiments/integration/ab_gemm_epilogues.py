@@ -12,16 +12,20 @@ Decode: both pools are filled from the control prefill, then both captured
 decode graphs run teacher-forced steps (the control's greedy token feeds both),
 comparing logits at every step; graph replays are timed alternately.
 
-Numerics are expected to differ slightly (norm and activations applied to FP32
-accumulators, gamma folded into weights). The gate is that every greedy-token
-disagreement is a near tie in the control's own logits. Run in the interpreter
+The default candidates preserve normalization and FP16 intermediate rounding.
+The explicit legacy 'all' mode additionally folds normalization and is outside
+the pure epilogue scope. Numerical gates bound logit error as well as token
+margins; primitive qualification must precede model timing. Run in the interpreter
 that owns the attention (the vLLM env for --attention fa3) and the built
 extension.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import argparse
 import gc
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -38,6 +42,25 @@ for directory in (HERE, ROOT / "baseline", ROOT / "benchmarks", ROOT / "engine/g
 POLICIES = {"fa3": ("fa3_varlen", "fa3"), "project": ("flash_varlen", "flash")}
 INTERVENTIONS = ("all", "residual-o", "gate-up", "residual-down", "qkv", "combined")
 PRIVATE_POOL_LIMIT = 8192
+PURE_INTERVENTIONS = tuple(value for value in INTERVENTIONS if value != "all")
+
+
+@contextmanager
+def strict_accumulation():
+    import torch
+    backend = torch.backends.cuda.matmul
+    names = ["allow_fp16_reduced_precision_reduction", "allow_tf32"]
+    if hasattr(backend, "allow_fp16_accumulation"):
+        names.append("allow_fp16_accumulation")
+    original = {name: getattr(backend, name) for name in names}
+    try:
+        for name in names:
+            setattr(backend, name, False)
+        yield {name: getattr(backend, name) for name in names}
+    finally:
+        for name, value in original.items():
+            setattr(backend, name, value)
+
 
 
 def parse_case(text):
@@ -56,7 +79,8 @@ def compare_logits(control, candidate, tie_margin):
     differ = (control_top != candidate_top).nonzero().flatten().tolist()
     margins = [float(control[row, control_top[row]] - control[row, candidate_top[row]])
                for row in differ]
-    return {"rows": control.shape[0], "finite": finite, "greedy_agree": control.shape[0] - len(differ),
+    relative_l2 = float((control-candidate).norm()/control.norm().clamp_min(1e-12)) if finite else None
+    return {"relative_l2": relative_l2, "rows": control.shape[0], "finite": finite, "greedy_agree": control.shape[0] - len(differ),
             "max_abs_logit_diff": float((control - candidate).abs().max()),
             "mean_abs_logit_diff": float((control - candidate).abs().mean()),
             "disagreement_margins": margins,
@@ -67,7 +91,8 @@ def compare_logits(control, candidate, tie_margin):
 def merge(rows):
     rows = [{k: v for k, v in row.items() if not k.startswith("_")} for row in rows]
     margins = [m for row in rows for m in row["disagreement_margins"]]
-    return {"rows": sum(r["rows"] for r in rows), "finite": all(r.get("finite", True) for r in rows),
+    return {"relative_l2_max": max(r.get("relative_l2", 0.) or 0. for r in rows),
+            "rows": sum(r["rows"] for r in rows), "finite": all(r.get("finite", True) for r in rows),
             "greedy_agree": sum(r["greedy_agree"] for r in rows),
             "max_abs_logit_diff": max(r["max_abs_logit_diff"] for r in rows),
             "mean_abs_logit_diff": statistics.fmean(r["mean_abs_logit_diff"] for r in rows),
@@ -128,24 +153,32 @@ def main():
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--attention", choices=tuple(POLICIES), default="fa3")
-    parser.add_argument("--intervention", choices=INTERVENTIONS, default="all",
+    parser.add_argument("--intervention", choices=INTERVENTIONS, default="combined",
                         help="all folds RMSNorm; individual/combined epilogues retain the engine's RMSNorm")
     parser.add_argument("--prefill-cases", type=parse_case, nargs="+",
-                        default=[(8, 256), (1, 2048), (4, 2048), (8, 2048)],
+                        default=[(8, 256), (1, 2048), (4, 2048), (8, 1024)],
                         help="SEQUENCESxLENGTH packed prefill forwards; 2048, 8192 and 16384 "
-                             "tokens are the eight-cell buckets at the candidate budgets")
+                             "tokens include the accepted 8192-token prefill budget")
     parser.add_argument("--decode-cases", type=parse_case, nargs="+",
                         default=[(8, 256), (8, 2048), (64, 256), (64, 2048)],
                         help="BATCHxCONTEXT decode graphs (the eight cells' batch and prompt sizes)")
+    parser.add_argument("--mixed-cases", type=parse_case, nargs="+", default=[(8,256), (8,2048)],
+                        help="even BATCHxLENGTH: half decode with cached LENGTH, half fresh prefill LENGTH")
     parser.add_argument("--decode-steps", type=int, default=32)
     parser.add_argument("--tie-margin", type=float, default=0.25,
                         help="a greedy disagreement passes only if the control's own logit gap "
                              "between the two tokens is at most this")
+    parser.add_argument("--max-logit-relative-l2", type=float, default=.005)
+    parser.add_argument("--max-logit-abs", type=float, default=.25)
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--seed", type=int, default=20260927)
     args = parser.parse_args()
     if args.output_dir.exists():
         parser.error(f"refusing to overwrite existing results: {args.output_dir}")
+    if min(args.decode_steps, args.rounds, args.max_logit_relative_l2, args.max_logit_abs) <= 0:
+        parser.error("steps, rounds and numerical tolerances must be positive")
+    if any(batch < 2 or batch % 2 or length > 2048 for batch, length in args.mixed_cases):
+        parser.error("mixed cases require even batch >=2 and context <=2048")
     if any(length > 2048 for _, length in args.decode_cases):
         parser.error("decode contexts are prefilled through the 2048-token bucket; keep them <= 2048")
 
@@ -158,6 +191,18 @@ def main():
     from paged_graph_decoder import CUDAGraphDecoder
     from kernel_dispatch import _load
 
+    args.output_dir.mkdir(parents=True)
+    report = {"status": "running", "intervention": args.intervention, "prefill": [], "decode": [], "mixed": []}
+    def persist():
+        (args.output_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    original_hook = sys.excepthook
+    def record_failure(kind, value, trace):
+        import traceback
+        report.update(status="fail", error="".join(traceback.format_exception(kind, value, trace)))
+        persist()
+        original_hook(kind, value, trace)
+    sys.excepthook = record_failure
+    persist()
     setup = check_startup(args.device)
     fused = _load("fused_gemm")
     extension = fused._extension()  # fail before loading weights if unbuilt or stale
@@ -176,25 +221,37 @@ def main():
 
     capacity = max([n * length for n, length in args.prefill_cases]
                    + [b * math.ceil((length + args.decode_steps) / 16) * 16
-                      for b, length in args.decode_cases])
-    blocks = capacity // 16 + max(n for n, _ in args.prefill_cases + args.decode_cases) + 1
+                      for b, length in args.decode_cases + args.mixed_cases])
+    blocks = capacity // 16 + max(n for n, _ in args.prefill_cases + args.decode_cases + args.mixed_cases) + 1
     pools = {"control": allocate_pool(cfg, blocks, device), "candidate": allocate_pool(cfg, blocks, device)}
-    report = {"status": "running", "intervention": args.intervention,
+    report.update({"status": "running", "intervention": args.intervention,
               "normalization": "folded" if args.intervention == "all" else "existing_rmsnorm",
               "attention": args.attention, "model": args.model,
-              "gpu": torch.cuda.get_device_name(device), "tie_margin": args.tie_margin,
+              "gpu": torch.cuda.get_device_name(device), "torch": torch.__version__,
+              "cuda": torch.version.cuda, "extension_abi": extension.abi_version,
+              "accumulation_settings": {name: getattr(torch.backends.cuda.matmul,name)
+                  for name in ("allow_fp16_reduced_precision_reduction", "allow_tf32", "allow_fp16_accumulation")
+                  if hasattr(torch.backends.cuda.matmul,name)},
+              "tie_margin": args.tie_margin,
               "fused_configs": extension.configs(), "prepare_model_seconds": prepare_seconds,
               "fused_weight_bytes": (sum(t.numel() * t.element_size() for layer in model.fused_gemm_layers
                                          for t in (layer.qkv, layer.gate_up)) if args.intervention == "all"
                                      else sum(t.numel() * t.element_size() for t in
                                               getattr(model, "gate_only_epilogue_weights", []))),
-              "prefill": [], "decode": []}
+              "prefill": [], "decode": [], "mixed": [],
+              "max_logit_relative_l2": args.max_logit_relative_l2,
+              "max_logit_abs": args.max_logit_abs,
+              "prefill_residual_rmsnorm": False, "shared_graph_pool": False,
+              "source_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in (Path(__file__), ROOT/"custom_kernels/gemm_epilogue/fused_gemm.cu",
+                               ROOT/"engine/graph/paged_graph_decoder.py", ROOT/"engine/graph/piecewise_prefill.py")}})
+    persist()
 
     def prefill_arm(name, bucket):
         return PiecewisePrefill(model, pools[name], max_capture_tokens=bucket, max_shapes=1,
-                                token_buckets=[bucket], enable_residual_rmsnorm=True,
+                                token_buckets=[bucket], enable_residual_rmsnorm=False,
                                 enable_swiglu_fusion=True,
-                                share_graph_pool=bucket > PRIVATE_POOL_LIMIT,
+                                share_graph_pool=False,
                                 enable_fused_gemm_epilogues=name == "candidate",
                                 gemm_epilogue_intervention=args.intervention)
 
@@ -223,12 +280,13 @@ def main():
             *inputs, mixed_attention_policy=prefill_policy)) for name, arm in arms.items()},
             repetitions=5, rounds=args.rounds)
         row = {"sequences": sequences, "length": length, "tokens": tokens,
-               "graph_pool": "shared" if tokens > PRIVATE_POOL_LIMIT else "private",
+               "graph_pool": "private",
                "numerics": numerics, "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
                "median_forward_ms": timed, "samples_ms": samples,
                "speedup": timed["control"] / timed["candidate"],
                "capture_reserved_bytes": {name: arm.capture_memory.get(tokens) for name, arm in arms.items()}}
         report["prefill"].append(row)
+        persist()
         print(f"  control {timed['control']:.3f} ms, fused {timed['candidate']:.3f} ms "
               f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
               f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}, max |dKV| {kv:.4f}", flush=True)
@@ -237,8 +295,69 @@ def main():
         torch.cuda.empty_cache()
 
     fill = PiecewisePrefill(model, pools["control"], max_capture_tokens=2048, max_shapes=1,
-                            token_buckets=[2048], enable_residual_rmsnorm=True,
+                            token_buckets=[2048], enable_residual_rmsnorm=False,
                             enable_swiglu_fusion=True)
+    for batch, length in args.mixed_cases:
+        print(f"mixed B={batch} cached/fresh length={length}", flush=True)
+        half = batch // 2
+        layout = Layout(torch, device, batch, length+1)
+        prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
+        group = max(1, 2048 // length)
+        next_tokens = []
+        for first in range(0, half, group):
+            selected = list(range(first, min(half, first+group)))
+            next_tokens.append(fill.forward(*prefill_inputs(torch, device, prompts, layout, selected),
+                                           mixed_attention_policy=prefill_policy).argmax(-1).clone())
+        decode_ids = torch.cat(next_tokens)
+        chunks = [1]*half + [length]*half
+        ids = torch.cat([decode_ids, *[prompt.to(device) for prompt in prompts[half:]]])
+        positions = torch.cat([torch.full((half,), length, device=device),
+                               *[torch.arange(length, device=device) for _ in range(half)]])
+        owners = torch.repeat_interleave(torch.arange(batch, device=device),
+                                        torch.tensor(chunks, device=device))
+        slots = layout.slots(torch, owners, positions)
+        cu = torch.tensor([0, *torch.tensor(chunks).cumsum(0).tolist()], device=device, dtype=torch.int32)
+        contexts = torch.tensor([length+1]*half+[length]*half, device=device, dtype=torch.int32)
+        inputs = (ids, positions, slots, cu, contexts, layout.table, length)
+        seed = [tensor.clone() for tensor in pools["control"].k_pool+pools["control"].v_pool]
+        arms, logits = {}, {}
+        for name in ("control", "candidate"):
+            arms[name] = prefill_arm(name, ids.numel())
+            arms[name].forward(*inputs, mixed_attention_policy=prefill_policy)
+            for tensor, original in zip(pools[name].k_pool+pools[name].v_pool, seed):
+                tensor.copy_(original)
+            logits[name] = arms[name].forward(*inputs, mixed_attention_policy=prefill_policy).clone()
+            if arms[name].eager_calls:
+                raise AssertionError(f"{name} mixed missed captured bucket")
+        numerics = merge([compare_logits(logits["control"], logits["candidate"], args.tie_margin)])
+        kv = 0.
+        kv_finite = True
+        untouched = True
+        outside = torch.ones(blocks*16, dtype=torch.bool, device=device)
+        outside[slots] = False
+        for index, (a,b) in enumerate(zip(pools["control"].k_pool+pools["control"].v_pool,
+                                          pools["candidate"].k_pool+pools["candidate"].v_pool)):
+            left, right = a.flatten(0,1)[slots], b.flatten(0,1)[slots]
+            kv_finite = kv_finite and bool(torch.isfinite(right).all())
+            kv = max(kv, float((left.float()-right.float()).abs().max()))
+            for tensor in (a,b):
+                untouched = untouched and torch.allclose(tensor.flatten(0,1)[outside],
+                    seed[index].flatten(0,1)[outside], rtol=0, atol=0, equal_nan=True)
+        if not untouched:
+            raise AssertionError("mixed forward changed historical or unused KV slots")
+        timed, samples = alternate(torch, {name:(lambda arm=arm:arm.forward(
+            *inputs, mixed_attention_policy=prefill_policy)) for name,arm in arms.items()}, 5, args.rounds)
+        row = {"batch":batch, "context":length, "tokens":ids.numel(), "numerics":numerics,
+               "max_abs_kv_diff":kv, "candidate_kv_finite":kv_finite,
+               "untouched_cache_preserved":untouched, "median_forward_ms":timed,
+               "samples_ms":samples, "speedup":timed["control"]/timed["candidate"]}
+        report["mixed"].append(row)
+        persist()
+        print(f"  mixed speedup {row['speedup']:.3f}x", flush=True)
+        del arms, logits, seed
+        gc.collect()
+        torch.cuda.empty_cache()
+
     for batch, length in args.decode_cases:
         print(f"decode B={batch} context={length}", flush=True)
         capacity = length + args.decode_steps
@@ -294,6 +413,7 @@ def main():
                "median_graph_replay_ms": timed, "samples_ms": samples,
                "speedup": timed["control"] / timed["candidate"]}
         report["decode"].append(row)
+        persist()
         print(f"  control {timed['control']:.4f} ms, fused {timed['candidate']:.4f} ms "
               f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
               f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}", flush=True)
@@ -303,17 +423,25 @@ def main():
 
     failures = [f"prefill {r['sequences']}x{r['length']}" for r in report["prefill"]
                 if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
-                or not r["candidate_kv_finite"]]
+                or not r["candidate_kv_finite"]
+                or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
     failures += [f"decode B={r['batch']} L={r['context']}" for r in report["decode"]
                  if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
-                 or not r["candidate_kv_finite"]]
+                 or not r["candidate_kv_finite"]
+                or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
+    failures += [f"mixed B={r['batch']} L={r['context']}" for r in report["mixed"]
+                 if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                 or not r["candidate_kv_finite"]
+                 or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                 or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
     report["status"] = "pass" if not failures else "fail"
     report["failures"] = failures
     report["note"] = ("speedups are per forward (prefill: graphs plus eager attention, host included) "
-                      "or per decode graph replay; numerics pass when every greedy disagreement is a "
-                      "near tie in the control's logits")
-    args.output_dir.mkdir(parents=True)
-    (args.output_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+                      "or per decode graph replay; logit relative-L2 and maximum absolute error are gated "
+                      "alongside finite KV and the control logit margins at token disagreements")
+    persist()
     print(f"status={report['status']}" + (f"; non-tie disagreements in {failures}" if failures else "")
           + f"; report={args.output_dir / 'report.json'}")
     if failures:
