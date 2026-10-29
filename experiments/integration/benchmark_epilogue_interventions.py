@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Qualify individual epilogues in full prefill/decode graphs against the accepted engine.
 
+Plain GEMMs are tuned first (or a confirmed report can be supplied), followed
+by three-arm primitive qualification and model-level interventions.
 Each intervention runs in its own process. Original RMSNorm is retained for
 all individual candidates and their combination; the legacy all-fused path
 also folds normalization and is reported separately. Reports persist on
@@ -53,6 +55,7 @@ def select(reports, min_speedup=1.02):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--gemm-tuning",type=Path,help="confirmed plain-GEMM report; otherwise tune first")
     parser.add_argument("--all-report", type=Path, help="deprecated; historical results are not reused")
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--attention", choices=("fa3", "project"), default="fa3")
@@ -60,12 +63,23 @@ def main():
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--decode-steps", type=int, default=32)
     args = parser.parse_args()
+    args.output_dir = args.output_dir.resolve()
+    if args.gemm_tuning:
+        args.gemm_tuning = args.gemm_tuning.resolve()
     if args.output_dir.exists():
         parser.error("use a fresh output directory; old reports cannot qualify changed kernels")
     args.output_dir.mkdir(parents=True)
+    tuning_report = args.gemm_tuning or args.output_dir / 'plain-gemms' / 'report.json'
+    if args.gemm_tuning is None:
+        tuned = subprocess.run([sys.executable,str(ROOT/'experiments/prefill/tune_plain_gemms.py'),
+                                '--output-dir',str(tuning_report.parent),'--rounds',str(args.rounds)],cwd=ROOT)
+        if tuned.returncode or not tuning_report.is_file() or json.loads(tuning_report.read_text()).get('status') != 'pass':
+            (args.output_dir/'report.json').write_text(json.dumps({'status':'fail','stage':'plain-gemm-tuning',
+                'exit_code':tuned.returncode,'selection':{'intervention':'all','mode':'off','score':1.0}},indent=2)+'\n')
+            raise SystemExit(1)
     primitive_dir = args.output_dir / "primitives"
     result = subprocess.run([sys.executable, str(ROOT / "experiments/prefill/benchmark_epilogue_primitives.py"),
-                             "--output-dir", str(primitive_dir), "--rounds", str(args.rounds)], cwd=ROOT)
+                             "--output-dir", str(primitive_dir), "--gemm-tuning",str(tuning_report), "--rounds", str(args.rounds)], cwd=ROOT)
     primitive_report = primitive_dir / "report.json"
     if (result.returncode or not primitive_report.is_file()
             or json.loads(primitive_report.read_text()).get("status") != "pass"):
@@ -81,6 +95,7 @@ def main():
             command = [sys.executable, str(HERE / "ab_gemm_epilogues.py"),
                        "--output-dir", str(directory), "--model", args.model,
                        "--attention", args.attention, "--intervention", intervention,
+                       "--gemm-tuning", str(tuning_report),
                        "--rounds", str(args.rounds), "--decode-steps", str(args.decode_steps)]
             print(f"[epilogue {intervention}] {' '.join(command)}", flush=True)
             result = subprocess.run(command, cwd=ROOT)
@@ -93,7 +108,7 @@ def main():
         summary = {"status": "running", "reports": reports, "selection": select(reports)}
         (args.output_dir / "progress.json").write_text(json.dumps(summary, indent=2) + "\n")
     summary = {"status": "complete" if all(r.get("status") == "pass" for r in reports.values()) else "fail",
-               "primitive_report": str(primitive_report), "min_speedup": 1.02,
+               "primitive_report": str(primitive_report), "plain_gemm_report": str(tuning_report), "min_speedup": 1.02,
                "reports": reports, "selection": select(reports)}
     (args.output_dir / "report.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"selected epilogues: {summary['selection']}", flush=True)

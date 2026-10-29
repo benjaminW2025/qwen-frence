@@ -13,6 +13,8 @@ consumer's epilogue scales each accumulator row by rsqrt(mean + eps), which
 commutes with the matmul. Opt-in and unqualified until benchmarked.
 """
 from functools import lru_cache
+from contextlib import contextmanager
+import json
 import hashlib
 from pathlib import Path
 import sys
@@ -20,11 +22,81 @@ from types import SimpleNamespace
 
 import torch
 
-ABI_VERSION = 5
+ABI_VERSION = 6
 INTERLEAVE_BLOCK = 8
 PARTIAL_TILE = 256
 QKV_WIDTH = 2048
 INTERVENTIONS = ("all", "residual-o", "gate-up", "residual-down", "qkv", "combined")
+
+
+_TUNED_CONFIGS = None
+_TUNING_USAGE = None
+
+
+def tuning_table(report, source_hash, compiled_configs, gpu, torch_version, cuda_version):
+    """Validate provenance and confirmed plain-GEMM results before dispatch."""
+    expected = {"status":"pass", "dtype":"float16", "source_sha256":source_hash,
+                "gpu":gpu, "torch":torch_version, "cuda":cuda_version,
+                "configs":json.loads(json.dumps(compiled_configs))}
+    for name,value in expected.items():
+        if report.get(name) != value:
+            raise ValueError(f"GEMM tuning report mismatch: {name}; rerun tuning on this stack")
+    allowed = {row['index'] for row in compiled_configs}
+    result = {}
+    for row in report.get('cases',[]):
+        config = row.get('best_cutlass_config')
+        timing = row.get('confirmation',{})
+        if (row.get('status') != 'pass' or config not in allowed
+                or str(config) not in timing or 'cublas' not in timing
+                or not any(c.get('status') == 'pass' and c.get('config') == config
+                           for c in row.get('candidates',[]))):
+            raise ValueError('unqualified GEMM tuning row')
+        for name in (str(config),'cublas'):
+            value = timing[name].get('median_ms',0.)
+            if not isinstance(value,(int,float)) or not 0 < value < float('inf'):
+                raise ValueError('invalid confirmed GEMM latency')
+        key = (row['m'],row['n'],row['k'],row['bias'])
+        if key in result:
+            raise ValueError('duplicate GEMM tuning shape')
+        result[key] = config
+    if not result:
+        raise ValueError('GEMM tuning report contains no confirmed configurations')
+    return result
+
+
+@contextmanager
+def use_gemm_tuning(path):
+    """Apply exact-shape plain-GEMM choices only within an experiment.
+
+    These are starting configurations for fused epilogues, not evidence that
+    fusion wins. Explicit config arguments override this table. Missing shapes
+    fail rather than silently use an untuned default.
+    """
+    global _TUNED_CONFIGS, _TUNING_USAGE
+    report = json.loads(Path(path).read_text())
+    table = tuning_table(report, hashlib.sha256((Path(__file__).parent/'gemm_epilogue/fused_gemm.cu').read_bytes()).hexdigest(),
+                         configs(), torch.cuda.get_device_name(), str(torch.__version__), torch.version.cuda)
+    props = torch.cuda.get_device_properties(torch.cuda.current_device())
+    if report.get('multiprocessors') != props.multi_processor_count or report.get('total_memory') != props.total_memory:
+        raise ValueError('GEMM tuning report GPU partition differs; rerun tuning')
+    previous = _TUNED_CONFIGS, _TUNING_USAGE
+    usage = {}
+    _TUNED_CONFIGS, _TUNING_USAGE = table, usage
+    try:
+        yield usage
+    finally:
+        _TUNED_CONFIGS, _TUNING_USAGE = previous
+
+
+def _select_config(x, weight, config, bias=False):
+    if config >= 0 or _TUNED_CONFIGS is None:
+        return int(config)
+    key = (x.shape[0],weight.shape[0],weight.shape[1],bool(bias))
+    if key not in _TUNED_CONFIGS:
+        raise ValueError(f'GEMM tuning profile missing exact shape {key}')
+    label = str(key)
+    _TUNING_USAGE[label] = _TUNING_USAGE.get(label,0)+1
+    return _TUNED_CONFIGS[key]
 
 
 def intervention_ops(intervention):
@@ -182,7 +254,8 @@ def residual_gemm(x, weight, residual, *, partials=True, out=None, config=-1):
     With partials=False preserve the baseline FP16 projection boundary before
     residual addition. Partials=True is the legacy norm-folding experiment.
     """
-    return _extension().residual_gemm(x, weight, residual, bool(partials), out, int(config))
+    return _extension().residual_gemm(x, weight, residual, bool(partials), out,
+                                      int(config) if partials else _select_config(x,weight,config))
 
 
 def gate_up_swiglu(x, weight, partials=None, *, hidden=None, eps=1e-6, config=-1, round_silu=True):
@@ -192,7 +265,7 @@ def gate_up_swiglu(x, weight, partials=None, *, hidden=None, eps=1e-6, config=-1
     where the measured engine already uses fused SiLU/multiply. The legacy
     norm-folding path (partials provided) remains a distinct experiment.
     """
-    return _extension().gate_up_swiglu(x, weight, partials, float(hidden or x.shape[1]), float(eps), int(config), bool(round_silu))
+    return _extension().gate_up_swiglu(x, weight, partials, float(hidden or x.shape[1]), float(eps), int(config) if partials is not None else _select_config(x,weight,config), bool(round_silu))
 
 
 def qkv_rope_cache(x, weight, bias, partials, *, positions, slots, k_pool, v_pool,
@@ -202,9 +275,9 @@ def qkv_rope_cache(x, weight, bias, partials, *, positions, slots, k_pool, v_poo
     Padded rows (>= valid_tokens) get zero Q and never touch the cache, as in packed_qkv_rope_cache.
     """
     return _extension().qkv_rope_cache(x, weight, bias, partials, float(hidden or x.shape[1]), float(eps),
-                                       positions, slots, k_pool, v_pool, valid_tokens, float(theta), int(config))
+                                       positions, slots, k_pool, v_pool, valid_tokens, float(theta), int(config) if partials is not None else _select_config(x,weight,config,bias is not None))
 
 
-def gemm_plain(x, weight):
+def gemm_plain(x, weight, *, config=-1, bias=None):
     """x @ weight.T through the same CUTLASS mainloop, plain output (mainloop parity diagnostic)."""
-    return _extension().gemm_plain(x, weight)
+    return _extension().gemm_plain(x, weight, _select_config(x,weight,config,bias is not None), bias)

@@ -5,6 +5,7 @@ No normalization folding, quantization, or attention change. Numerical checks
 precede timing and include graph replay with changed inputs. QKV probes also
 change positions, slots and live counts, and guard every untouched cache slot.
 """
+from contextlib import nullcontext
 import argparse
 import hashlib
 import json
@@ -64,6 +65,7 @@ def paired_timing(graphs, rounds, repetitions):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', required=True, type=Path)
+    parser.add_argument('--gemm-tuning',type=Path)
     parser.add_argument('--rows', nargs='+', type=int, default=[1, 8, 64, 65, 128, 1408, 1409, 2048])
     parser.add_argument('--rounds', type=int, default=6)
     parser.add_argument('--repetitions', type=int, default=30)
@@ -89,7 +91,9 @@ def main(argv=None):
                       source_sha256=hashlib.sha256((ROOT/'custom_kernels/gemm_epilogue/fused_gemm.cu').read_bytes()).hexdigest(),
                       abi=extension.abi_version, configs=extension.configs())
         torch.manual_seed(971)
-        with strict_accumulation() as settings:
+        with strict_accumulation() as settings, (fused.use_gemm_tuning(args.gemm_tuning) if args.gemm_tuning else nullcontext({})) as usage:
+            report["tuning_usage"] = usage
+            report["gemm_tuning"] = str(args.gemm_tuning) if args.gemm_tuning else None
             report['accumulation_settings'] = settings
             # Exact cancellation distinguishes preserving FP16 GEMM rounding
             # from adding the residual directly to an FP32 accumulator.
@@ -108,7 +112,7 @@ def main(argv=None):
             report['residual_rounding_and_alias_gate'] = 'pass'
             for rows in args.rows:
                 # Both compiled tile/scheduler defaults must pass at each row count.
-                for config in (0, 1):
+                for config in ((-1,) if args.gemm_tuning else (0, 1)):
                     for op in ('residual-o', 'residual-down', 'gate-up', 'qkv'):
                         report['active_case'] = {'rows': rows, 'config': config, 'operation': op}
                         save()
@@ -121,6 +125,7 @@ def main(argv=None):
                         if op.startswith('residual'):
                             residual = torch.randn(rows, n, device='cuda').half()
                             baseline = lambda: F.linear(x, w) + residual
+                            separate = lambda: fused.gemm_plain(x,w,config=config)+residual
                             candidate = lambda: fused.residual_gemm(x, w, residual, partials=False, config=config)[0]
                         elif op == 'gate-up':
                             gate_w, up_w = w.chunk(2)
@@ -128,6 +133,9 @@ def main(argv=None):
                             def baseline():
                                 gate, up = F.linear(x, w).chunk(2, -1)
                                 return swiglu(gate, up, block_size=512) if rows > SWIGLU_FUSION_ROW_THRESHOLD else F.silu(gate)*up
+                            def separate():
+                                gate, up = fused.gemm_plain(x,w,config=config).chunk(2,-1)
+                                return swiglu(gate,up,block_size=512) if rows > SWIGLU_FUSION_ROW_THRESHOLD else F.silu(gate)*up
                             candidate = lambda: fused.gate_up_swiglu(x, interleaved, config=config, round_silu=rows <= SWIGLU_FUSION_ROW_THRESHOLD)
                         else:
                             bias = (torch.randn(2048, device='cuda')*.1).half()
@@ -136,21 +144,24 @@ def main(argv=None):
                             valid = torch.tensor(rows, dtype=torch.int32, device='cuda')
                             pages = (2*rows+31)//16
                             pools = {name: [torch.full((pages,16,2,128),7.,device='cuda',dtype=torch.float16)
-                                            for _ in range(2)] for name in ('control','candidate')}
+                                            for _ in range(2)] for name in ('control','candidate','cutlass-separate')}
                             baseline = lambda: packed_qkv_rope_cache(F.linear(x,w,bias), positions, slots,
                                 *pools['control'], valid_tokens=valid)
+                            separate = lambda: packed_qkv_rope_cache(fused.gemm_plain(x,w,bias=bias,config=config),
+                                positions,slots,*pools['cutlass-separate'],valid_tokens=valid)
                             candidate = lambda: fused.qkv_rope_cache(x,w,bias,None,positions=positions,slots=slots,
                                 k_pool=pools['candidate'][0],v_pool=pools['candidate'][1],valid_tokens=valid,config=config)
                             def guard():
                                 live = int(valid)
                                 untouched = torch.ones(pages*16, dtype=torch.bool, device='cuda')
                                 untouched[slots[:live]] = False
-                                for a,b in zip(pools['control'],pools['candidate']):
-                                    checks.append(compare(a.flatten(0,1)[slots[:live]],b.flatten(0,1)[slots[:live]],args.atol,args.rtol))
-                                    if not torch.equal(b.flatten(0,1)[untouched], torch.full_like(b.flatten(0,1)[untouched],7.)):
-                                        raise AssertionError('QKV wrote outside live slots')
+                                for name in ('candidate','cutlass-separate'):
+                                    for a,b in zip(pools['control'],pools[name]):
+                                        checks.append(compare(a.flatten(0,1)[slots[:live]],b.flatten(0,1)[slots[:live]],args.atol,args.rtol))
+                                        if not torch.equal(b.flatten(0,1)[untouched], torch.full_like(b.flatten(0,1)[untouched],7.)):
+                                            raise AssertionError('QKV wrote outside live slots')
                         graphs, outputs = {}, {}
-                        for name, operation in [('control',baseline),('candidate',candidate)]:
+                        for name, operation in [('control',baseline),('cutlass-separate',separate),('candidate',candidate)]:
                             graphs[name], outputs[name] = capture(operation)
                         for factor in (0., -1., 2.):
                             x.copy_((torch.randn_like(x)*factor*.1))
@@ -163,11 +174,13 @@ def main(argv=None):
                                         tensor.fill_(7.)
                             for graph in graphs.values():
                                 graph.replay()
-                            checks.append(compare(outputs['control'],outputs['candidate'],args.atol,args.rtol))
+                            for name in ('candidate','cutlass-separate'):
+                                checks.append(compare(outputs['control'],outputs[name],args.atol,args.rtol))
                             guard()
                         timing = paired_timing(graphs, args.rounds, args.repetitions)
                         report['cases'].append({**report['active_case'], 'status':'pass', 'checks':checks,
-                            'timing':timing, 'speedup':timing['control']['median_ms']/timing['candidate']['median_ms']})
+                            'timing':timing, 'speedup':timing['control']['median_ms']/timing['candidate']['median_ms'],
+                            'fusion_speedup_vs_cutlass_separate':timing['cutlass-separate']['median_ms']/timing['candidate']['median_ms']})
                         print(f'{op} rows={rows} config={config}: {report["cases"][-1]["speedup"]:.3f}x',flush=True)
                         save()
                         del graphs, outputs

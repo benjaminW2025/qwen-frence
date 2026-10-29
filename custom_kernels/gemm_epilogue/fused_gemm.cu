@@ -385,15 +385,18 @@ template <class Config> using ResidualGemm = GemmFor<Config, ResidualEpilogue<Co
 template <class Config> using SwigluGemm = GemmFor<Config, SwigluEpilogue>;
 template <class Config> using QkvGemm = GemmFor<Config, QkvEpilogue<Config::TileN>>;
 
-// Same prefill mainloop, plain [M, N] output: attributes any fused win to the epilogue.
+// Plain output for every tile/cluster/scheduler candidate, before adding fusion.
+template <class Config>
 using PlainEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-    typename PrefillConfig::TileShape, typename PrefillConfig::ClusterShape,
+    typename Config::TileShape, typename Config::ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto, float, float,
     H, cutlass::layout::RowMajor, 8, H, cutlass::layout::RowMajor, 8,
     cutlass::epilogue::NoSmemWarpSpecialized>::CollectiveOp;
+template <class Config>
 using PlainGemm = cutlass::gemm::device::GemmUniversalAdapter<cutlass::gemm::kernel::GemmUniversal<
-    Shape<int, int, int, int>, MainloopFor<PrefillConfig, PlainEpilogue>, PlainEpilogue>>;
+    Shape<int, int, int, int>, MainloopFor<Config, PlainEpilogue<Config>>, PlainEpilogue<Config>,
+    typename Config::Scheduler>>;
 
 template <class Config>
 using TiledMmaFor = typename MainloopFor<Config, Adapted<SwigluEpilogue>>::TiledMma;
@@ -599,18 +602,34 @@ torch::Tensor qkv_rope_cache(torch::Tensor x, torch::Tensor w, c10::optional<tor
     return q;
 }
 
-torch::Tensor gemm_plain(torch::Tensor x, torch::Tensor w) {
+torch::Tensor gemm_plain(torch::Tensor x, torch::Tensor w, int64_t config,
+                         c10::optional<torch::Tensor> bias) {
     check_operands(x, w);
     c10::cuda::CUDAGuard guard(x.device());
     int M = x.size(0), N = w.size(0);
     auto out = torch::empty({x.size(0), w.size(0)}, x.options());
-    auto stride_d = cutlass::make_cute_packed_stride(typename PlainGemm::GemmKernel::StrideD{}, {M, N, 1});
-    run<PlainGemm>(x, w, {{1.f, 0.f}, nullptr, stride_d, reinterpret_cast<H*>(out.data_ptr()), stride_d});
+    H const* source = nullptr;
+    if (bias.has_value()) {
+        auto const& value = bias.value();
+        TORCH_CHECK(value.is_cuda() && value.device() == x.device() && value.scalar_type() == at::kHalf &&
+                    value.dim() == 1 && value.size(0) == N && value.is_contiguous(),
+                    "bias must be contiguous FP16 [N] on the operands' device");
+        source = reinterpret_cast<H const*>(value.data_ptr());
+    }
+    with_candidate(resolve_config(config, M), [&](auto tag) {
+        using C = typename decltype(tag)::type;
+        using Gemm = PlainGemm<C>;
+        auto stride_d = cutlass::make_cute_packed_stride(typename Gemm::GemmKernel::StrideD{}, {M, N, 1});
+        auto stride_c = stride_d;
+        get<0>(stride_c) = 0; // bias broadcast: every output row reads the same vector
+        run<Gemm>(x, w, {{1.f, source ? 1.f : 0.f}, source, stride_c,
+                        reinterpret_cast<H*>(out.data_ptr()), stride_d});
+    });
     return out;
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-    module.attr("abi_version") = 5;
+    module.attr("abi_version") = 6;
     module.attr("source_sha256") = GEMM_EPILOGUE_SOURCE_HASH;
     module.attr("interleave_block") = Block;
     module.attr("partial_tile") = PrefillConfig::TileN;

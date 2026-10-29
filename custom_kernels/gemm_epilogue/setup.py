@@ -14,8 +14,9 @@ source = Path(__file__).with_name('fused_gemm.cu')
 source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
 
 # GEMM_EPILOGUE_SWEEP=1 compiles every tile/cluster/scheduler candidate for
-# experiments/prefill/sweep_epilogue_tiles.py; the default build compiles only the
-# two defaults. Rebuild without it afterwards.
+# experiments/prefill/tune_plain_gemms.py and the epilogue sweep. The default
+# build compiles only two configurations; retain the sweep build while using
+# its tuning profile (profiles validate the compiled configuration inventory).
 macros = [('GEMM_EPILOGUE_SOURCE_HASH', '"' + source_hash + '"')]
 if os.environ.get('GEMM_EPILOGUE_SWEEP') == '1':
     macros.append(('GEMM_EPILOGUE_SWEEP', '1'))

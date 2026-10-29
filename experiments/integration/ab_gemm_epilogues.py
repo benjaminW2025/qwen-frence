@@ -21,7 +21,7 @@ extension.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 import argparse
 import gc
@@ -152,6 +152,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model", default="Qwen/Qwen2.5-1.5B")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--gemm-tuning", type=Path)
     parser.add_argument("--attention", choices=tuple(POLICIES), default="fa3")
     parser.add_argument("--intervention", choices=INTERVENTIONS, default="combined",
                         help="all folds RMSNorm; individual/combined epilogues retain the engine's RMSNorm")
@@ -204,248 +205,252 @@ def main():
     sys.excepthook = record_failure
     persist()
     setup = check_startup(args.device)
+    torch.cuda.set_device(args.device)
     fused = _load("fused_gemm")
     extension = fused._extension()  # fail before loading weights if unbuilt or stale
-    engine, _, _ = load_model_only(resolve_model_source(args), args.device, "float16",
-                                   hub_transfer=setup["hub_transfer"])
-    model, cfg, device = engine.model, engine.cfg, engine.device
-    prepare_started = time.perf_counter()
-    if args.intervention == "all":
-        fused.prepare_model(model)
-    elif args.intervention in ("gate-up", "combined"):
-        fused.prepare_gate_only(model)
-    torch.cuda.synchronize()
-    prepare_seconds = time.perf_counter() - prepare_started
-    prefill_policy, decode_policy = POLICIES[args.attention]
-    generator = torch.Generator().manual_seed(args.seed)
+    with (fused.use_gemm_tuning(args.gemm_tuning) if args.gemm_tuning else nullcontext({})) as tuning_usage:
+        report['gemm_tuning'] = str(args.gemm_tuning) if args.gemm_tuning else None
+        report['tuning_usage'] = tuning_usage
+        engine, _, _ = load_model_only(resolve_model_source(args), args.device, "float16",
+                                       hub_transfer=setup["hub_transfer"])
+        model, cfg, device = engine.model, engine.cfg, engine.device
+        prepare_started = time.perf_counter()
+        if args.intervention == "all":
+            fused.prepare_model(model)
+        elif args.intervention in ("gate-up", "combined"):
+            fused.prepare_gate_only(model)
+        torch.cuda.synchronize()
+        prepare_seconds = time.perf_counter() - prepare_started
+        prefill_policy, decode_policy = POLICIES[args.attention]
+        generator = torch.Generator().manual_seed(args.seed)
 
-    capacity = max([n * length for n, length in args.prefill_cases]
-                   + [b * math.ceil((length + args.decode_steps) / 16) * 16
-                      for b, length in args.decode_cases + args.mixed_cases])
-    blocks = capacity // 16 + max(n for n, _ in args.prefill_cases + args.decode_cases + args.mixed_cases) + 1
-    pools = {"control": allocate_pool(cfg, blocks, device), "candidate": allocate_pool(cfg, blocks, device)}
-    report.update({"status": "running", "intervention": args.intervention,
-              "normalization": "folded" if args.intervention == "all" else "existing_rmsnorm",
-              "attention": args.attention, "model": args.model,
-              "gpu": torch.cuda.get_device_name(device), "torch": torch.__version__,
-              "cuda": torch.version.cuda, "extension_abi": extension.abi_version,
-              "accumulation_settings": {name: getattr(torch.backends.cuda.matmul,name)
-                  for name in ("allow_fp16_reduced_precision_reduction", "allow_tf32", "allow_fp16_accumulation")
-                  if hasattr(torch.backends.cuda.matmul,name)},
-              "tie_margin": args.tie_margin,
-              "fused_configs": extension.configs(), "prepare_model_seconds": prepare_seconds,
-              "fused_weight_bytes": (sum(t.numel() * t.element_size() for layer in model.fused_gemm_layers
-                                         for t in (layer.qkv, layer.gate_up)) if args.intervention == "all"
-                                     else sum(t.numel() * t.element_size() for t in
-                                              getattr(model, "gate_only_epilogue_weights", []))),
-              "prefill": [], "decode": [], "mixed": [],
-              "max_logit_relative_l2": args.max_logit_relative_l2,
-              "max_logit_abs": args.max_logit_abs,
-              "prefill_residual_rmsnorm": False, "shared_graph_pool": False,
-              "source_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-                  for path in (Path(__file__), ROOT/"custom_kernels/gemm_epilogue/fused_gemm.cu",
-                               ROOT/"engine/graph/paged_graph_decoder.py", ROOT/"engine/graph/piecewise_prefill.py")}})
-    persist()
-
-    def prefill_arm(name, bucket):
-        return PiecewisePrefill(model, pools[name], max_capture_tokens=bucket, max_shapes=1,
-                                token_buckets=[bucket], enable_residual_rmsnorm=False,
-                                enable_swiglu_fusion=True,
-                                share_graph_pool=False,
-                                enable_fused_gemm_epilogues=name == "candidate",
-                                gemm_epilogue_intervention=args.intervention)
-
-    for sequences, length in args.prefill_cases:
-        tokens = sequences * length
-        print(f"prefill {sequences}x{length} ({tokens} tokens)", flush=True)
-        prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(sequences)]
-        layout = Layout(torch, device, sequences, length)
-        inputs = prefill_inputs(torch, device, prompts, layout, list(range(sequences)))
-        arms, logits = {}, {}
-        for name in ("control", "candidate"):
-            for tensor in pools[name].k_pool + pools[name].v_pool:
-                tensor.fill_(float("nan"))
-            arms[name] = prefill_arm(name, tokens)
-            logits[name] = arms[name].forward(*inputs, mixed_attention_policy=prefill_policy)
-            if logits[name] is None or arms[name].eager_calls:
-                raise AssertionError(f"{name} prefill missed its captured bucket")
-        live = inputs[2]
-        kv = max(float((a.view(-1, 2, 128)[live].float() - b.view(-1, 2, 128)[live].float()).abs().max())
-                 for a, b in zip(pools["control"].k_pool + pools["control"].v_pool,
-                                 pools["candidate"].k_pool + pools["candidate"].v_pool))
-        kv_finite = all(bool(torch.isfinite(t.view(-1, 2, 128)[live]).all())
-                        for t in pools["candidate"].k_pool + pools["candidate"].v_pool)
-        numerics = merge([compare_logits(logits["control"], logits["candidate"], args.tie_margin)])
-        timed, samples = alternate(torch, {name: (lambda arm=arm: arm.forward(
-            *inputs, mixed_attention_policy=prefill_policy)) for name, arm in arms.items()},
-            repetitions=5, rounds=args.rounds)
-        row = {"sequences": sequences, "length": length, "tokens": tokens,
-               "graph_pool": "private",
-               "numerics": numerics, "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
-               "median_forward_ms": timed, "samples_ms": samples,
-               "speedup": timed["control"] / timed["candidate"],
-               "capture_reserved_bytes": {name: arm.capture_memory.get(tokens) for name, arm in arms.items()}}
-        report["prefill"].append(row)
+        capacity = max([n * length for n, length in args.prefill_cases]
+                       + [b * math.ceil((length + args.decode_steps) / 16) * 16
+                          for b, length in args.decode_cases + args.mixed_cases])
+        blocks = capacity // 16 + max(n for n, _ in args.prefill_cases + args.decode_cases + args.mixed_cases) + 1
+        pools = {"control": allocate_pool(cfg, blocks, device), "candidate": allocate_pool(cfg, blocks, device)}
+        report.update({"status": "running", "intervention": args.intervention,
+                  "normalization": "folded" if args.intervention == "all" else "existing_rmsnorm",
+                  "attention": args.attention, "model": args.model,
+                  "gpu": torch.cuda.get_device_name(device), "torch": torch.__version__,
+                  "cuda": torch.version.cuda, "extension_abi": extension.abi_version,
+                  "accumulation_settings": {name: getattr(torch.backends.cuda.matmul,name)
+                      for name in ("allow_fp16_reduced_precision_reduction", "allow_tf32", "allow_fp16_accumulation")
+                      if hasattr(torch.backends.cuda.matmul,name)},
+                  "tie_margin": args.tie_margin,
+                  "fused_configs": extension.configs(), "prepare_model_seconds": prepare_seconds,
+                  "fused_weight_bytes": (sum(t.numel() * t.element_size() for layer in model.fused_gemm_layers
+                                             for t in (layer.qkv, layer.gate_up)) if args.intervention == "all"
+                                         else sum(t.numel() * t.element_size() for t in
+                                                  getattr(model, "gate_only_epilogue_weights", []))),
+                  "prefill": [], "decode": [], "mixed": [],
+                  "max_logit_relative_l2": args.max_logit_relative_l2,
+                  "max_logit_abs": args.max_logit_abs,
+                  "prefill_residual_rmsnorm": False, "shared_graph_pool": False,
+                  "source_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in (Path(__file__), ROOT/"custom_kernels/gemm_epilogue/fused_gemm.cu",
+                                   ROOT/"engine/graph/paged_graph_decoder.py", ROOT/"engine/graph/piecewise_prefill.py")}})
         persist()
-        print(f"  control {timed['control']:.3f} ms, fused {timed['candidate']:.3f} ms "
-              f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
-              f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}, max |dKV| {kv:.4f}", flush=True)
-        del arms, logits
-        gc.collect()
-        torch.cuda.empty_cache()
 
-    fill = PiecewisePrefill(model, pools["control"], max_capture_tokens=2048, max_shapes=1,
-                            token_buckets=[2048], enable_residual_rmsnorm=False,
-                            enable_swiglu_fusion=True)
-    for batch, length in args.mixed_cases:
-        print(f"mixed B={batch} cached/fresh length={length}", flush=True)
-        half = batch // 2
-        layout = Layout(torch, device, batch, length+1)
-        prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
-        group = max(1, 2048 // length)
-        next_tokens = []
-        for first in range(0, half, group):
-            selected = list(range(first, min(half, first+group)))
-            next_tokens.append(fill.forward(*prefill_inputs(torch, device, prompts, layout, selected),
-                                           mixed_attention_policy=prefill_policy).argmax(-1).clone())
-        decode_ids = torch.cat(next_tokens)
-        chunks = [1]*half + [length]*half
-        ids = torch.cat([decode_ids, *[prompt.to(device) for prompt in prompts[half:]]])
-        positions = torch.cat([torch.full((half,), length, device=device),
-                               *[torch.arange(length, device=device) for _ in range(half)]])
-        owners = torch.repeat_interleave(torch.arange(batch, device=device),
-                                        torch.tensor(chunks, device=device))
-        slots = layout.slots(torch, owners, positions)
-        cu = torch.tensor([0, *torch.tensor(chunks).cumsum(0).tolist()], device=device, dtype=torch.int32)
-        contexts = torch.tensor([length+1]*half+[length]*half, device=device, dtype=torch.int32)
-        inputs = (ids, positions, slots, cu, contexts, layout.table, length)
-        seed = [tensor.clone() for tensor in pools["control"].k_pool+pools["control"].v_pool]
-        arms, logits = {}, {}
-        for name in ("control", "candidate"):
-            arms[name] = prefill_arm(name, ids.numel())
-            arms[name].forward(*inputs, mixed_attention_policy=prefill_policy)
-            for tensor, original in zip(pools[name].k_pool+pools[name].v_pool, seed):
-                tensor.copy_(original)
-            logits[name] = arms[name].forward(*inputs, mixed_attention_policy=prefill_policy).clone()
-            if arms[name].eager_calls:
-                raise AssertionError(f"{name} mixed missed captured bucket")
-        numerics = merge([compare_logits(logits["control"], logits["candidate"], args.tie_margin)])
-        kv = 0.
-        kv_finite = True
-        untouched = True
-        outside = torch.ones(blocks*16, dtype=torch.bool, device=device)
-        outside[slots] = False
-        for index, (a,b) in enumerate(zip(pools["control"].k_pool+pools["control"].v_pool,
-                                          pools["candidate"].k_pool+pools["candidate"].v_pool)):
-            left, right = a.flatten(0,1)[slots], b.flatten(0,1)[slots]
-            kv_finite = kv_finite and bool(torch.isfinite(right).all())
-            kv = max(kv, float((left.float()-right.float()).abs().max()))
-            for tensor in (a,b):
-                untouched = untouched and torch.allclose(tensor.flatten(0,1)[outside],
-                    seed[index].flatten(0,1)[outside], rtol=0, atol=0, equal_nan=True)
-        if not untouched:
-            raise AssertionError("mixed forward changed historical or unused KV slots")
-        timed, samples = alternate(torch, {name:(lambda arm=arm:arm.forward(
-            *inputs, mixed_attention_policy=prefill_policy)) for name,arm in arms.items()}, 5, args.rounds)
-        row = {"batch":batch, "context":length, "tokens":ids.numel(), "numerics":numerics,
-               "max_abs_kv_diff":kv, "candidate_kv_finite":kv_finite,
-               "untouched_cache_preserved":untouched, "median_forward_ms":timed,
-               "samples_ms":samples, "speedup":timed["control"]/timed["candidate"]}
-        report["mixed"].append(row)
+        def prefill_arm(name, bucket):
+            return PiecewisePrefill(model, pools[name], max_capture_tokens=bucket, max_shapes=1,
+                                    token_buckets=[bucket], enable_residual_rmsnorm=False,
+                                    enable_swiglu_fusion=True,
+                                    share_graph_pool=False,
+                                    enable_fused_gemm_epilogues=name == "candidate",
+                                    gemm_epilogue_intervention=args.intervention)
+
+        for sequences, length in args.prefill_cases:
+            tokens = sequences * length
+            print(f"prefill {sequences}x{length} ({tokens} tokens)", flush=True)
+            prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(sequences)]
+            layout = Layout(torch, device, sequences, length)
+            inputs = prefill_inputs(torch, device, prompts, layout, list(range(sequences)))
+            arms, logits = {}, {}
+            for name in ("control", "candidate"):
+                for tensor in pools[name].k_pool + pools[name].v_pool:
+                    tensor.fill_(float("nan"))
+                arms[name] = prefill_arm(name, tokens)
+                logits[name] = arms[name].forward(*inputs, mixed_attention_policy=prefill_policy)
+                if logits[name] is None or arms[name].eager_calls:
+                    raise AssertionError(f"{name} prefill missed its captured bucket")
+            live = inputs[2]
+            kv = max(float((a.view(-1, 2, 128)[live].float() - b.view(-1, 2, 128)[live].float()).abs().max())
+                     for a, b in zip(pools["control"].k_pool + pools["control"].v_pool,
+                                     pools["candidate"].k_pool + pools["candidate"].v_pool))
+            kv_finite = all(bool(torch.isfinite(t.view(-1, 2, 128)[live]).all())
+                            for t in pools["candidate"].k_pool + pools["candidate"].v_pool)
+            numerics = merge([compare_logits(logits["control"], logits["candidate"], args.tie_margin)])
+            timed, samples = alternate(torch, {name: (lambda arm=arm: arm.forward(
+                *inputs, mixed_attention_policy=prefill_policy)) for name, arm in arms.items()},
+                repetitions=5, rounds=args.rounds)
+            row = {"sequences": sequences, "length": length, "tokens": tokens,
+                   "graph_pool": "private",
+                   "numerics": numerics, "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
+                   "median_forward_ms": timed, "samples_ms": samples,
+                   "speedup": timed["control"] / timed["candidate"],
+                   "capture_reserved_bytes": {name: arm.capture_memory.get(tokens) for name, arm in arms.items()}}
+            report["prefill"].append(row)
+            persist()
+            print(f"  control {timed['control']:.3f} ms, fused {timed['candidate']:.3f} ms "
+                  f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
+                  f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}, max |dKV| {kv:.4f}", flush=True)
+            del arms, logits
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        fill = PiecewisePrefill(model, pools["control"], max_capture_tokens=2048, max_shapes=1,
+                                token_buckets=[2048], enable_residual_rmsnorm=False,
+                                enable_swiglu_fusion=True)
+        for batch, length in args.mixed_cases:
+            print(f"mixed B={batch} cached/fresh length={length}", flush=True)
+            half = batch // 2
+            layout = Layout(torch, device, batch, length+1)
+            prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
+            group = max(1, 2048 // length)
+            next_tokens = []
+            for first in range(0, half, group):
+                selected = list(range(first, min(half, first+group)))
+                next_tokens.append(fill.forward(*prefill_inputs(torch, device, prompts, layout, selected),
+                                               mixed_attention_policy=prefill_policy).argmax(-1).clone())
+            decode_ids = torch.cat(next_tokens)
+            chunks = [1]*half + [length]*half
+            ids = torch.cat([decode_ids, *[prompt.to(device) for prompt in prompts[half:]]])
+            positions = torch.cat([torch.full((half,), length, device=device),
+                                   *[torch.arange(length, device=device) for _ in range(half)]])
+            owners = torch.repeat_interleave(torch.arange(batch, device=device),
+                                            torch.tensor(chunks, device=device))
+            slots = layout.slots(torch, owners, positions)
+            cu = torch.tensor([0, *torch.tensor(chunks).cumsum(0).tolist()], device=device, dtype=torch.int32)
+            contexts = torch.tensor([length+1]*half+[length]*half, device=device, dtype=torch.int32)
+            inputs = (ids, positions, slots, cu, contexts, layout.table, length)
+            seed = [tensor.clone() for tensor in pools["control"].k_pool+pools["control"].v_pool]
+            arms, logits = {}, {}
+            for name in ("control", "candidate"):
+                arms[name] = prefill_arm(name, ids.numel())
+                arms[name].forward(*inputs, mixed_attention_policy=prefill_policy)
+                for tensor, original in zip(pools[name].k_pool+pools[name].v_pool, seed):
+                    tensor.copy_(original)
+                logits[name] = arms[name].forward(*inputs, mixed_attention_policy=prefill_policy).clone()
+                if arms[name].eager_calls:
+                    raise AssertionError(f"{name} mixed missed captured bucket")
+            numerics = merge([compare_logits(logits["control"], logits["candidate"], args.tie_margin)])
+            kv = 0.
+            kv_finite = True
+            untouched = True
+            outside = torch.ones(blocks*16, dtype=torch.bool, device=device)
+            outside[slots] = False
+            for index, (a,b) in enumerate(zip(pools["control"].k_pool+pools["control"].v_pool,
+                                              pools["candidate"].k_pool+pools["candidate"].v_pool)):
+                left, right = a.flatten(0,1)[slots], b.flatten(0,1)[slots]
+                kv_finite = kv_finite and bool(torch.isfinite(right).all())
+                kv = max(kv, float((left.float()-right.float()).abs().max()))
+                for tensor in (a,b):
+                    untouched = untouched and torch.allclose(tensor.flatten(0,1)[outside],
+                        seed[index].flatten(0,1)[outside], rtol=0, atol=0, equal_nan=True)
+            if not untouched:
+                raise AssertionError("mixed forward changed historical or unused KV slots")
+            timed, samples = alternate(torch, {name:(lambda arm=arm:arm.forward(
+                *inputs, mixed_attention_policy=prefill_policy)) for name,arm in arms.items()}, 5, args.rounds)
+            row = {"batch":batch, "context":length, "tokens":ids.numel(), "numerics":numerics,
+                   "max_abs_kv_diff":kv, "candidate_kv_finite":kv_finite,
+                   "untouched_cache_preserved":untouched, "median_forward_ms":timed,
+                   "samples_ms":samples, "speedup":timed["control"]/timed["candidate"]}
+            report["mixed"].append(row)
+            persist()
+            print(f"  mixed speedup {row['speedup']:.3f}x", flush=True)
+            del arms, logits, seed
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        for batch, length in args.decode_cases:
+            print(f"decode B={batch} context={length}", flush=True)
+            capacity = length + args.decode_steps
+            layout = Layout(torch, device, batch, capacity)
+            decoders = {name: CUDAGraphDecoder(
+                model, pools[name], batch_size=batch, max_blocks=layout.pages, device=device,
+                dtype=torch.float16, decode_attention_policy=decode_policy,
+                max_decode_context_length=capacity, enable_residual_rmsnorm=True,
+                enable_native_decode_qkv_postprocess=True,
+                enable_fused_gemm_epilogues=name == "candidate",
+                gemm_epilogue_intervention=args.intervention).capture()
+                for name in ("control", "candidate")}
+            prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
+            group = max(1, 2048 // length)
+            last = []
+            for first in range(0, batch, group):
+                rows = list(range(first, min(batch, first + group)))
+                last.append(fill.forward(*prefill_inputs(torch, device, prompts, layout, rows),
+                                         mixed_attention_policy=prefill_policy))
+            for a, b in zip(pools["candidate"].k_pool + pools["candidate"].v_pool,
+                            pools["control"].k_pool + pools["control"].v_pool):
+                a.copy_(b)  # isolate decode numerics: both arms start from one history
+            tokens = torch.cat(last).argmax(-1)
+            rows = torch.arange(batch, device=device)
+            steps = []
+            for step in range(args.decode_steps):
+                position = torch.full((batch,), length + step, device=device, dtype=torch.int32)
+                slots = layout.slots(torch, rows, position.to(torch.long))
+                step_logits = {name: decoder.decode(tokens.view(batch, 1), position, position + 1,
+                                                    layout.table, slots).squeeze(1).clone()
+                               for name, decoder in decoders.items()}
+                steps.append(compare_logits(step_logits["control"], step_logits["candidate"], args.tie_margin))
+                tokens = steps[-1]["_next"]  # teacher-forced on the control's greedy token
+            numerics = merge(steps)
+            live_positions = torch.arange(capacity, device=device)[None, :].expand(batch, -1)
+            live_rows = rows[:, None].expand_as(live_positions)
+            live_slots = layout.slots(torch, live_rows, live_positions).reshape(-1)
+            kv_finite = True
+            kv = 0.0
+            for a, b in zip(pools["control"].k_pool + pools["control"].v_pool,
+                            pools["candidate"].k_pool + pools["candidate"].v_pool):
+                left = a.view(-1, 2, 128)[live_slots].float()
+                right = b.view(-1, 2, 128)[live_slots].float()
+                kv_finite = kv_finite and bool(torch.isfinite(right).all())
+                kv = max(kv, float((left - right).abs().max()))
+            del left, right
+            timed, samples = alternate(torch, {name: decoder.graph.replay for name, decoder in decoders.items()},
+                                       repetitions=50, rounds=args.rounds)
+            row = {"batch": batch, "context": length, "steps": args.decode_steps, "numerics": numerics,
+                   "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
+                   "first_disagreement_step": next((i for i, s in enumerate(steps)
+                                                    if s["greedy_agree"] < s["rows"]), None),
+                   "median_graph_replay_ms": timed, "samples_ms": samples,
+                   "speedup": timed["control"] / timed["candidate"]}
+            report["decode"].append(row)
+            persist()
+            print(f"  control {timed['control']:.4f} ms, fused {timed['candidate']:.4f} ms "
+                  f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
+                  f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}", flush=True)
+            del decoders
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        failures = [f"prefill {r['sequences']}x{r['length']}" for r in report["prefill"]
+                    if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                    or not r["candidate_kv_finite"]
+                    or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                    or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
+        failures += [f"decode B={r['batch']} L={r['context']}" for r in report["decode"]
+                     if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                     or not r["candidate_kv_finite"]
+                    or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                    or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
+        failures += [f"mixed B={r['batch']} L={r['context']}" for r in report["mixed"]
+                     if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
+                     or not r["candidate_kv_finite"]
+                     or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
+                     or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
+        report["status"] = "pass" if not failures else "fail"
+        report["failures"] = failures
+        report["note"] = ("speedups are per forward (prefill: graphs plus eager attention, host included) "
+                          "or per decode graph replay; logit relative-L2 and maximum absolute error are gated "
+                          "alongside finite KV and the control logit margins at token disagreements")
         persist()
-        print(f"  mixed speedup {row['speedup']:.3f}x", flush=True)
-        del arms, logits, seed
-        gc.collect()
-        torch.cuda.empty_cache()
-
-    for batch, length in args.decode_cases:
-        print(f"decode B={batch} context={length}", flush=True)
-        capacity = length + args.decode_steps
-        layout = Layout(torch, device, batch, capacity)
-        decoders = {name: CUDAGraphDecoder(
-            model, pools[name], batch_size=batch, max_blocks=layout.pages, device=device,
-            dtype=torch.float16, decode_attention_policy=decode_policy,
-            max_decode_context_length=capacity, enable_residual_rmsnorm=True,
-            enable_native_decode_qkv_postprocess=True,
-            enable_fused_gemm_epilogues=name == "candidate",
-            gemm_epilogue_intervention=args.intervention).capture()
-            for name in ("control", "candidate")}
-        prompts = [torch.randint(0, cfg.vocab, (length,), generator=generator) for _ in range(batch)]
-        group = max(1, 2048 // length)
-        last = []
-        for first in range(0, batch, group):
-            rows = list(range(first, min(batch, first + group)))
-            last.append(fill.forward(*prefill_inputs(torch, device, prompts, layout, rows),
-                                     mixed_attention_policy=prefill_policy))
-        for a, b in zip(pools["candidate"].k_pool + pools["candidate"].v_pool,
-                        pools["control"].k_pool + pools["control"].v_pool):
-            a.copy_(b)  # isolate decode numerics: both arms start from one history
-        tokens = torch.cat(last).argmax(-1)
-        rows = torch.arange(batch, device=device)
-        steps = []
-        for step in range(args.decode_steps):
-            position = torch.full((batch,), length + step, device=device, dtype=torch.int32)
-            slots = layout.slots(torch, rows, position.to(torch.long))
-            step_logits = {name: decoder.decode(tokens.view(batch, 1), position, position + 1,
-                                                layout.table, slots).squeeze(1).clone()
-                           for name, decoder in decoders.items()}
-            steps.append(compare_logits(step_logits["control"], step_logits["candidate"], args.tie_margin))
-            tokens = steps[-1]["_next"]  # teacher-forced on the control's greedy token
-        numerics = merge(steps)
-        live_positions = torch.arange(capacity, device=device)[None, :].expand(batch, -1)
-        live_rows = rows[:, None].expand_as(live_positions)
-        live_slots = layout.slots(torch, live_rows, live_positions).reshape(-1)
-        kv_finite = True
-        kv = 0.0
-        for a, b in zip(pools["control"].k_pool + pools["control"].v_pool,
-                        pools["candidate"].k_pool + pools["candidate"].v_pool):
-            left = a.view(-1, 2, 128)[live_slots].float()
-            right = b.view(-1, 2, 128)[live_slots].float()
-            kv_finite = kv_finite and bool(torch.isfinite(right).all())
-            kv = max(kv, float((left - right).abs().max()))
-        del left, right
-        timed, samples = alternate(torch, {name: decoder.graph.replay for name, decoder in decoders.items()},
-                                   repetitions=50, rounds=args.rounds)
-        row = {"batch": batch, "context": length, "steps": args.decode_steps, "numerics": numerics,
-               "max_abs_kv_diff": kv, "candidate_kv_finite": kv_finite,
-               "first_disagreement_step": next((i for i, s in enumerate(steps)
-                                                if s["greedy_agree"] < s["rows"]), None),
-               "median_graph_replay_ms": timed, "samples_ms": samples,
-               "speedup": timed["control"] / timed["candidate"]}
-        report["decode"].append(row)
-        persist()
-        print(f"  control {timed['control']:.4f} ms, fused {timed['candidate']:.4f} ms "
-              f"({row['speedup']:.3f}x); greedy {numerics['greedy_agree']}/{numerics['rows']}, "
-              f"max |dlogit| {numerics['max_abs_logit_diff']:.3f}", flush=True)
-        del decoders
-        gc.collect()
-        torch.cuda.empty_cache()
-
-    failures = [f"prefill {r['sequences']}x{r['length']}" for r in report["prefill"]
-                if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
-                or not r["candidate_kv_finite"]
-                or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
-                or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
-    failures += [f"decode B={r['batch']} L={r['context']}" for r in report["decode"]
-                 if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
-                 or not r["candidate_kv_finite"]
-                or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
-                or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
-    failures += [f"mixed B={r['batch']} L={r['context']}" for r in report["mixed"]
-                 if r["numerics"]["non_tie_disagreements"] or not r["numerics"]["finite"]
-                 or not r["candidate_kv_finite"]
-                 or r["numerics"]["relative_l2_max"] > args.max_logit_relative_l2
-                 or r["numerics"]["max_abs_logit_diff"] > args.max_logit_abs]
-    report["status"] = "pass" if not failures else "fail"
-    report["failures"] = failures
-    report["note"] = ("speedups are per forward (prefill: graphs plus eager attention, host included) "
-                      "or per decode graph replay; logit relative-L2 and maximum absolute error are gated "
-                      "alongside finite KV and the control logit margins at token disagreements")
-    persist()
-    print(f"status={report['status']}" + (f"; non-tie disagreements in {failures}" if failures else "")
-          + f"; report={args.output_dir / 'report.json'}")
-    if failures:
-        sys.exit(1)
+        print(f"status={report['status']}" + (f"; non-tie disagreements in {failures}" if failures else "")
+              + f"; report={args.output_dir / 'report.json'}")
+        if failures:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
